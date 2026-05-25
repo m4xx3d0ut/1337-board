@@ -5,6 +5,7 @@ import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import org.leetboard.ime.model.HeldModifiers
 import org.leetboard.ime.SettingsActivity
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
@@ -16,29 +17,55 @@ import org.leetboard.ime.model.toggleShift
 class KeyActionEngine(
     private val service: InputMethodService,
 ) {
-    fun handle(action: KeyAction, state: KeyboardState): KeyboardState {
+    fun handle(
+        action: KeyAction,
+        state: KeyboardState,
+        heldModifiers: HeldModifiers = HeldModifiers(),
+        autoCapAfterPeriod: Boolean = true,
+    ): KeyboardState {
         return when (action.type) {
-            KeyActionType.COMMIT_TEXT -> commitText(action.text.orEmpty(), state)
-            KeyActionType.SPACE -> commitText(" ", state)
+            KeyActionType.NO_OP -> state
+            KeyActionType.COMMIT_TEXT -> commitText(action.text.orEmpty(), state, heldModifiers, autoCapAfterPeriod)
+            KeyActionType.SPACE -> commitText(" ", state, heldModifiers, autoCapAfterPeriod)
             KeyActionType.DELETE -> {
-                service.currentInputConnection?.deleteSurroundingText(1, 0)
-                state
+                val modifiers = state.modifiers.effectiveWith(heldModifiers)
+                when {
+                    heldModifiers.shift -> sendKey(
+                        KeyEvent.KEYCODE_FORWARD_DEL,
+                        state,
+                        heldModifiers,
+                        suppressShift = true,
+                    )
+                    modifiers.ctrl || modifiers.alt -> sendKey(KeyEvent.KEYCODE_DEL, state, heldModifiers)
+                    else -> {
+                        service.currentInputConnection?.deleteSurroundingText(1, 0)
+                        state.clearTransientModifiers()
+                    }
+                }
             }
             KeyActionType.ENTER -> {
-                performEnter()
-                state.clearTransientModifiers()
+                if (state.modifiers.effectiveWith(heldModifiers).hasMeta()) {
+                    sendKey(KeyEvent.KEYCODE_ENTER, state, heldModifiers)
+                } else {
+                    performEnter()
+                    state.clearTransientModifiers()
+                }
             }
             KeyActionType.SHIFT -> state.toggleShift()
             KeyActionType.CTRL -> state.copy(modifiers = state.modifiers.copy(ctrl = !state.modifiers.ctrl))
             KeyActionType.ALT -> state.copy(modifiers = state.modifiers.copy(alt = !state.modifiers.alt))
-            KeyActionType.TAB -> sendKey(KeyEvent.KEYCODE_TAB, state)
-            KeyActionType.ESCAPE -> sendKey(KeyEvent.KEYCODE_ESCAPE, state)
-            KeyActionType.ARROW_LEFT -> sendKey(KeyEvent.KEYCODE_DPAD_LEFT, state)
-            KeyActionType.ARROW_RIGHT -> sendKey(KeyEvent.KEYCODE_DPAD_RIGHT, state)
-            KeyActionType.ARROW_UP -> sendKey(KeyEvent.KEYCODE_DPAD_UP, state)
-            KeyActionType.ARROW_DOWN -> sendKey(KeyEvent.KEYCODE_DPAD_DOWN, state)
-            KeyActionType.SWITCH_SYMBOLS -> state.copy(symbols = !state.symbols, numpad = false)
-            KeyActionType.NUMPAD_TOGGLE -> state.copy(numpad = !state.numpad, symbols = false)
+            KeyActionType.TAB -> sendKey(KeyEvent.KEYCODE_TAB, state, heldModifiers)
+            KeyActionType.ESCAPE -> sendKey(KeyEvent.KEYCODE_ESCAPE, state, heldModifiers)
+            KeyActionType.ARROW_LEFT -> sendKey(KeyEvent.KEYCODE_DPAD_LEFT, state, heldModifiers)
+            KeyActionType.ARROW_RIGHT -> sendKey(KeyEvent.KEYCODE_DPAD_RIGHT, state, heldModifiers)
+            KeyActionType.ARROW_UP -> sendKey(KeyEvent.KEYCODE_DPAD_UP, state, heldModifiers)
+            KeyActionType.ARROW_DOWN -> sendKey(KeyEvent.KEYCODE_DPAD_DOWN, state, heldModifiers)
+            KeyActionType.SWITCH_SYMBOLS -> state.copy(symbols = !state.symbols, fn = false, numpad = false)
+            KeyActionType.SWITCH_FN -> state.copy(fn = !state.fn, symbols = false, numpad = false)
+            KeyActionType.NUMPAD_TOGGLE -> state.copy(numpad = !state.numpad, symbols = false, fn = false)
+            KeyActionType.KEY_EVENT -> {
+                action.keyCode?.let { keyCode -> sendKey(keyCode, state, heldModifiers) } ?: state
+            }
             KeyActionType.SETTINGS -> {
                 service.startActivity(
                     Intent(service, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -52,16 +79,29 @@ class KeyActionEngine(
                 state
             }
             KeyActionType.MICROPHONE -> state
+            KeyActionType.TOGGLE_SPEECH_INPUT -> state
+            KeyActionType.TOGGLE_GESTURE_TYPING -> state
         }
     }
 
-    private fun commitText(text: String, state: KeyboardState): KeyboardState {
-        if (text.length == 1 && (state.modifiers.ctrl || state.modifiers.alt)) {
+    private fun commitText(
+        text: String,
+        state: KeyboardState,
+        heldModifiers: HeldModifiers,
+        autoCapAfterPeriod: Boolean,
+    ): KeyboardState {
+        val modifiers = state.modifiers.effectiveWith(heldModifiers)
+        if (text.length == 1 && (modifiers.ctrl || modifiers.alt)) {
             val keyCode = letterKeyCode(text.first())
-            if (keyCode != null) return sendKey(keyCode, state)
+            if (keyCode != null) return sendKey(keyCode, state, heldModifiers)
         }
 
-        val output = if (state.modifiers.shift || state.modifiers.shiftLocked) text.uppercase() else text
+        val output = text.applyKeyboardCapitalization(
+            modifiers = state.modifiers,
+            heldModifiers = heldModifiers,
+            autoCapAfterPeriod = autoCapAfterPeriod && text.length == 1 && text.first().isLetter(),
+            textBeforeCursor = service.currentInputConnection?.getTextBeforeCursor(AUTO_CAP_CONTEXT_CHARS, 0),
+        )
         service.currentInputConnection?.commitText(output, 1)
         return if (state.modifiers.shiftLocked) {
             state.copy(modifiers = state.modifiers.copy(ctrl = false, alt = false))
@@ -81,9 +121,19 @@ class KeyActionEngine(
         }
     }
 
-    private fun sendKey(keyCode: Int, state: KeyboardState): KeyboardState {
+    private fun sendKey(
+        keyCode: Int,
+        state: KeyboardState,
+        heldModifiers: HeldModifiers,
+        suppressShift: Boolean = false,
+    ): KeyboardState {
         val eventTime = System.currentTimeMillis()
-        val metaState = state.modifiers.toMetaState()
+        val modifiers = state.modifiers.effectiveWith(heldModifiers)
+        val metaState = if (suppressShift) {
+            modifiers.copy(shift = false, shiftLocked = false).toMetaState()
+        } else {
+            modifiers.toMetaState()
+        }
         service.currentInputConnection?.sendKeyEvent(
             KeyEvent(eventTime, eventTime, KeyEvent.ACTION_DOWN, keyCode, 0, metaState),
         )
@@ -91,6 +141,18 @@ class KeyActionEngine(
             KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, keyCode, 0, metaState),
         )
         return state.clearTransientModifiers()
+    }
+
+    private fun ModifierState.effectiveWith(heldModifiers: HeldModifiers): ModifierState {
+        return copy(
+            shift = shift || heldModifiers.shift,
+            ctrl = ctrl || heldModifiers.ctrl,
+            alt = alt || heldModifiers.alt,
+        )
+    }
+
+    private fun ModifierState.hasMeta(): Boolean {
+        return shift || shiftLocked || ctrl || alt
     }
 
     private fun ModifierState.toMetaState(): Int {
@@ -105,5 +167,9 @@ class KeyActionEngine(
         val lower = char.lowercaseChar()
         if (lower !in 'a'..'z') return null
         return KeyEvent.KEYCODE_A + (lower - 'a')
+    }
+
+    private companion object {
+        const val AUTO_CAP_CONTEXT_CHARS = 8
     }
 }

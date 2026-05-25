@@ -16,16 +16,19 @@ class MainActivity : ComponentActivity() {
             InfoScreen(
                 title = getString(R.string.app_name),
                 subtitle = "Desktop-style Android keyboard for terminal, editor, and power-user workflows.",
-                primaryAction = "Open input settings",
-                secondaryAction = "Choose keyboard",
+                primaryAction = "Open app settings",
+                secondaryAction = "Open input settings",
+                tertiaryAction = "Choose keyboard",
                 onPrimaryAction = {
-                    startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+                    startActivity(Intent(this, SettingsActivity::class.java))
                 },
                 onSecondaryAction = {
+                    startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+                },
+                onTertiaryAction = {
                     getSystemService<InputMethodManager>()?.showInputMethodPicker()
                 },
             )
         }
     }
 }
-

@@ -1,6 +1,15 @@
 package org.leetboard.ime.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.Paint
+import android.view.KeyEvent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,29 +18,66 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import java.io.InputStreamReader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.leetboard.ime.engine.CustomizationEngine
+import org.leetboard.ime.engine.GlideImportedWordsPriority
+import org.leetboard.ime.engine.GlidePathTolerance
+import org.leetboard.ime.engine.GlideRawFallbackMode
+import org.leetboard.ime.engine.LayoutEngine
+import org.leetboard.ime.engine.ThemeEngine
+import org.leetboard.ime.model.EscTouchMode
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
+import org.leetboard.ime.model.KeyDisplayOverride
+import org.leetboard.ime.model.KeyIcon
+import org.leetboard.ime.model.KeyLabelStyle
+import org.leetboard.ime.model.KeySpec
 import org.leetboard.ime.model.KeyboardGeometry
+import org.leetboard.ime.model.KeyboardLayout
+import org.leetboard.ime.model.KeyboardState
+import org.leetboard.ime.model.KeyboardTheme
+import org.leetboard.ime.model.RowAlignment
 import org.leetboard.ime.model.ThemePreset
 import org.leetboard.ime.model.displayLabel
+import org.leetboard.ime.model.fallbackLabel
+import org.leetboard.ime.model.resolvedDisplay
 import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
+import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.defaultLayoutOptions
@@ -42,8 +88,10 @@ fun InfoScreen(
     subtitle: String,
     primaryAction: String,
     secondaryAction: String,
+    tertiaryAction: String? = null,
     onPrimaryAction: () -> Unit,
     onSecondaryAction: () -> Unit,
+    onTertiaryAction: (() -> Unit)? = null,
 ) {
     LeetBoardTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -57,12 +105,17 @@ fun InfoScreen(
                 Spacer(Modifier.height(12.dp))
                 Text(subtitle, style = MaterialTheme.typography.bodyLarge)
                 Spacer(Modifier.height(24.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = onPrimaryAction) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = onPrimaryAction, modifier = Modifier.fillMaxWidth()) {
                         Text(primaryAction)
                     }
-                    OutlinedButton(onClick = onSecondaryAction) {
+                    OutlinedButton(onClick = onSecondaryAction, modifier = Modifier.fillMaxWidth()) {
                         Text(secondaryAction)
+                    }
+                    if (tertiaryAction != null && onTertiaryAction != null) {
+                        OutlinedButton(onClick = onTertiaryAction, modifier = Modifier.fillMaxWidth()) {
+                            Text(tertiaryAction)
+                        }
                     }
                 }
             }
@@ -78,133 +131,709 @@ fun SettingsScreen(
 ) {
     val preferences by repository.preferences.collectAsState(initial = KeyboardPreferences.defaults())
     val scope = rememberCoroutineScope()
+    var showResetConfirmation by remember { mutableStateOf(false) }
 
     LeetBoardTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val isTablet = maxWidth >= 840.dp
+                val pageModifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                Text("1337 Board Settings", style = MaterialTheme.typography.headlineMedium)
-                SettingsSection(
-                    title = "Layout",
-                    body = "Choose the base typing layout. Numpad remains a landscape toggle.",
-                )
-                defaultLayoutOptions.forEach { option ->
-                    SelectButton(
-                        label = option.label,
-                        selected = preferences.layoutId == option.id,
-                        onClick = {
-                            scope.launch { repository.setLayoutId(option.id) }
-                        },
-                    )
-                }
+                    .padding(if (isTablet) 32.dp else 18.dp)
 
-                SettingsSection(
-                    title = "Theme",
-                    body = "Choose a named color preset.",
-                )
-                ThemePreset.entries.forEach { preset ->
-                    SelectButton(
-                        label = preset.label,
-                        selected = preferences.themePreset == preset,
-                        onClick = {
-                            scope.launch { repository.setThemePreset(preset) }
-                        },
-                    )
-                }
-
-                SettingsSection(title = "Optional Keys", body = "Show or hide terminal/navigation keys.")
-                optionalKeyControls.forEach { key ->
-                    SettingSwitch(
-                        label = key.label,
-                        checked = key.id !in preferences.hiddenOptionalKeyIds,
-                        onCheckedChange = { checked ->
-                            scope.launch { repository.setOptionalKeyHidden(key.id, hidden = !checked) }
-                        },
-                    )
-                }
-                SettingSwitch(
-                    label = "Numpad toggle",
-                    checked = preferences.numpadToggleEnabled,
-                    onCheckedChange = { checked ->
-                        scope.launch { repository.setNumpadToggleEnabled(checked) }
-                    },
-                )
-                SettingSwitch(
-                    label = "Key preview",
-                    checked = preferences.keyPreviewEnabled,
-                    onCheckedChange = { checked ->
-                        scope.launch { repository.setKeyPreviewEnabled(checked) }
-                    },
-                )
-
-                SettingsSection(title = "Action Slots", body = "Cycle safe preset actions for configurable keys.")
-                actionSlots.forEach { slot ->
-                    val action = preferences.slotActions[slot.id] ?: slot.defaultAction
-                    OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                repository.setSlotAction(slot.id, nextAction(action))
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
+                if (isTablet) {
+                    Row(
+                        modifier = pageModifier,
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
                     ) {
-                        Text("${slot.label}: ${action.displayLabel()}")
+                        Column(
+                            modifier = Modifier.weight(0.9f),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            SettingsHeader()
+                            LayoutThemeSection(preferences, repository)
+                            OptionalKeysSection(preferences, repository)
+                            InteractionSection(preferences, repository)
+                            FeatureSection(preferences, repository)
+                            SettingsActions(onOpenDiagnostics, onClose) {
+                                showResetConfirmation = true
+                            }
+                        }
+                        Column(
+                            modifier = Modifier
+                                .weight(1.1f)
+                                .widthIn(max = 760.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            KeymapPreviewSection(preferences)
+                            ActionSlotsSection(preferences, repository)
+                            KeyDisplaySection(preferences, repository)
+                            LabelStyleSection(preferences, repository)
+                            GeometrySection(preferences, repository)
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = pageModifier,
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        SettingsHeader()
+                        KeymapPreviewSection(preferences)
+                        LayoutThemeSection(preferences, repository)
+                        GeometrySection(preferences, repository)
+                        InteractionSection(preferences, repository)
+                        LabelStyleSection(preferences, repository)
+                        OptionalKeysSection(preferences, repository)
+                        ActionSlotsSection(preferences, repository)
+                        KeyDisplaySection(preferences, repository)
+                        FeatureSection(preferences, repository)
+                        SettingsActions(onOpenDiagnostics, onClose) {
+                            showResetConfirmation = true
+                        }
                     }
                 }
+            }
+            if (showResetConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showResetConfirmation = false },
+                    title = { Text("Reset defaults") },
+                    text = { Text("Reset layout, theme, geometry, optional keys, action slots, and feature flags.") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showResetConfirmation = false
+                                scope.launch { repository.resetToDefaults() }
+                            },
+                        ) {
+                            Text("Reset")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showResetConfirmation = false }) {
+                            Text("Cancel")
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
 
-                SettingsSection(
-                    title = "Portrait Geometry",
-                    body = "Adjust key shape and spacing for portrait.",
-                )
-                GeometryControls(
-                    orientation = GeometryOrientation.PORTRAIT,
-                    geometry = preferences.portraitGeometry,
-                    onChange = { field, value ->
-                        scope.launch { repository.setGeometryValue(GeometryOrientation.PORTRAIT, field, value) }
-                    },
-                )
-                SettingsSection(
-                    title = "Landscape Geometry",
-                    body = "Adjust key shape and spacing for landscape and numpad modes.",
-                )
-                GeometryControls(
-                    orientation = GeometryOrientation.LANDSCAPE,
-                    geometry = preferences.landscapeGeometry,
-                    onChange = { field, value ->
-                        scope.launch { repository.setGeometryValue(GeometryOrientation.LANDSCAPE, field, value) }
-                    },
-                )
+@Composable
+private fun SettingsHeader() {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("1337 Board Settings", style = MaterialTheme.typography.headlineMedium)
+        Text("Layout, theme, keymap, and privacy controls.", style = MaterialTheme.typography.bodyMedium)
+    }
+}
 
-                SettingsSection(title = "Privacy-Gated Features", body = "Speech and swipe remain local-only feature flags.")
-                SettingSwitch(
-                    label = "Swipe typing prototype",
-                    checked = preferences.gestureTypingEnabled,
-                    onCheckedChange = { checked ->
-                        scope.launch { repository.setGestureTypingEnabled(checked) }
-                    },
-                )
-                SettingSwitch(
-                    label = "Speech input placeholder",
-                    checked = preferences.speechInputEnabled,
-                    onCheckedChange = { checked ->
-                        scope.launch { repository.setSpeechInputEnabled(checked) }
-                    },
-                )
+@Composable
+private fun LayoutThemeSection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    SettingsGroup(
+        title = "Layout and Theme",
+        body = "Choose the base layout and color preset.",
+    ) {
+        defaultLayoutOptions.forEach { option ->
+            SelectButton(
+                label = option.label,
+                selected = preferences.layoutId == option.id,
+                onClick = {
+                    scope.launch { repository.setLayoutId(option.id) }
+                },
+            )
+        }
+        ThemePreset.entries.forEach { preset ->
+            SelectButton(
+                label = preset.label,
+                selected = preferences.themePreset == preset,
+                onClick = {
+                    scope.launch { repository.setThemePreset(preset) }
+                },
+            )
+        }
+    }
+}
 
-                OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth()) {
-                    Text("Open diagnostics")
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
-                    Text("Done")
+@Composable
+private fun KeymapPreviewSection(preferences: KeyboardPreferences) {
+    SettingsGroup(
+        title = "Keymap Preview",
+        body = "Live preview of the current layout, hidden keys, and reassigned action slots.",
+    ) {
+        KeymapPreview(
+            title = "Portrait",
+            preferences = preferences,
+            orientation = Configuration.ORIENTATION_PORTRAIT,
+            geometry = preferences.portraitGeometry,
+        )
+        KeymapPreview(
+            title = "Landscape",
+            preferences = preferences,
+            orientation = Configuration.ORIENTATION_LANDSCAPE,
+            geometry = preferences.landscapeGeometry,
+        )
+    }
+}
+
+@Composable
+private fun GeometrySection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    SettingsGroup(
+        title = "Keyboard Size and Spacing",
+        body = "Tune height, left/right margin, key shape, and gaps separately for portrait and landscape.",
+    ) {
+        EdgeKeyWidthSlider(preferences.edgeKeyWidthScale) { value ->
+            scope.launch { repository.setEdgeKeyWidthScale(value) }
+        }
+        GeometryControls(
+            orientation = GeometryOrientation.PORTRAIT,
+            geometry = preferences.portraitGeometry,
+            onChange = { field, value ->
+                scope.launch { repository.setGeometryValue(GeometryOrientation.PORTRAIT, field, value) }
+            },
+        )
+        GeometryControls(
+            orientation = GeometryOrientation.LANDSCAPE,
+            geometry = preferences.landscapeGeometry,
+            onChange = { field, value ->
+                scope.launch { repository.setGeometryValue(GeometryOrientation.LANDSCAPE, field, value) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun OptionalKeysSection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    SettingsGroup(
+        title = "Optional Keys",
+        body = "Show or hide terminal, navigation, speech, settings, and numpad controls.",
+    ) {
+        optionalKeyControls.forEach { key ->
+            SettingSwitch(
+                label = key.label,
+                checked = key.id !in preferences.hiddenOptionalKeyIds,
+                onCheckedChange = { checked ->
+                    scope.launch { repository.setOptionalKeyHidden(key.id, hidden = !checked) }
+                },
+            )
+        }
+        SettingSwitch(
+            label = "Numpad toggle",
+            checked = preferences.numpadToggleEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setNumpadToggleEnabled(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Key preview",
+            checked = preferences.keyPreviewEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setKeyPreviewEnabled(checked) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun InteractionSection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    SettingsGroup(
+        title = "Touch Behavior",
+        body = "Tune Esc handling and modifier stickiness for terminal-style shortcuts.",
+    ) {
+        EscTouchMode.entries.forEach { mode ->
+            SelectButton(
+                label = when (mode) {
+                    EscTouchMode.REGULAR -> "Esc tap: regular"
+                    EscTouchMode.LONG_TAP -> "Esc tap: long tap only"
+                },
+                selected = preferences.escTouchMode == mode,
+                onClick = { scope.launch { repository.setEscTouchMode(mode) } },
+            )
+        }
+        SettingSwitch(
+            label = "Sticky Ctrl, Alt, and Shift",
+            checked = preferences.stickyModifiersEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setStickyModifiersEnabled(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Shift caps lock cycle",
+            checked = preferences.shiftCapsLockEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setShiftCapsLockEnabled(checked) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ActionSlotsSection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    SettingsGroup(
+        title = "Action Slots",
+        body = "Cycle safe preset actions for configurable non-alphanumeric keys.",
+    ) {
+        actionSlots.forEach { slot ->
+            val action = preferences.slotActions[slot.id] ?: slot.defaultAction
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        repository.setSlotAction(slot.id, nextAction(action))
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("${slot.label}: ${action.displayLabel()}")
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeyDisplaySection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    SettingsGroup(
+        title = "Key Labels and Icons",
+        body = "Customize primary text or icons for special keys.",
+    ) {
+        keyDisplayControls.forEach { control ->
+            val override = preferences.keyDisplayOverrides[control.id]
+            val label = override?.label.orEmpty()
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { nextLabel ->
+                        scope.launch {
+                            repository.setKeyDisplayOverride(
+                                control.id,
+                                KeyDisplayOverride(
+                                    label = nextLabel.takeIf { it.isNotBlank() },
+                                    icon = override?.icon,
+                                ),
+                            )
+                        }
+                    },
+                    label = { Text("${control.label} label") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val nextIcon = control.nextIcon(override?.icon)
+                            scope.launch {
+                                repository.setKeyDisplayOverride(
+                                    control.id,
+                                    KeyDisplayOverride(
+                                        label = override?.label,
+                                        icon = nextIcon,
+                                    ),
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Icon: ${override?.icon?.fallbackLabel() ?: "default"}")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch { repository.setKeyDisplayOverride(control.id, null) }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Clear")
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LabelStyleSection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    SettingsGroup(
+        title = "Key Text Style",
+        body = "Adjust label size, secondary legends, weight, opacity, and caps display.",
+    ) {
+        KeyLabelStyleSlider(
+            "Primary size",
+            preferences.keyLabelStyle.primaryTextSizeSp,
+            KeyLabelStyleField.PRIMARY_TEXT_SIZE,
+            onChange = { field, value -> scope.launch { repository.setKeyLabelStyleValue(field, value) } },
+        )
+        KeyLabelStyleSlider(
+            "Shift symbol size",
+            preferences.keyLabelStyle.secondaryTextSizeSp,
+            KeyLabelStyleField.SECONDARY_TEXT_SIZE,
+            onChange = { field, value -> scope.launch { repository.setKeyLabelStyleValue(field, value) } },
+        )
+        KeyLabelStyleSlider(
+            "Font weight",
+            preferences.keyLabelStyle.fontWeight,
+            KeyLabelStyleField.FONT_WEIGHT,
+            onChange = { field, value -> scope.launch { repository.setKeyLabelStyleValue(field, value) } },
+        )
+        KeyLabelStyleSlider(
+            "Opacity",
+            preferences.keyLabelStyle.labelOpacity,
+            KeyLabelStyleField.LABEL_OPACITY,
+            onChange = { field, value -> scope.launch { repository.setKeyLabelStyleValue(field, value) } },
+        )
+        SettingSwitch(
+            label = "Uppercase labels on Shift/Caps",
+            checked = preferences.keyLabelStyle.uppercaseOnShift,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setUppercaseOnShift(checked) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun FeatureSection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        scope.launch { repository.setSpeechInputEnabled(granted) }
+    }
+    val wordImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        repository.importGlideWords(InputStreamReader(stream))
+                    }
+                }
+            }
+        }
+    }
+    SettingsGroup(
+        title = "Privacy-Gated Features",
+        body = "Mic and glide typing stay disabled in sensitive fields. Optional glide corrections are stored only on this device.",
+    ) {
+        SettingSwitch(
+            label = "Glide typing",
+            checked = preferences.gestureTypingEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setGestureTypingEnabled(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Local glide correction map",
+            checked = preferences.glideCorrectionLearningEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setGlideCorrectionLearningEnabled(checked) }
+            },
+        )
+        if (preferences.glideCorrections.isNotEmpty()) {
+            OutlinedButton(
+                onClick = { scope.launch { repository.clearGlideCorrections() } },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Clear glide corrections (${preferences.glideCorrections.size})")
+            }
+        }
+        SettingSwitch(
+            label = "Strict first/last glide letters",
+            checked = preferences.glideStrictFirstLastLetter,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setGlideStrictFirstLastLetter(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Prefer shorter glide words",
+            checked = preferences.glidePreferShorterWords,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setGlidePreferShorterWords(checked) }
+            },
+        )
+        Text("Path tolerance", style = MaterialTheme.typography.labelLarge)
+        GlidePathTolerance.entries.forEach { tolerance ->
+            SelectButton(
+                label = tolerance.label,
+                selected = preferences.glidePathTolerance == tolerance,
+                onClick = { scope.launch { repository.setGlidePathTolerance(tolerance) } },
+            )
+        }
+        Text("Imported word priority", style = MaterialTheme.typography.labelLarge)
+        GlideImportedWordsPriority.entries.forEach { priority ->
+            SelectButton(
+                label = priority.label,
+                selected = preferences.glideImportedWordsPriority == priority,
+                onClick = { scope.launch { repository.setGlideImportedWordsPriority(priority) } },
+            )
+        }
+        Text("Raw path fallback", style = MaterialTheme.typography.labelLarge)
+        GlideRawFallbackMode.entries.forEach { mode ->
+            SelectButton(
+                label = mode.label,
+                selected = preferences.glideRawFallbackMode == mode,
+                onClick = { scope.launch { repository.setGlideRawFallbackMode(mode) } },
+            )
+        }
+        SettingSwitch(
+            label = "Auto-cap after period",
+            checked = preferences.autoCapAfterPeriodEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setAutoCapAfterPeriodEnabled(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Per-key swipe-up actions",
+            checked = preferences.swipeUpActionsEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setSwipeUpActionsEnabled(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Mic input key",
+            checked = preferences.speechInputEnabled,
+            onCheckedChange = { checked ->
+                if (!checked) {
+                    scope.launch { repository.setSpeechInputEnabled(false) }
+                } else if (
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    scope.launch { repository.setSpeechInputEnabled(true) }
+                } else {
+                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+        )
+        OutlinedButton(
+            onClick = { wordImportLauncher.launch(arrayOf("text/*", "application/octet-stream")) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Import glide wordlist (${preferences.glideImportedWordCount})")
+        }
+        if (preferences.glideImportedWordCount > 0) {
+            OutlinedButton(
+                onClick = { scope.launch { repository.clearImportedGlideWords() } },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Clear imported glide words")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsActions(
+    onOpenDiagnostics: () -> Unit,
+    onClose: () -> Unit,
+    onResetDefaults: () -> Unit,
+) {
+    SettingsGroup(title = "Maintenance", body = "Diagnostics and reset controls.") {
+        OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth()) {
+            Text("Open diagnostics")
+        }
+        OutlinedButton(onClick = onResetDefaults, modifier = Modifier.fillMaxWidth()) {
+            Text("Reset defaults")
+        }
+        Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
+            Text("Done")
+        }
+    }
+}
+
+@Composable
+private fun SettingsGroup(
+    title: String,
+    body: String,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 1.dp,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SettingsSection(title, body)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun KeymapPreview(
+    title: String,
+    preferences: KeyboardPreferences,
+    orientation: Int,
+    geometry: KeyboardGeometry,
+) {
+    val layoutEngine = remember { LayoutEngine() }
+    val customizationEngine = remember { CustomizationEngine() }
+    val themeEngine = remember { ThemeEngine() }
+    val theme = themeEngine.resolve(
+        preset = preferences.themePreset,
+        portrait = preferences.portraitGeometry,
+        landscape = preferences.landscapeGeometry,
+    )
+    val layout = customizationEngine.apply(
+        layout = layoutEngine.layoutFor(
+            KeyboardState(
+                activeLayoutId = preferences.layoutId,
+                edgeKeyWidthScale = preferences.edgeKeyWidthScale,
+            ),
+            orientation,
+        ),
+        customization = preferences.customizationState(),
+    )
+    val previewHeight = ((geometry.keyboardHeightPercent / 75f) * 220f).coerceIn(98f, 220f).dp
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            "$title: ${geometry.keyboardHeightPercent.toInt()}% height, ${geometry.horizontalMarginDp.toInt()}dp L/R, ${geometry.bottomMarginDp.toInt()}dp bottom",
+            style = MaterialTheme.typography.labelLarge,
+        )
+        KeyboardLayoutCanvas(
+            layout = layout,
+            theme = theme,
+            geometry = geometry,
+            labelStyle = preferences.keyLabelStyle,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(previewHeight),
+        )
+    }
+}
+
+@Composable
+private fun KeyboardLayoutCanvas(
+    layout: KeyboardLayout,
+    theme: KeyboardTheme,
+    geometry: KeyboardGeometry,
+    labelStyle: KeyLabelStyle,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val labelPaint = remember {
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+        }
+    }
+
+    Canvas(modifier = modifier) {
+        drawRect(Color(theme.colors.background))
+        val rows = layout.rows
+        if (rows.isEmpty()) return@Canvas
+
+        val topMargin = PREVIEW_TOP_MARGIN_DP * density.density
+        val bottomMargin = geometry.bottomMarginDp * density.density
+        val rowGap = geometry.rowGapDp * density.density
+        val keyGap = geometry.keyGapDp * density.density
+        val horizontalMargin = geometry.horizontalMarginDp * density.density
+        val rowHeight = (size.height - topMargin - bottomMargin - rowGap * (rows.size - 1)) / rows.size
+        var top = topMargin
+        rows.forEach { row ->
+            val occupiedWeight = row.startInsetWeight + row.endInsetWeight +
+                row.keys.sumOf { it.weight.toDouble() }.toFloat()
+            val layoutWeight = row.layoutWeight?.coerceAtLeast(occupiedWeight) ?: occupiedWeight
+            val slackWeight = layoutWeight - occupiedWeight
+            val alignmentInsetWeight = when (row.alignment) {
+                RowAlignment.START -> 0f
+                RowAlignment.CENTER -> slackWeight / 2f
+                RowAlignment.END -> slackWeight
+            }
+            val gapCount = (row.keys.size - 1).coerceAtLeast(0)
+            val availableWidth = size.width - horizontalMargin * 2 - keyGap * gapCount
+            val widthUnit = availableWidth / layoutWeight
+            var left = horizontalMargin + widthUnit * (alignmentInsetWeight + row.startInsetWeight)
+
+            row.keys.forEach { key ->
+                val keyWidth = widthUnit * key.weight
+                if (!key.isSpacer) {
+                    drawPreviewKey(key, theme, geometry, labelStyle, left, top, keyWidth, rowHeight, density.density, labelPaint)
+                }
+                left += keyWidth + keyGap
+            }
+            top += rowHeight + rowGap
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPreviewKey(
+    key: KeySpec,
+    theme: KeyboardTheme,
+    geometry: KeyboardGeometry,
+    labelStyle: KeyLabelStyle,
+    left: Float,
+    top: Float,
+    keyWidth: Float,
+    rowHeight: Float,
+    density: Float,
+    labelPaint: Paint,
+) {
+    val radius = geometry.keyRadiusDp * density
+    val borderWidth = geometry.borderWidthDp * density
+    val topLeft = Offset(left, top)
+    val size = Size(keyWidth, rowHeight)
+    drawRoundRect(
+        color = Color(theme.colors.keyFill),
+        topLeft = topLeft,
+        size = size,
+        cornerRadius = CornerRadius(radius, radius),
+    )
+    drawRoundRect(
+        color = Color(theme.colors.keyStroke),
+        topLeft = topLeft,
+        size = size,
+        cornerRadius = CornerRadius(radius, radius),
+        style = Stroke(width = borderWidth),
+    )
+
+    val display = key.resolvedDisplay(shiftActive = false, labelStyle = labelStyle)
+    labelPaint.color = theme.colors.keyText.withAlpha((labelStyle.labelOpacity * 255).toInt())
+    labelPaint.isFakeBoldText = labelStyle.fontWeight >= 600f
+    val label = display.icon?.fallbackLabel() ?: display.label
+    labelPaint.textSize = density * if (label.length > 4) labelStyle.primaryTextSizeSp - 4f else labelStyle.primaryTextSizeSp - 2f
+    val baseline = top + rowHeight / 2f - (labelPaint.descent() + labelPaint.ascent()) / 2f
+    drawContext.canvas.nativeCanvas.drawText(label, left + keyWidth / 2f, baseline, labelPaint)
+
+    val secondary = display.secondaryIcon?.fallbackLabel() ?: display.secondaryLabel
+    if (!secondary.isNullOrBlank()) {
+        labelPaint.textSize = density * labelStyle.secondaryTextSizeSp
+        val secondaryBaseline = top + rowHeight * 0.28f - (labelPaint.descent() + labelPaint.ascent()) / 2f
+        drawContext.canvas.nativeCanvas.drawText(secondary, left + keyWidth * 0.78f, secondaryBaseline, labelPaint)
     }
 }
 
@@ -256,11 +885,35 @@ private fun GeometryControls(
     geometry: KeyboardGeometry,
     onChange: (GeometryField, Float) -> Unit,
 ) {
-    GeometrySlider("Radius", geometry.keyRadiusPx, orientation, GeometryField.KEY_RADIUS, onChange)
-    GeometrySlider("Border", geometry.borderWidthPx, orientation, GeometryField.BORDER_WIDTH, onChange)
-    GeometrySlider("Key gap", geometry.keyGapPx, orientation, GeometryField.KEY_GAP, onChange)
-    GeometrySlider("Margin", geometry.outerMarginPx, orientation, GeometryField.OUTER_MARGIN, onChange)
-    GeometrySlider("Row gap", geometry.rowGapPx, orientation, GeometryField.ROW_GAP, onChange)
+    GeometrySlider(
+        "Height",
+        geometry.keyboardHeightPercent,
+        orientation,
+        GeometryField.KEYBOARD_HEIGHT_PERCENT,
+        onChange,
+        unit = "%",
+    )
+    GeometrySlider("Radius", geometry.keyRadiusDp, orientation, GeometryField.KEY_RADIUS, onChange)
+    GeometrySlider("Border", geometry.borderWidthDp, orientation, GeometryField.BORDER_WIDTH, onChange)
+    GeometrySlider("Key gap", geometry.keyGapDp, orientation, GeometryField.KEY_GAP, onChange)
+    GeometrySlider("L/R margin", geometry.horizontalMarginDp, orientation, GeometryField.HORIZONTAL_MARGIN, onChange)
+    GeometrySlider("Bottom margin", geometry.bottomMarginDp, orientation, GeometryField.BOTTOM_MARGIN, onChange)
+    GeometrySlider("Row gap", geometry.rowGapDp, orientation, GeometryField.ROW_GAP, onChange)
+}
+
+@Composable
+private fun EdgeKeyWidthSlider(
+    value: Float,
+    onChange: (Float) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("Rows 2-4 edge key width: ${(value * 100).toInt()}%")
+        Slider(
+            value = value.coerceIn(0.6f, 1.1f),
+            onValueChange = onChange,
+            valueRange = 0.6f..1.1f,
+        )
+    }
 }
 
 @Composable
@@ -270,15 +923,75 @@ private fun GeometrySlider(
     orientation: GeometryOrientation,
     field: GeometryField,
     onChange: (GeometryField, Float) -> Unit,
+    unit: String = "px",
 ) {
-    val max = if (field == GeometryField.BORDER_WIDTH) 8f else 24f
+    val min = field.sliderMin
+    val max = field.sliderMax
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("${orientation.name.lowercase().replaceFirstChar { it.uppercase() }} $label: ${value.toInt()}px")
+        Text("${orientation.name.lowercase().replaceFirstChar { it.uppercase() }} $label: ${value.toInt()}$unit")
         Slider(
-            value = value.coerceIn(0f, max),
+            value = value.coerceIn(min, max),
             onValueChange = { onChange(field, it) },
-            valueRange = 0f..max,
+            valueRange = min..max,
         )
+    }
+}
+
+private val GeometryField.sliderMin: Float
+    get() = when (this) {
+        GeometryField.KEYBOARD_HEIGHT_PERCENT -> 15f
+        else -> 0f
+    }
+
+private val GeometryField.sliderMax: Float
+    get() = when (this) {
+        GeometryField.KEYBOARD_HEIGHT_PERCENT -> 75f
+        GeometryField.BORDER_WIDTH -> 8f
+        GeometryField.HORIZONTAL_MARGIN,
+        GeometryField.BOTTOM_MARGIN -> 40f
+        else -> 32f
+    }
+
+@Composable
+private fun KeyLabelStyleSlider(
+    label: String,
+    value: Float,
+    field: KeyLabelStyleField,
+    onChange: (KeyLabelStyleField, Float) -> Unit,
+) {
+    val min = field.sliderMin
+    val max = field.sliderMax
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("$label: ${field.displayValue(value)}")
+        Slider(
+            value = value.coerceIn(min, max),
+            onValueChange = { onChange(field, it) },
+            valueRange = min..max,
+        )
+    }
+}
+
+private val KeyLabelStyleField.sliderMin: Float
+    get() = when (this) {
+        KeyLabelStyleField.PRIMARY_TEXT_SIZE -> 10f
+        KeyLabelStyleField.SECONDARY_TEXT_SIZE -> 6f
+        KeyLabelStyleField.FONT_WEIGHT -> 300f
+        KeyLabelStyleField.LABEL_OPACITY -> 0.35f
+    }
+
+private val KeyLabelStyleField.sliderMax: Float
+    get() = when (this) {
+        KeyLabelStyleField.PRIMARY_TEXT_SIZE -> 24f
+        KeyLabelStyleField.SECONDARY_TEXT_SIZE -> 16f
+        KeyLabelStyleField.FONT_WEIGHT -> 900f
+        KeyLabelStyleField.LABEL_OPACITY -> 1f
+    }
+
+private fun KeyLabelStyleField.displayValue(value: Float): String {
+    return when (this) {
+        KeyLabelStyleField.LABEL_OPACITY -> "${(value * 100).toInt()}%"
+        KeyLabelStyleField.FONT_WEIGHT -> value.toInt().toString()
+        else -> "${value.toInt()}sp"
     }
 }
 
@@ -298,19 +1011,31 @@ private val optionalKeyControls = listOf(
     OptionalKeyControl("ctrl", "Ctrl"),
     OptionalKeyControl("alt", "Alt"),
     OptionalKeyControl("tab", "Tab"),
+    OptionalKeyControl("fn", "Fn"),
+    OptionalKeyControl("settings", "Settings"),
+    OptionalKeyControl("mic", "Mic"),
+    OptionalKeyControl("num_toggle", "Numpad toggle"),
     OptionalKeyControl("left", "Left arrow"),
-    OptionalKeyControl("right", "Right arrow"),
     OptionalKeyControl("up", "Up arrow"),
     OptionalKeyControl("down", "Down arrow"),
+    OptionalKeyControl("right", "Right arrow"),
 )
 
 private val actionSlots = listOf(
     ActionSlotControl("esc", "Esc slot", KeyAction(KeyActionType.ESCAPE)),
+    ActionSlotControl("tab", "Tab slot", KeyAction(KeyActionType.TAB)),
     ActionSlotControl("ctrl", "Ctrl slot", KeyAction(KeyActionType.CTRL)),
     ActionSlotControl("alt", "Alt slot", KeyAction(KeyActionType.ALT)),
-    ActionSlotControl("tab", "Tab slot", KeyAction(KeyActionType.TAB)),
+    ActionSlotControl("fn", "Fn slot", KeyAction(KeyActionType.SWITCH_FN)),
+    ActionSlotControl("symbols", "Sym/Fn slot", KeyAction(KeyActionType.SWITCH_SYMBOLS)),
+    ActionSlotControl("settings", "Settings slot", KeyAction(KeyActionType.SETTINGS)),
     ActionSlotControl("left", "Left slot", KeyAction(KeyActionType.ARROW_LEFT)),
+    ActionSlotControl("up", "Up slot", KeyAction(KeyActionType.ARROW_UP)),
+    ActionSlotControl("down", "Down slot", KeyAction(KeyActionType.ARROW_DOWN)),
     ActionSlotControl("right", "Right slot", KeyAction(KeyActionType.ARROW_RIGHT)),
+    ActionSlotControl("enter", "Enter slot", KeyAction(KeyActionType.ENTER)),
+    ActionSlotControl("delete", "Delete slot", KeyAction(KeyActionType.DELETE)),
+    ActionSlotControl("mic", "Mic slot", KeyAction(KeyActionType.MICROPHONE)),
     ActionSlotControl("num_toggle", "Numpad slot", KeyAction(KeyActionType.NUMPAD_TOGGLE)),
 )
 
@@ -319,17 +1044,69 @@ private val actionCycle = listOf(
     KeyAction(KeyActionType.TAB),
     KeyAction(KeyActionType.CTRL),
     KeyAction(KeyActionType.ALT),
+    KeyAction(KeyActionType.SWITCH_FN),
+    KeyAction(KeyActionType.DELETE),
+    KeyAction(KeyActionType.ENTER),
     KeyAction(KeyActionType.ARROW_LEFT),
+    KeyAction(KeyActionType.ARROW_UP),
+    KeyAction(KeyActionType.ARROW_DOWN),
     KeyAction(KeyActionType.ARROW_RIGHT),
     KeyAction(KeyActionType.NUMPAD_TOGGLE),
     KeyAction(KeyActionType.SWITCH_SYMBOLS),
     KeyAction(KeyActionType.SETTINGS),
+    KeyAction(KeyActionType.MICROPHONE),
+    KeyAction.keyEvent(KeyEvent.KEYCODE_MOVE_HOME, "Home"),
+    KeyAction.keyEvent(KeyEvent.KEYCODE_MOVE_END, "End"),
+    KeyAction.keyEvent(KeyEvent.KEYCODE_PAGE_UP, "PgUp"),
+    KeyAction.keyEvent(KeyEvent.KEYCODE_PAGE_DOWN, "PgDn"),
+    KeyAction.keyEvent(KeyEvent.KEYCODE_INSERT, "Ins"),
+    KeyAction.keyEvent(KeyEvent.KEYCODE_FORWARD_DEL, "FDel"),
     KeyAction.text("|"),
     KeyAction.text("~"),
 )
 
+private data class KeyDisplayControl(
+    val id: String,
+    val label: String,
+    val icons: List<KeyIcon>,
+) {
+    fun nextIcon(current: KeyIcon?): KeyIcon? {
+        val cycle = listOf<KeyIcon?>(null) + icons
+        val index = cycle.indexOf(current).takeIf { it >= 0 } ?: 0
+        return cycle[(index + 1).floorMod(cycle.size)]
+    }
+}
+
+private val keyDisplayControls = listOf(
+    KeyDisplayControl("esc", "Esc", listOf(KeyIcon.ESC)),
+    KeyDisplayControl("tab", "Tab", listOf(KeyIcon.TAB)),
+    KeyDisplayControl("ctrl", "Ctrl", listOf(KeyIcon.CTRL)),
+    KeyDisplayControl("alt", "Alt", listOf(KeyIcon.ALT)),
+    KeyDisplayControl("shift", "Left Shift", listOf(KeyIcon.SHIFT)),
+    KeyDisplayControl("shift_right", "Right Shift", listOf(KeyIcon.SHIFT)),
+    KeyDisplayControl("symbols", "Symbols", listOf(KeyIcon.SYMBOLS)),
+    KeyDisplayControl("fn", "Fn", listOf(KeyIcon.FN)),
+    KeyDisplayControl("space", "Space", listOf(KeyIcon.SPACE_BAR)),
+    KeyDisplayControl("settings", "Settings", listOf(KeyIcon.GEAR)),
+    KeyDisplayControl("delete", "Backspace", listOf(KeyIcon.BACKSPACE)),
+    KeyDisplayControl("enter", "Enter", listOf(KeyIcon.ENTER)),
+    KeyDisplayControl("mic", "Mic", listOf(KeyIcon.MIC)),
+    KeyDisplayControl("num_toggle", "Numpad", listOf(KeyIcon.NUMPAD)),
+    KeyDisplayControl("left", "Left arrow", listOf(KeyIcon.ARROW_LEFT)),
+    KeyDisplayControl("up", "Up arrow", listOf(KeyIcon.ARROW_UP)),
+    KeyDisplayControl("down", "Down arrow", listOf(KeyIcon.ARROW_DOWN)),
+    KeyDisplayControl("right", "Right arrow", listOf(KeyIcon.ARROW_RIGHT)),
+)
+
+private const val PREVIEW_TOP_MARGIN_DP = 4f
+
 private fun nextAction(current: KeyAction): KeyAction {
-    val index = actionCycle.indexOfFirst { it.type == current.type && it.text == current.text }
+    val index = actionCycle.indexOfFirst { action ->
+        action.type == current.type &&
+            action.text == current.text &&
+            action.keyCode == current.keyCode &&
+            action.label == current.label
+    }
     return actionCycle[(index + 1).floorMod(actionCycle.size)]
 }
 
@@ -341,3 +1118,27 @@ private val ThemePreset.label: String
     get() = name.lowercase().split("_").joinToString(" ") { word ->
         word.replaceFirstChar { it.uppercase() }
     }
+
+private val GlidePathTolerance.label: String
+    get() = when (this) {
+        GlidePathTolerance.STRICT -> "Strict"
+        GlidePathTolerance.BALANCED -> "Balanced"
+        GlidePathTolerance.LOOSE -> "Loose"
+    }
+
+private val GlideImportedWordsPriority.label: String
+    get() = when (this) {
+        GlideImportedWordsPriority.NORMAL -> "Normal"
+        GlideImportedWordsPriority.HIGH -> "High"
+    }
+
+private val GlideRawFallbackMode.label: String
+    get() = when (this) {
+        GlideRawFallbackMode.OFF -> "Off"
+        GlideRawFallbackMode.SHORT_ONLY -> "Short paths only"
+        GlideRawFallbackMode.ALWAYS -> "Always"
+    }
+
+private fun Int.withAlpha(alpha: Int): Int {
+    return (this and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
+}

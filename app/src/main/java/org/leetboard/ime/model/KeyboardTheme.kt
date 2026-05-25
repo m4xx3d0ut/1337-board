@@ -12,11 +12,13 @@ enum class ThemePreset {
 }
 
 data class KeyboardGeometry(
-    val keyRadiusPx: Float = 10f,
-    val borderWidthPx: Float = 2f,
-    val keyGapPx: Float = 6f,
-    val outerMarginPx: Float = 8f,
-    val rowGapPx: Float = 6f,
+    val keyboardHeightPercent: Float = 34f,
+    val keyRadiusDp: Float = 10f,
+    val borderWidthDp: Float = 2f,
+    val keyGapDp: Float = 6f,
+    val horizontalMarginDp: Float = 16f,
+    val bottomMarginDp: Float = 12f,
+    val rowGapDp: Float = 6f,
 )
 
 data class KeyboardColors(
@@ -33,11 +35,13 @@ data class KeyboardTheme(
     val colors: KeyboardColors,
     val portrait: KeyboardGeometry = KeyboardGeometry(),
     val landscape: KeyboardGeometry = KeyboardGeometry(
-        keyRadiusPx = 8f,
-        borderWidthPx = 2f,
-        keyGapPx = 5f,
-        outerMarginPx = 8f,
-        rowGapPx = 5f,
+        keyboardHeightPercent = 48f,
+        keyRadiusDp = 8f,
+        borderWidthDp = 2f,
+        keyGapDp = 5f,
+        horizontalMarginDp = 24f,
+        bottomMarginDp = 12f,
+        rowGapDp = 5f,
     ),
 ) {
     companion object {
