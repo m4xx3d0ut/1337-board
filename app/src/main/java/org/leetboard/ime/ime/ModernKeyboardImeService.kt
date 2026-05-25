@@ -52,6 +52,7 @@ class ModernKeyboardImeService : InputMethodService() {
     private var contextHiddenKeyIds: Set<String> = emptySet()
     private var speechUiState = SpeechUiState.IDLE
     private var speechResetJob: Job? = null
+    private var glideSuggestionsJob: Job? = null
     private var pendingGlideUndo: PendingGlideUndo? = null
     private var pendingGlideCorrection: PendingGlideCorrection? = null
     private var glideSuggestions: List<String> = emptyList()
@@ -85,6 +86,7 @@ class ModernKeyboardImeService : InputMethodService() {
 
     override fun onDestroy() {
         speechResetJob?.cancel()
+        glideSuggestionsJob?.cancel()
         speechInputEngine.destroy()
         serviceScope.cancel()
         super.onDestroy()
@@ -124,7 +126,7 @@ class ModernKeyboardImeService : InputMethodService() {
         speechUiState = SpeechUiState.IDLE
         pendingGlideUndo = null
         pendingGlideCorrection = null
-        glideSuggestions = emptyList()
+        clearGlideSuggestions()
         keyboardState = KeyboardState()
         renderKeyboard()
     }
@@ -179,7 +181,7 @@ class ModernKeyboardImeService : InputMethodService() {
         val outputWord = formatGlideWord(word, heldModifiers)
         val committedText = "$outputWord "
         currentInputConnection?.commitText(committedText, 1)
-        glideSuggestions = candidates.map { candidate -> candidate.word }
+        scheduleGlideSuggestions(candidates.drop(1).map { candidate -> candidate.word })
         pendingGlideUndo = PendingGlideUndo(
             path = path,
             word = word,
@@ -211,7 +213,7 @@ class ModernKeyboardImeService : InputMethodService() {
         updatePendingGlideCorrection(action, heldModifiers)
         if (action.type != KeyActionType.DELETE) {
             pendingGlideUndo = null
-            glideSuggestions = emptyList()
+            clearGlideSuggestions()
         }
         when (action.type) {
             KeyActionType.TOGGLE_SPEECH_INPUT -> {
@@ -241,6 +243,8 @@ class ModernKeyboardImeService : InputMethodService() {
         val undo = pendingGlideUndo ?: return
         val normalizedWord = normalizeWord(word) ?: return
         val pathSignature = gestureTypingEngine.pathSignature(undo.path) ?: return
+        glideSuggestionsJob?.cancel()
+        glideSuggestionsJob = null
         val replacementWord = formatReplacementWord(normalizedWord, undo.committedText)
         val committedText = "$replacementWord "
         currentInputConnection?.deleteSurroundingText(undo.committedText.length, 0)
@@ -364,9 +368,30 @@ class ModernKeyboardImeService : InputMethodService() {
             null
         }
         pendingGlideUndo = null
-        glideSuggestions = emptyList()
+        clearGlideSuggestions()
         keyboardState = keyboardState.clearTransientModifiers()
         return true
+    }
+
+    private fun scheduleGlideSuggestions(words: List<String>) {
+        glideSuggestionsJob?.cancel()
+        glideSuggestionsJob = null
+        glideSuggestions = emptyList()
+        val suggestions = words.distinct().take(GLIDE_SUGGESTION_LIMIT)
+        if (suggestions.isEmpty()) return
+        glideSuggestionsJob = serviceScope.launch {
+            delay(GLIDE_SUGGESTION_DELAY_MS)
+            if (pendingGlideUndo != null) {
+                glideSuggestions = suggestions
+                renderKeyboard()
+            }
+        }
+    }
+
+    private fun clearGlideSuggestions() {
+        glideSuggestionsJob?.cancel()
+        glideSuggestionsJob = null
+        glideSuggestions = emptyList()
     }
 
     private fun updatePendingGlideCorrection(action: KeyAction, heldModifiers: HeldModifiers) {
@@ -463,5 +488,6 @@ class ModernKeyboardImeService : InputMethodService() {
         const val SPEECH_STATUS_RESET_MS = 1600L
         const val AUTO_CAP_CONTEXT_CHARS = 8
         const val GLIDE_SUGGESTION_LIMIT = 5
+        const val GLIDE_SUGGESTION_DELAY_MS = 450L
     }
 }

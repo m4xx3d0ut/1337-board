@@ -695,7 +695,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         const val REPEAT_INTERVAL_MS = 65L
         const val LONG_PRESS_DELAY_MS = 520L
         const val SWIPE_UP_THRESHOLD_PX = 44f
-        const val GLIDE_START_THRESHOLD_DP = 12f
+        const val GLIDE_START_THRESHOLD_DP = 18f
         const val GLIDE_TRACE_WIDTH_DP = 4f
         const val GLIDE_TRACE_ALPHA = 190
         const val MIN_GLIDE_KEYS = 2
