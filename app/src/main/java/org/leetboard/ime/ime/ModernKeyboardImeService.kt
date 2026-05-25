@@ -1,9 +1,12 @@
 package org.leetboard.ime.ime
 
 import android.inputmethodservice.InputMethodService
-import android.widget.Toast
+import android.os.Build
+import android.view.WindowInsets
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedTextRequest
+import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,7 +26,9 @@ import org.leetboard.ime.engine.SpeechStartResult
 import org.leetboard.ime.engine.TextContextPolicy
 import org.leetboard.ime.engine.ThemeEngine
 import org.leetboard.ime.engine.applyKeyboardCapitalization
+import org.leetboard.ime.engine.findPendingGlideReplacementSpan
 import org.leetboard.ime.engine.normalizeWord
+import org.leetboard.ime.engine.pendingGlideCommitMatchesBeforeCursor
 import org.leetboard.ime.model.HeldModifiers
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
@@ -111,6 +116,11 @@ class ModernKeyboardImeService : InputMethodService() {
         }
     }
 
+    override fun onWindowShown() {
+        super.onWindowShown()
+        hideSystemImeSwitcher()
+    }
+
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         val speechAllowed = speechInputEngine.isAvailable(attribute)
@@ -163,6 +173,13 @@ class ModernKeyboardImeService : InputMethodService() {
             preferences.swipeUpActionsEnabled,
             glideSuggestions,
         )
+        hideSystemImeSwitcher()
+    }
+
+    private fun hideSystemImeSwitcher() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window?.window?.decorView?.windowInsetsController?.hide(WindowInsets.Type.captionBar())
+        }
     }
 
     private fun handleGlide(path: List<String>, heldModifiers: HeldModifiers) {
@@ -243,12 +260,9 @@ class ModernKeyboardImeService : InputMethodService() {
         val undo = pendingGlideUndo ?: return
         val normalizedWord = normalizeWord(word) ?: return
         val pathSignature = gestureTypingEngine.pathSignature(undo.path) ?: return
-        glideSuggestionsJob?.cancel()
-        glideSuggestionsJob = null
         val replacementWord = formatReplacementWord(normalizedWord, undo.committedText)
         val committedText = "$replacementWord "
-        currentInputConnection?.deleteSurroundingText(undo.committedText.length, 0)
-        currentInputConnection?.commitText(committedText, 1)
+        if (!replacePendingGlideCommit(undo.committedText, committedText)) return
         recordGlideCorrection(
             pathSignature = pathSignature,
             replacementWord = normalizedWord,
@@ -258,7 +272,34 @@ class ModernKeyboardImeService : InputMethodService() {
             word = normalizedWord,
             committedText = committedText,
         )
-        glideSuggestions = glideSuggestions.filterNot { suggestion -> suggestion == normalizedWord }
+        clearGlideSuggestions()
+    }
+
+    private fun replacePendingGlideCommit(pendingCommittedText: String, replacementText: String): Boolean {
+        val inputConnection = currentInputConnection ?: return false
+        val textBeforeCursor = inputConnection.getTextBeforeCursor(pendingCommittedText.length, 0)
+        if (pendingGlideCommitMatchesBeforeCursor(textBeforeCursor, pendingCommittedText)) {
+            return inputConnection.deleteSurroundingText(pendingCommittedText.length, 0) &&
+                inputConnection.commitText(replacementText, 1)
+        }
+
+        val extractedText = inputConnection.getExtractedText(ExtractedTextRequest(), 0) ?: return false
+        val span = findPendingGlideReplacementSpan(
+            text = extractedText.text,
+            selectionStart = extractedText.selectionStart,
+            selectionEnd = extractedText.selectionEnd,
+            pendingCommittedText = pendingCommittedText,
+        ) ?: return false
+        val absoluteStart = extractedText.startOffset + span.start
+        val absoluteEnd = extractedText.startOffset + span.end
+        if (absoluteStart < 0 || absoluteEnd < absoluteStart) return false
+        if (!inputConnection.setSelection(absoluteStart, absoluteEnd)) return false
+        return if (inputConnection.commitText(replacementText, 1)) {
+            true
+        } else {
+            inputConnection.setSelection(absoluteEnd, absoluteEnd)
+            false
+        }
     }
 
     private fun featureActiveKeyIds(): Set<String> = buildSet {

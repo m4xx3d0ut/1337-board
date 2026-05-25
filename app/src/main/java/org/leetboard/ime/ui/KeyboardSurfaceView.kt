@@ -90,7 +90,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         glideSuggestions: List<String> = emptyList(),
     ) {
         val nextSuggestions = glideSuggestions.take(MAX_SUGGESTIONS)
-        val suggestionsChanged = this.glideSuggestions != nextSuggestions
         this.layout = layout
         this.theme = theme
         this.activeKeyIds = activeKeyIds
@@ -100,14 +99,12 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         this.glideTypingEnabled = glideTypingEnabled
         this.swipeUpActionsEnabled = swipeUpActionsEnabled
         this.glideSuggestions = nextSuggestions
-        if (suggestionsChanged) requestLayout()
         invalidate()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val geometry = currentGeometry()
-        val suggestionHeight = suggestionStripHeightPx()
-        val desiredHeight = (resources.displayMetrics.heightPixels * (geometry.keyboardHeightPercent / 100f) + suggestionHeight)
+        val desiredHeight = (resources.displayMetrics.heightPixels * (geometry.keyboardHeightPercent / 100f))
             .toInt()
             .coerceAtLeast((resources.displayMetrics.density * MIN_HEIGHT_DP).toInt())
         val height = resolveSize(desiredHeight, heightMeasureSpec)
@@ -125,12 +122,11 @@ class KeyboardSurfaceView(context: Context) : View(context) {
 
         val rows = currentLayout.rows
         if (rows.isEmpty()) return
-        val suggestionHeight = suggestionStripHeightPx()
-        if (suggestionHeight > 0f) drawSuggestionStrip(canvas, suggestionHeight)
-        val keyboardHeight = height - suggestionHeight
+        val keyboardHeight = height.toFloat()
         val rowHeight = (keyboardHeight - geometryPx.topMargin - geometryPx.bottomMargin - geometryPx.rowGap * (rows.size - 1)) / rows.size
-        var top = suggestionHeight + geometryPx.topMargin
-        rows.forEach { row ->
+        var top = geometryPx.topMargin
+        var topRowRect: RectF? = null
+        rows.forEachIndexed { rowIndex, row ->
             val occupiedWeight = row.startInsetWeight + row.endInsetWeight +
                 row.keys.sumOf { it.weight.toDouble() }.toFloat()
             val layoutWeight = row.layoutWeight?.coerceAtLeast(occupiedWeight) ?: occupiedWeight
@@ -144,6 +140,9 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             val availableWidth = width - geometryPx.horizontalMargin * 2 - geometryPx.keyGap * gapCount
             val widthUnit = availableWidth / layoutWeight
             var left = geometryPx.horizontalMargin + widthUnit * (alignmentInsetWeight + row.startInsetWeight)
+            if (rowIndex == 0) {
+                topRowRect = RectF(0f, top, width.toFloat(), top + rowHeight)
+            }
             row.keys.forEach { key ->
                 val keyWidth = widthUnit * key.weight
                 val rect = RectF(left, top, left + keyWidth, top + rowHeight)
@@ -161,6 +160,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             }
         }
         drawGlideTrace(canvas)
+        topRowRect?.let { rect -> drawSuggestionOverlay(canvas, rect) }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -390,21 +390,30 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         strokePaint.strokeCap = Paint.Cap.BUTT
     }
 
-    private fun drawSuggestionStrip(canvas: Canvas, stripHeight: Float) {
+    private fun drawSuggestionOverlay(canvas: Canvas, topRowRect: RectF) {
+        val suggestions = glideSuggestions.take(MAX_SUGGESTIONS)
+        if (suggestions.isEmpty()) return
+
         val density = resources.displayMetrics.density
         val verticalPadding = density * SUGGESTION_VERTICAL_PADDING_DP
         val horizontalMargin = currentGeometry().horizontalMarginDp * density
         val gap = density * SUGGESTION_GAP_DP
-        val suggestions = glideSuggestions.take(MAX_SUGGESTIONS)
-        if (suggestions.isEmpty()) return
+        val overlayBottom = topRowRect.top + topRowRect.height() * SUGGESTION_OVERLAY_ROW_FRACTION
+        val overlayRect = RectF(topRowRect.left, topRowRect.top, topRowRect.right, overlayBottom)
         val availableWidth = width - horizontalMargin * 2 - gap * (suggestions.size - 1)
         val itemWidth = availableWidth / suggestions.size
-        val itemHeight = stripHeight - verticalPadding * 2
-        fillPaint.color = theme.colors.background
-        canvas.drawRect(0f, 0f, width.toFloat(), stripHeight, fillPaint)
+        val itemHeight = overlayRect.height() - verticalPadding * 2
+        if (itemHeight <= 0f || itemWidth <= 0f) return
+        fillPaint.color = theme.colors.background.withAlpha(SUGGESTION_OVERLAY_BG_ALPHA)
+        canvas.drawRect(overlayRect, fillPaint)
         suggestions.forEachIndexed { index, word ->
             val left = horizontalMargin + index * (itemWidth + gap)
-            val rect = RectF(left, verticalPadding, left + itemWidth, verticalPadding + itemHeight)
+            val rect = RectF(
+                left,
+                overlayRect.top + verticalPadding,
+                left + itemWidth,
+                overlayRect.top + verticalPadding + itemHeight,
+            )
             fillPaint.color = if (index == 0) theme.colors.activeModifierFill else theme.colors.keyFill
             strokePaint.color = theme.colors.keyStroke
             strokePaint.strokeWidth = density
@@ -601,10 +610,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         return hitSuggestions.firstOrNull { it.rect.contains(x, y) }
     }
 
-    private fun suggestionStripHeightPx(): Float {
-        return if (glideSuggestions.isEmpty()) 0f else resources.displayMetrics.density * SUGGESTION_STRIP_HEIGHT_DP
-    }
-
     private fun pressedKey(pointerId: Int): KeySpec? {
         val id = pointerPresses[pointerId]?.keyId ?: return null
         return hitKeys.firstOrNull { it.key.id == id }?.key
@@ -702,8 +707,9 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         const val MIN_HEIGHT_DP = 160f
         const val TOP_MARGIN_DP = 4f
         const val BOLD_WEIGHT = 600f
-        const val SUGGESTION_STRIP_HEIGHT_DP = 42f
-        const val SUGGESTION_VERTICAL_PADDING_DP = 5f
+        const val SUGGESTION_OVERLAY_ROW_FRACTION = 0.5f
+        const val SUGGESTION_OVERLAY_BG_ALPHA = 218
+        const val SUGGESTION_VERTICAL_PADDING_DP = 3f
         const val SUGGESTION_TEXT_HORIZONTAL_PADDING_DP = 12f
         const val SUGGESTION_GAP_DP = 6f
         const val SUGGESTION_TEXT_SP = 15f
