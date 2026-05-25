@@ -2,10 +2,12 @@ package org.leetboard.ime.ime
 
 import android.inputmethodservice.InputMethodService
 import android.os.Build
+import android.view.KeyEvent
 import android.view.WindowInsets
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
+import android.view.inputmethod.InputConnection
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +40,7 @@ import org.leetboard.ime.model.activeKeyIds
 import org.leetboard.ime.model.clearTransientModifiers
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.PreferenceRepository
-import org.leetboard.ime.ui.KeyboardSurfaceView
+import org.leetboard.ime.ui.KeyboardInputView
 
 class ModernKeyboardImeService : InputMethodService() {
     private val layoutEngine = LayoutEngine()
@@ -51,13 +53,14 @@ class ModernKeyboardImeService : InputMethodService() {
     private lateinit var speechInputEngine: SpeechInputEngine
     private lateinit var preferenceRepository: PreferenceRepository
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var keyboardView: KeyboardSurfaceView? = null
+    private var keyboardInputView: KeyboardInputView? = null
     private var keyboardState = KeyboardState()
     private var preferences = KeyboardPreferences.defaults()
     private var contextHiddenKeyIds: Set<String> = emptySet()
     private var speechUiState = SpeechUiState.IDLE
     private var speechResetJob: Job? = null
     private var glideSuggestionsJob: Job? = null
+    private var glideCorrectionRecordJob: Job? = null
     private var pendingGlideUndo: PendingGlideUndo? = null
     private var pendingGlideCorrection: PendingGlideCorrection? = null
     private var glideSuggestions: List<String> = emptyList()
@@ -78,7 +81,7 @@ class ModernKeyboardImeService : InputMethodService() {
                         emptyMap()
                     },
                 )
-                if (!nextPreferences.glideCorrectionLearningEnabled) pendingGlideCorrection = null
+                if (!nextPreferences.glideCorrectionLearningEnabled) clearPendingGlideCorrection()
                 preferences = nextPreferences
                 if (!preferences.speechInputEnabled && speechUiState != SpeechUiState.IDLE) {
                     speechInputEngine.cancel()
@@ -92,19 +95,20 @@ class ModernKeyboardImeService : InputMethodService() {
     override fun onDestroy() {
         speechResetJob?.cancel()
         glideSuggestionsJob?.cancel()
+        glideCorrectionRecordJob?.cancel()
         speechInputEngine.destroy()
         serviceScope.cancel()
         super.onDestroy()
     }
 
     override fun onCreateInputView(): View {
-        return KeyboardSurfaceView(this).also { view ->
-            keyboardView = view
-            view.onKey = { action, heldModifiers ->
+        return KeyboardInputView(this).also { view ->
+            keyboardInputView = view
+            view.keyboardView.onKey = { action, heldModifiers ->
                 handleKeyAction(action, heldModifiers)
                 renderKeyboard()
             }
-            view.onGlide = { path, heldModifiers ->
+            view.keyboardView.onGlide = { path, heldModifiers ->
                 handleGlide(path, heldModifiers)
                 renderKeyboard()
             }
@@ -135,7 +139,7 @@ class ModernKeyboardImeService : InputMethodService() {
         speechInputEngine.cancel()
         speechUiState = SpeechUiState.IDLE
         pendingGlideUndo = null
-        pendingGlideCorrection = null
+        clearPendingGlideCorrection()
         clearGlideSuggestions()
         keyboardState = KeyboardState()
         renderKeyboard()
@@ -158,7 +162,7 @@ class ModernKeyboardImeService : InputMethodService() {
                 )
             },
         ).withSpeechUiState()
-        keyboardView?.render(
+        keyboardInputView?.render(
             layout,
             themeEngine.resolve(
                 preset = preferences.themePreset,
@@ -277,29 +281,77 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun replacePendingGlideCommit(pendingCommittedText: String, replacementText: String): Boolean {
         val inputConnection = currentInputConnection ?: return false
-        val textBeforeCursor = inputConnection.getTextBeforeCursor(pendingCommittedText.length, 0)
-        if (pendingGlideCommitMatchesBeforeCursor(textBeforeCursor, pendingCommittedText)) {
-            return inputConnection.deleteSurroundingText(pendingCommittedText.length, 0) &&
-                inputConnection.commitText(replacementText, 1)
-        }
+        inputConnection.beginBatchEdit()
+        return try {
+            inputConnection.finishComposingText()
+            val extractedText = inputConnection.getExtractedText(ExtractedTextRequest(), 0)
+            if (extractedText != null) {
+                val span = findPendingGlideReplacementSpan(
+                    text = extractedText.text,
+                    selectionStart = extractedText.selectionStart,
+                    selectionEnd = extractedText.selectionEnd,
+                    pendingCommittedText = pendingCommittedText,
+                )
+                if (span != null) {
+                    val absoluteStart = extractedText.startOffset + span.start
+                    val absoluteEnd = extractedText.startOffset + span.end
+                    if (absoluteStart >= 0 && absoluteEnd >= absoluteStart) {
+                        if (inputConnection.setSelection(absoluteStart, absoluteEnd) &&
+                            inputConnection.commitText(replacementText, 1)
+                        ) {
+                            return true
+                        }
+                        inputConnection.setSelection(absoluteEnd, absoluteEnd)
+                    }
+                }
+            }
 
-        val extractedText = inputConnection.getExtractedText(ExtractedTextRequest(), 0) ?: return false
-        val span = findPendingGlideReplacementSpan(
-            text = extractedText.text,
-            selectionStart = extractedText.selectionStart,
-            selectionEnd = extractedText.selectionEnd,
-            pendingCommittedText = pendingCommittedText,
-        ) ?: return false
-        val absoluteStart = extractedText.startOffset + span.start
-        val absoluteEnd = extractedText.startOffset + span.end
-        if (absoluteStart < 0 || absoluteEnd < absoluteStart) return false
-        if (!inputConnection.setSelection(absoluteStart, absoluteEnd)) return false
-        return if (inputConnection.commitText(replacementText, 1)) {
-            true
-        } else {
-            inputConnection.setSelection(absoluteEnd, absoluteEnd)
-            false
+            if (isTermuxInput()) {
+                return replaceTerminalGlideCommit(pendingCommittedText, replacementText)
+            }
+            val textBeforeCursor = inputConnection.getTextBeforeCursor(pendingCommittedText.length, 0)
+            pendingGlideCommitMatchesBeforeCursor(textBeforeCursor, pendingCommittedText) &&
+                inputConnection.deleteSurroundingText(pendingCommittedText.length, 0) &&
+                inputConnection.commitText(replacementText, 1)
+        } finally {
+            inputConnection.endBatchEdit()
         }
+    }
+
+    private fun replaceTerminalGlideCommit(pendingCommittedText: String, replacementText: String): Boolean {
+        val inputConnection = currentInputConnection ?: return false
+        if (!isTermuxInput() || pendingCommittedText.isEmpty()) return false
+        sendBackspaces(inputConnection, pendingCommittedText.length)
+        return inputConnection.commitText(replacementText, 1)
+    }
+
+    private fun deletePendingGlideCommit(pendingCommittedText: String): Boolean {
+        val inputConnection = currentInputConnection ?: return false
+        if (isTermuxInput()) {
+            sendBackspaces(inputConnection, pendingCommittedText.length)
+            return true
+        }
+        return inputConnection.deleteSurroundingText(pendingCommittedText.length, 0)
+    }
+
+    private fun sendBackspaces(inputConnection: InputConnection, count: Int) {
+        repeat(count) {
+            sendBackspaceKey(inputConnection)
+        }
+    }
+
+    private fun sendBackspaceKey(inputConnection: InputConnection) {
+        val eventTime = System.currentTimeMillis()
+        inputConnection.sendKeyEvent(
+            KeyEvent(eventTime, eventTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL, 0),
+        )
+        inputConnection.sendKeyEvent(
+            KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL, 0),
+        )
+    }
+
+    private fun isTermuxInput(): Boolean {
+        return currentInputEditorInfo?.packageName?.startsWith(TERMUX_PACKAGE_PREFIX) == true
     }
 
     private fun featureActiveKeyIds(): Set<String> = buildSet {
@@ -399,7 +451,7 @@ class ModernKeyboardImeService : InputMethodService() {
         val undo = pendingGlideUndo ?: return false
         val modifiers = keyboardState.modifiers
         if (heldModifiers.isActive() || modifiers.shift || modifiers.shiftLocked || modifiers.ctrl || modifiers.alt) return false
-        currentInputConnection?.deleteSurroundingText(undo.committedText.length, 0)
+        deletePendingGlideCommit(undo.committedText)
         gestureTypingEngine.rejectCandidate(undo.path, undo.word)
         pendingGlideCorrection = if (preferences.glideCorrectionLearningEnabled) {
             gestureTypingEngine.pathSignature(undo.path)?.let { pathSignature ->
@@ -411,6 +463,8 @@ class ModernKeyboardImeService : InputMethodService() {
         pendingGlideUndo = null
         clearGlideSuggestions()
         keyboardState = keyboardState.clearTransientModifiers()
+        glideCorrectionRecordJob?.cancel()
+        glideCorrectionRecordJob = null
         return true
     }
 
@@ -442,16 +496,24 @@ class ModernKeyboardImeService : InputMethodService() {
             KeyActionType.COMMIT_TEXT -> {
                 val letters = action.replacementLettersOrNull(heldModifiers)
                 if (letters != null) {
-                    pendingGlideCorrection = correction.copy(buffer = correction.buffer + letters)
+                    val nextCorrection = correction.copy(buffer = correction.buffer + letters)
+                    pendingGlideCorrection = nextCorrection
+                    schedulePendingGlideCorrectionRecord(nextCorrection)
                 } else {
                     finalizePendingGlideCorrection()
                 }
             }
             KeyActionType.DELETE -> {
-                pendingGlideCorrection = if (correction.buffer.isEmpty()) {
-                    null
+                if (correction.buffer.isEmpty()) {
+                    clearPendingGlideCorrection()
                 } else {
-                    correction.copy(buffer = correction.buffer.dropLast(1))
+                    val nextCorrection = correction.copy(buffer = correction.buffer.dropLast(1))
+                    pendingGlideCorrection = nextCorrection
+                    if (nextCorrection.buffer.isEmpty()) {
+                        clearPendingGlideCorrection()
+                    } else {
+                        schedulePendingGlideCorrectionRecord(nextCorrection)
+                    }
                 }
             }
             KeyActionType.SPACE,
@@ -459,7 +521,7 @@ class ModernKeyboardImeService : InputMethodService() {
             KeyActionType.TAB -> finalizePendingGlideCorrection()
             else -> {
                 if (correction.buffer.isEmpty()) {
-                    pendingGlideCorrection = null
+                    clearPendingGlideCorrection()
                 } else {
                     finalizePendingGlideCorrection()
                 }
@@ -481,13 +543,34 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun finalizePendingGlideCorrection() {
         val correction = pendingGlideCorrection ?: return
+        clearPendingGlideCorrection()
         recordGlideCorrection(correction.pathSignature, correction.buffer, correction.rejectedWord)
     }
 
     private fun recordPendingGlideCorrection(word: String) {
         val correction = pendingGlideCorrection ?: return
-        pendingGlideCorrection = null
+        clearPendingGlideCorrection()
         recordGlideCorrection(correction.pathSignature, word, correction.rejectedWord)
+    }
+
+    private fun schedulePendingGlideCorrectionRecord(correction: PendingGlideCorrection) {
+        glideCorrectionRecordJob?.cancel()
+        if (correction.buffer.length < MIN_GLIDE_MANUAL_CORRECTION_LENGTH) {
+            glideCorrectionRecordJob = null
+            return
+        }
+        glideCorrectionRecordJob = serviceScope.launch {
+            delay(GLIDE_MANUAL_CORRECTION_RECORD_DELAY_MS)
+            if (pendingGlideCorrection == correction) {
+                recordGlideCorrection(correction.pathSignature, correction.buffer, correction.rejectedWord)
+            }
+        }
+    }
+
+    private fun clearPendingGlideCorrection() {
+        glideCorrectionRecordJob?.cancel()
+        glideCorrectionRecordJob = null
+        pendingGlideCorrection = null
     }
 
     private fun recordGlideCorrection(pathSignature: String, replacementWord: String, rejectedWord: String) {
@@ -530,5 +613,8 @@ class ModernKeyboardImeService : InputMethodService() {
         const val AUTO_CAP_CONTEXT_CHARS = 8
         const val GLIDE_SUGGESTION_LIMIT = 5
         const val GLIDE_SUGGESTION_DELAY_MS = 450L
+        const val GLIDE_MANUAL_CORRECTION_RECORD_DELAY_MS = 700L
+        const val MIN_GLIDE_MANUAL_CORRECTION_LENGTH = 2
+        const val TERMUX_PACKAGE_PREFIX = "com.termux"
     }
 }

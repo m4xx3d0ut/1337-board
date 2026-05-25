@@ -33,7 +33,7 @@ data class KeyboardPreferences(
     val swipeUpActionsEnabled: Boolean = true,
     val speechInputEnabled: Boolean = false,
     val glideImportedWordCount: Int = 0,
-    val glideCorrectionLearningEnabled: Boolean = false,
+    val glideCorrectionLearningEnabled: Boolean = true,
     val glideCorrections: Map<String, String> = emptyMap(),
     val glidePreferShorterWords: Boolean = false,
     val glideStrictFirstLastLetter: Boolean = true,

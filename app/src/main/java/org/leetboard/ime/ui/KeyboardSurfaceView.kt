@@ -28,7 +28,6 @@ import org.leetboard.ime.model.resolvedDisplay
 class KeyboardSurfaceView(context: Context) : View(context) {
     var onKey: ((KeyAction, HeldModifiers) -> Unit)? = null
     var onGlide: ((List<String>, HeldModifiers) -> Unit)? = null
-    var onSuggestion: ((String) -> Unit)? = null
 
     private var layout: KeyboardLayout? = null
     private var theme: KeyboardTheme = KeyboardTheme.leetGreen
@@ -38,14 +37,12 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private var keyLabelStyle: KeyLabelStyle = KeyLabelStyle()
     private var glideTypingEnabled: Boolean = false
     private var swipeUpActionsEnabled: Boolean = true
-    private var glideSuggestions: List<String> = emptyList()
     private var pressedKeyIds: Set<String> = emptySet()
     private var previewKey: KeySpec? = null
     private val pointerPresses = mutableMapOf<Int, PointerPress>()
     private var repeatPointerId: Int? = null
     private var longPressPointerId: Int? = null
     private val hitKeys = mutableListOf<HitKey>()
-    private val hitSuggestions = mutableListOf<HitSuggestion>()
     private val handler = Handler(Looper.getMainLooper())
     private val repeatRunnable = object : Runnable {
         override fun run() {
@@ -87,9 +84,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         keyLabelStyle: KeyLabelStyle = KeyLabelStyle(),
         glideTypingEnabled: Boolean = false,
         swipeUpActionsEnabled: Boolean = true,
-        glideSuggestions: List<String> = emptyList(),
     ) {
-        val nextSuggestions = glideSuggestions.take(MAX_SUGGESTIONS)
         this.layout = layout
         this.theme = theme
         this.activeKeyIds = activeKeyIds
@@ -98,7 +93,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         this.keyLabelStyle = keyLabelStyle
         this.glideTypingEnabled = glideTypingEnabled
         this.swipeUpActionsEnabled = swipeUpActionsEnabled
-        this.glideSuggestions = nextSuggestions
         invalidate()
     }
 
@@ -118,15 +112,13 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val geometryPx = geometry.toPx(resources.displayMetrics.density)
         canvas.drawColor(theme.colors.background)
         hitKeys.clear()
-        hitSuggestions.clear()
 
         val rows = currentLayout.rows
         if (rows.isEmpty()) return
         val keyboardHeight = height.toFloat()
         val rowHeight = (keyboardHeight - geometryPx.topMargin - geometryPx.bottomMargin - geometryPx.rowGap * (rows.size - 1)) / rows.size
         var top = geometryPx.topMargin
-        var topRowRect: RectF? = null
-        rows.forEachIndexed { rowIndex, row ->
+        rows.forEach { row ->
             val occupiedWeight = row.startInsetWeight + row.endInsetWeight +
                 row.keys.sumOf { it.weight.toDouble() }.toFloat()
             val layoutWeight = row.layoutWeight?.coerceAtLeast(occupiedWeight) ?: occupiedWeight
@@ -140,9 +132,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             val availableWidth = width - geometryPx.horizontalMargin * 2 - geometryPx.keyGap * gapCount
             val widthUnit = availableWidth / layoutWeight
             var left = geometryPx.horizontalMargin + widthUnit * (alignmentInsetWeight + row.startInsetWeight)
-            if (rowIndex == 0) {
-                topRowRect = RectF(0f, top, width.toFloat(), top + rowHeight)
-            }
             row.keys.forEach { key ->
                 val keyWidth = widthUnit * key.weight
                 val rect = RectF(left, top, left + keyWidth, top + rowHeight)
@@ -160,7 +149,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             }
         }
         drawGlideTrace(canvas)
-        topRowRect?.let { rect -> drawSuggestionOverlay(canvas, rect) }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -198,11 +186,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private fun handlePointerDown(event: MotionEvent) {
         val index = event.actionIndex
         val pointerId = event.getPointerId(index)
-        findSuggestion(event.getX(index), event.getY(index))?.let { suggestion ->
-            performClick()
-            onSuggestion?.invoke(suggestion.word)
-            return
-        }
         val hitKey = findKey(event.getX(index), event.getY(index))
         if (hitKey == null) {
             updatePressedKeyIds()
@@ -390,63 +373,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         strokePaint.strokeCap = Paint.Cap.BUTT
     }
 
-    private fun drawSuggestionOverlay(canvas: Canvas, topRowRect: RectF) {
-        val suggestions = glideSuggestions.take(MAX_SUGGESTIONS)
-        if (suggestions.isEmpty()) return
-
-        val density = resources.displayMetrics.density
-        val verticalPadding = density * SUGGESTION_VERTICAL_PADDING_DP
-        val horizontalMargin = currentGeometry().horizontalMarginDp * density
-        val gap = density * SUGGESTION_GAP_DP
-        val overlayBottom = topRowRect.top + topRowRect.height() * SUGGESTION_OVERLAY_ROW_FRACTION
-        val overlayRect = RectF(topRowRect.left, topRowRect.top, topRowRect.right, overlayBottom)
-        val availableWidth = width - horizontalMargin * 2 - gap * (suggestions.size - 1)
-        val itemWidth = availableWidth / suggestions.size
-        val itemHeight = overlayRect.height() - verticalPadding * 2
-        if (itemHeight <= 0f || itemWidth <= 0f) return
-        fillPaint.color = theme.colors.background.withAlpha(SUGGESTION_OVERLAY_BG_ALPHA)
-        canvas.drawRect(overlayRect, fillPaint)
-        suggestions.forEachIndexed { index, word ->
-            val left = horizontalMargin + index * (itemWidth + gap)
-            val rect = RectF(
-                left,
-                overlayRect.top + verticalPadding,
-                left + itemWidth,
-                overlayRect.top + verticalPadding + itemHeight,
-            )
-            fillPaint.color = if (index == 0) theme.colors.activeModifierFill else theme.colors.keyFill
-            strokePaint.color = theme.colors.keyStroke
-            strokePaint.strokeWidth = density
-            canvas.drawRoundRect(rect, density * 8f, density * 8f, fillPaint)
-            canvas.drawRoundRect(rect, density * 8f, density * 8f, strokePaint)
-            textPaint.color = theme.colors.keyText
-            textPaint.isFakeBoldText = index == 0
-            textPaint.textSize = suggestionTextSize(word, itemWidth - density * SUGGESTION_TEXT_HORIZONTAL_PADDING_DP)
-            val baseline = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2
-            canvas.drawText(word, rect.centerX(), baseline, textPaint)
-            hitSuggestions += HitSuggestion(word, rect)
-        }
-    }
-
-    private fun suggestionTextSize(word: String, availableWidth: Float): Float {
-        var textSize = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            SUGGESTION_TEXT_SP,
-            resources.displayMetrics,
-        )
-        val minimumTextSize = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            MIN_SUGGESTION_TEXT_SP,
-            resources.displayMetrics,
-        )
-        textPaint.textSize = textSize
-        while (textSize > minimumTextSize && textPaint.measureText(word) > availableWidth) {
-            textSize -= 1f
-            textPaint.textSize = textSize
-        }
-        return textSize
-    }
-
     private fun drawSecondaryDisplay(canvas: Canvas, rect: RectF, label: String?, icon: KeyIcon?) {
         if (label.isNullOrBlank() && icon == null) return
         val inset = resources.displayMetrics.density * 5f
@@ -606,10 +532,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         return hitKeys.firstOrNull { it.rect.contains(x, y) }
     }
 
-    private fun findSuggestion(x: Float, y: Float): HitSuggestion? {
-        return hitSuggestions.firstOrNull { it.rect.contains(x, y) }
-    }
-
     private fun pressedKey(pointerId: Int): KeySpec? {
         val id = pointerPresses[pointerId]?.keyId ?: return null
         return hitKeys.firstOrNull { it.key.id == id }?.key
@@ -669,11 +591,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val rect: RectF,
     )
 
-    private data class HitSuggestion(
-        val word: String,
-        val rect: RectF,
-    )
-
     private data class PointerPress(
         val keyId: String,
         val downX: Float,
@@ -707,14 +624,6 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         const val MIN_HEIGHT_DP = 160f
         const val TOP_MARGIN_DP = 4f
         const val BOLD_WEIGHT = 600f
-        const val SUGGESTION_OVERLAY_ROW_FRACTION = 0.5f
-        const val SUGGESTION_OVERLAY_BG_ALPHA = 218
-        const val SUGGESTION_VERTICAL_PADDING_DP = 3f
-        const val SUGGESTION_TEXT_HORIZONTAL_PADDING_DP = 12f
-        const val SUGGESTION_GAP_DP = 6f
-        const val SUGGESTION_TEXT_SP = 15f
-        const val MIN_SUGGESTION_TEXT_SP = 10f
-        const val MAX_SUGGESTIONS = 5
     }
 }
 

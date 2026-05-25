@@ -44,7 +44,7 @@ class KeyboardPreferencesTest {
         assertTrue(preferences.shiftCapsLockEnabled)
         assertTrue(preferences.swipeUpActionsEnabled)
         assertTrue(preferences.autoCapAfterPeriodEnabled)
-        assertFalse(preferences.glideCorrectionLearningEnabled)
+        assertTrue(preferences.glideCorrectionLearningEnabled)
         assertTrue(preferences.glideCorrections.isEmpty())
         assertFalse(preferences.glidePreferShorterWords)
         assertTrue(preferences.glideStrictFirstLastLetter)

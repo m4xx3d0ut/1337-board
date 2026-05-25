@@ -64,7 +64,8 @@ class PreferenceRepository(context: Context) {
             swipeUpActionsEnabled = values[Keys.swipeUpActionsEnabled] ?: true,
             speechInputEnabled = values[Keys.speechInputEnabled] ?: false,
             glideImportedWordCount = values[Keys.glideImportedWordCount] ?: importedGlideWordsFile().lineCountOrZero(),
-            glideCorrectionLearningEnabled = values[Keys.glideCorrectionLearningEnabled] ?: false,
+            glideCorrectionLearningEnabled = values[Keys.glideCorrectionLearningEnabled]
+                ?: KeyboardPreferences.defaults().glideCorrectionLearningEnabled,
             glideCorrections = glideCorrections,
             glidePreferShorterWords = values[Keys.glidePreferShorterWords] ?: false,
             glideStrictFirstLastLetter = values[Keys.glideStrictFirstLastLetter] ?: true,
