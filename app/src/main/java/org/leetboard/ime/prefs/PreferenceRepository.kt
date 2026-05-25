@@ -24,6 +24,7 @@ class PreferenceRepository(context: Context) {
 
     val preferences: Flow<KeyboardPreferences> = dataStore.data.map { values ->
         KeyboardPreferences(
+            layoutId = values[Keys.layoutId] ?: KeyboardPreferences.defaults().layoutId,
             themePreset = values[Keys.themePreset]?.let(::themePresetFromName) ?: ThemePreset.LEET_GREEN,
             portraitGeometry = geometry(values, "portrait", KeyboardGeometry()),
             landscapeGeometry = geometry(values, "landscape", KeyboardPreferences.defaults().landscapeGeometry),
@@ -32,6 +33,7 @@ class PreferenceRepository(context: Context) {
                 keyActionFromPreferenceValue(values[key])?.let { action -> slot to action }
             }.toMap(),
             numpadToggleEnabled = values[Keys.numpadToggleEnabled] ?: true,
+            keyPreviewEnabled = values[Keys.keyPreviewEnabled] ?: true,
             gestureTypingEnabled = values[Keys.gestureTypingEnabled] ?: false,
             speechInputEnabled = values[Keys.speechInputEnabled] ?: false,
         )
@@ -39,6 +41,10 @@ class PreferenceRepository(context: Context) {
 
     suspend fun setThemePreset(preset: ThemePreset) {
         dataStore.edit { values -> values[Keys.themePreset] = preset.name }
+    }
+
+    suspend fun setLayoutId(layoutId: String) {
+        dataStore.edit { values -> values[Keys.layoutId] = layoutId }
     }
 
     suspend fun setOptionalKeyHidden(keyId: String, hidden: Boolean) {
@@ -66,6 +72,10 @@ class PreferenceRepository(context: Context) {
 
     suspend fun setNumpadToggleEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.numpadToggleEnabled] = enabled }
+    }
+
+    suspend fun setKeyPreviewEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.keyPreviewEnabled] = enabled }
     }
 
     suspend fun setGestureTypingEnabled(enabled: Boolean) {
@@ -104,9 +114,11 @@ class PreferenceRepository(context: Context) {
     }
 
     private object Keys {
+        val layoutId = stringPreferencesKey("layout_id")
         val themePreset = stringPreferencesKey("theme_preset")
         val hiddenOptionalKeys = stringSetPreferencesKey("hidden_optional_keys")
         val numpadToggleEnabled = booleanPreferencesKey("numpad_toggle_enabled")
+        val keyPreviewEnabled = booleanPreferencesKey("key_preview_enabled")
         val gestureTypingEnabled = booleanPreferencesKey("gesture_typing_enabled")
         val speechInputEnabled = booleanPreferencesKey("speech_input_enabled")
 

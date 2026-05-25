@@ -29,4 +29,12 @@ class KeyboardPreferencesTest {
 
         assertEquals(action, preferences.customizationState().slotActions["esc"])
     }
+
+    @Test
+    fun defaultsUseFiveRowLayoutAndKeyPreview() {
+        val preferences = KeyboardPreferences.defaults()
+
+        assertEquals("qwerty5", preferences.layoutId)
+        assertTrue(preferences.keyPreviewEnabled)
+    }
 }

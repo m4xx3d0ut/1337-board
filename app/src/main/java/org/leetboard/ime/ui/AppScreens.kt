@@ -34,6 +34,7 @@ import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.PreferenceRepository
+import org.leetboard.ime.prefs.defaultLayoutOptions
 
 @Composable
 fun InfoScreen(
@@ -89,18 +90,31 @@ fun SettingsScreen(
             ) {
                 Text("1337 Board Settings", style = MaterialTheme.typography.headlineMedium)
                 SettingsSection(
-                    title = "Theme",
-                    body = "Current preset: ${preferences.themePreset.label}",
+                    title = "Layout",
+                    body = "Choose the base typing layout. Numpad remains a landscape toggle.",
                 )
-                Button(
-                    onClick = {
-                        scope.launch {
-                            repository.setThemePreset(preferences.themePreset.next())
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Next theme")
+                defaultLayoutOptions.forEach { option ->
+                    SelectButton(
+                        label = option.label,
+                        selected = preferences.layoutId == option.id,
+                        onClick = {
+                            scope.launch { repository.setLayoutId(option.id) }
+                        },
+                    )
+                }
+
+                SettingsSection(
+                    title = "Theme",
+                    body = "Choose a named color preset.",
+                )
+                ThemePreset.entries.forEach { preset ->
+                    SelectButton(
+                        label = preset.label,
+                        selected = preferences.themePreset == preset,
+                        onClick = {
+                            scope.launch { repository.setThemePreset(preset) }
+                        },
+                    )
                 }
 
                 SettingsSection(title = "Optional Keys", body = "Show or hide terminal/navigation keys.")
@@ -118,6 +132,13 @@ fun SettingsScreen(
                     checked = preferences.numpadToggleEnabled,
                     onCheckedChange = { checked ->
                         scope.launch { repository.setNumpadToggleEnabled(checked) }
+                    },
+                )
+                SettingSwitch(
+                    label = "Key preview",
+                    checked = preferences.keyPreviewEnabled,
+                    onCheckedChange = { checked ->
+                        scope.launch { repository.setKeyPreviewEnabled(checked) }
                     },
                 )
 
@@ -212,6 +233,24 @@ private fun SettingSwitch(
 }
 
 @Composable
+private fun SelectButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val text = if (selected) "$label selected" else label
+    if (selected) {
+        Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+            Text(text)
+        }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+            Text(text)
+        }
+    }
+}
+
+@Composable
 private fun GeometryControls(
     orientation: GeometryOrientation,
     geometry: KeyboardGeometry,
@@ -296,11 +335,6 @@ private fun nextAction(current: KeyAction): KeyAction {
 
 private fun Int.floorMod(modulus: Int): Int {
     return ((this % modulus) + modulus) % modulus
-}
-
-private fun ThemePreset.next(): ThemePreset {
-    val presets = ThemePreset.entries
-    return presets[(ordinal + 1) % presets.size]
 }
 
 private val ThemePreset.label: String

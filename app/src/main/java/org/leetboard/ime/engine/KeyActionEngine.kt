@@ -10,6 +10,8 @@ import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
 import org.leetboard.ime.model.KeyboardState
 import org.leetboard.ime.model.ModifierState
+import org.leetboard.ime.model.clearTransientModifiers
+import org.leetboard.ime.model.toggleShift
 
 class KeyActionEngine(
     private val service: InputMethodService,
@@ -89,19 +91,6 @@ class KeyActionEngine(
             KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, keyCode, 0, metaState),
         )
         return state.clearTransientModifiers()
-    }
-
-    private fun KeyboardState.toggleShift(): KeyboardState {
-        val next = when {
-            modifiers.shift && !modifiers.shiftLocked -> modifiers.copy(shift = true, shiftLocked = true)
-            modifiers.shiftLocked -> modifiers.copy(shift = false, shiftLocked = false)
-            else -> modifiers.copy(shift = true, shiftLocked = false)
-        }
-        return copy(modifiers = next)
-    }
-
-    private fun KeyboardState.clearTransientModifiers(): KeyboardState {
-        return copy(modifiers = modifiers.copy(shift = modifiers.shiftLocked, ctrl = false, alt = false))
     }
 
     private fun ModifierState.toMetaState(): Int {

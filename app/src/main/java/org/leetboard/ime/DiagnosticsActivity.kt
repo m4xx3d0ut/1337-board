@@ -3,6 +3,7 @@ package org.leetboard.ime
 import android.os.Bundle
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
+import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -18,11 +19,20 @@ class DiagnosticsActivity : ComponentActivity() {
             setPadding(32, 32, 32, 32)
         }
 
+        content.addView(label("IME smoke and behavior checks"))
+        content.addView(label("Use this screen to test typing, modifier keys, Enter actions, privacy suppression, rotation, and landscape numpad mode."))
+
         content.addView(label("Normal text"))
         content.addView(field("Type here", InputType.TYPE_CLASS_TEXT, EditorInfo.IME_ACTION_DONE))
 
+        content.addView(label("Terminal/editor combos"))
+        content.addView(field("Try Ctrl-C, Ctrl-D, Tab, Esc, arrows", InputType.TYPE_CLASS_TEXT, EditorInfo.IME_ACTION_NONE))
+
         content.addView(label("Multiline"))
         content.addView(field("Line one\nLine two", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE, EditorInfo.IME_ACTION_NONE))
+
+        content.addView(label("Search action"))
+        content.addView(field("search query", InputType.TYPE_CLASS_TEXT, EditorInfo.IME_ACTION_SEARCH))
 
         content.addView(label("URL"))
         content.addView(field("https://example.org", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI, EditorInfo.IME_ACTION_GO))
@@ -45,6 +55,11 @@ class DiagnosticsActivity : ComponentActivity() {
             ),
         )
 
+        content.addView(Button(this).apply {
+            text = "Finish diagnostics"
+            setOnClickListener { finish() }
+        })
+
         setContentView(ScrollView(this).apply { addView(content) })
     }
 
@@ -66,4 +81,3 @@ class DiagnosticsActivity : ComponentActivity() {
         }
     }
 }
-

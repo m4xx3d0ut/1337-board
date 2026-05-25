@@ -6,6 +6,9 @@ data class KeySpec(
     val action: KeyAction,
     val weight: Float = 1f,
     val optional: Boolean = false,
+    val repeatable: Boolean = false,
+    val swipeUpAction: KeyAction? = null,
+    val longPressAction: KeyAction? = null,
 )
 
 data class KeyRow(
@@ -30,10 +33,31 @@ data class KeyboardState(
     val symbols: Boolean = false,
     val numpad: Boolean = false,
     val modifiers: ModifierState = ModifierState(),
+    val keyPreviewEnabled: Boolean = true,
 )
+
+fun KeyboardState.activeKeyIds(): Set<String> = buildSet {
+    if (modifiers.shift || modifiers.shiftLocked) add("shift")
+    if (modifiers.ctrl) add("ctrl")
+    if (modifiers.alt) add("alt")
+    if (symbols) add("symbols")
+    if (numpad) add("num_toggle")
+}
+
+fun KeyboardState.toggleShift(): KeyboardState {
+    val next = when {
+        modifiers.shift && !modifiers.shiftLocked -> modifiers.copy(shift = true, shiftLocked = true)
+        modifiers.shiftLocked -> modifiers.copy(shift = false, shiftLocked = false)
+        else -> modifiers.copy(shift = true, shiftLocked = false)
+    }
+    return copy(modifiers = next)
+}
+
+fun KeyboardState.clearTransientModifiers(): KeyboardState {
+    return copy(modifiers = modifiers.copy(shift = modifiers.shiftLocked, ctrl = false, alt = false))
+}
 
 data class CustomizationState(
     val hiddenOptionalKeyIds: Set<String> = emptySet(),
     val slotActions: Map<String, KeyAction> = emptyMap(),
 )
-

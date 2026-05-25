@@ -17,6 +17,7 @@ import org.leetboard.ime.engine.SpeechInputEngine
 import org.leetboard.ime.engine.TextContextPolicy
 import org.leetboard.ime.engine.ThemeEngine
 import org.leetboard.ime.model.KeyboardState
+import org.leetboard.ime.model.activeKeyIds
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.ui.KeyboardSurfaceView
@@ -84,8 +85,12 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun renderKeyboard() {
         val orientation = resources.configuration.orientation
+        val layoutState = keyboardState.copy(
+            activeLayoutId = preferences.layoutId,
+            keyPreviewEnabled = preferences.keyPreviewEnabled,
+        )
         val layout = customizationEngine.apply(
-            layout = layoutEngine.layoutFor(keyboardState, orientation),
+            layout = layoutEngine.layoutFor(layoutState, orientation),
             customization = preferences.customizationState().let { customization ->
                 customization.copy(
                     hiddenOptionalKeyIds = customization.hiddenOptionalKeyIds + contextHiddenKeyIds,
@@ -99,6 +104,8 @@ class ModernKeyboardImeService : InputMethodService() {
                 portrait = preferences.portraitGeometry,
                 landscape = preferences.landscapeGeometry,
             ),
+            layoutState.activeKeyIds(),
+            preferences.keyPreviewEnabled,
         )
     }
 }
