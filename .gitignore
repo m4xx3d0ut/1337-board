@@ -1,0 +1,12 @@
+.codex/
+.gradle/
+.android-sdk/
+.idea/
+.kotlin/
+build/
+captures/
+local.properties
+*.iml
+*.keystore
+*.jks
+app/build/
