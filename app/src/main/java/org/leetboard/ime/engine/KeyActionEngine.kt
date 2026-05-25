@@ -1,8 +1,11 @@
 package org.leetboard.ime.engine
 
+import android.content.Intent
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import org.leetboard.ime.SettingsActivity
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
 import org.leetboard.ime.model.KeyboardState
@@ -34,8 +37,18 @@ class KeyActionEngine(
             KeyActionType.ARROW_DOWN -> sendKey(KeyEvent.KEYCODE_DPAD_DOWN, state)
             KeyActionType.SWITCH_SYMBOLS -> state.copy(symbols = !state.symbols, numpad = false)
             KeyActionType.NUMPAD_TOGGLE -> state.copy(numpad = !state.numpad, symbols = false)
-            KeyActionType.SETTINGS,
-            KeyActionType.LANGUAGE_SWITCH,
+            KeyActionType.SETTINGS -> {
+                service.startActivity(
+                    Intent(service, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+                state
+            }
+            KeyActionType.LANGUAGE_SWITCH -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    service.switchToNextInputMethod(false)
+                }
+                state
+            }
             KeyActionType.MICROPHONE -> state
         }
     }
@@ -105,4 +118,3 @@ class KeyActionEngine(
         return KeyEvent.KEYCODE_A + (lower - 'a')
     }
 }
-

@@ -53,3 +53,20 @@ fun KeyAction.displayLabel(): String {
     }
 }
 
+fun KeyAction.toPreferenceValue(): String {
+    return when (type) {
+        KeyActionType.COMMIT_TEXT -> "${type.name}:${text.orEmpty()}"
+        else -> type.name
+    }
+}
+
+fun keyActionFromPreferenceValue(value: String?): KeyAction? {
+    if (value.isNullOrBlank()) return null
+    val typeName = value.substringBefore(":")
+    val type = KeyActionType.entries.firstOrNull { it.name == typeName } ?: return null
+    return if (type == KeyActionType.COMMIT_TEXT) {
+        KeyAction.text(value.substringAfter(":", ""))
+    } else {
+        KeyAction(type)
+    }
+}

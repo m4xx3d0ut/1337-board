@@ -13,6 +13,7 @@ Treat `.codex/`, `.android-sdk/`, `local.properties`, `.gradle/`, and `app/build
 - `./gradlew lintDebug` runs Android lint for the debug variant.
 - `./gradlew assembleDebug testDebugUnitTest lintDebug` is the current local green gate.
 - `scripts/setup-android-sdk.sh` installs an ignored local Android SDK when the host does not provide one.
+- `scripts/validate-ime-smoke.sh` builds, installs, enables/selects the IME, and launches diagnostics on a connected emulator or device.
 
 The project expects Android SDK platform 35 and build tools 35.0.0. If no system SDK exists, use an ignored local SDK and point `local.properties` at it.
 

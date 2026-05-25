@@ -3,6 +3,12 @@ package org.leetboard.ime.ime
 import android.inputmethodservice.InputMethodService
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import org.leetboard.ime.engine.CustomizationEngine
 import org.leetboard.ime.engine.GestureTypingEngine
 import org.leetboard.ime.engine.KeyActionEngine
@@ -10,9 +16,9 @@ import org.leetboard.ime.engine.LayoutEngine
 import org.leetboard.ime.engine.SpeechInputEngine
 import org.leetboard.ime.engine.TextContextPolicy
 import org.leetboard.ime.engine.ThemeEngine
-import org.leetboard.ime.model.CustomizationState
 import org.leetboard.ime.model.KeyboardState
-import org.leetboard.ime.model.ThemePreset
+import org.leetboard.ime.prefs.KeyboardPreferences
+import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.ui.KeyboardSurfaceView
 
 class ModernKeyboardImeService : InputMethodService() {
@@ -24,13 +30,28 @@ class ModernKeyboardImeService : InputMethodService() {
     private val speechInputEngine = SpeechInputEngine(textContextPolicy)
 
     private lateinit var keyActionEngine: KeyActionEngine
+    private lateinit var preferenceRepository: PreferenceRepository
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var keyboardView: KeyboardSurfaceView? = null
     private var keyboardState = KeyboardState()
-    private var customizationState = CustomizationState()
+    private var preferences = KeyboardPreferences.defaults()
+    private var contextHiddenKeyIds: Set<String> = emptySet()
 
     override fun onCreate() {
         super.onCreate()
         keyActionEngine = KeyActionEngine(this)
+        preferenceRepository = PreferenceRepository(this)
+        serviceScope.launch {
+            preferenceRepository.preferences.collectLatest { nextPreferences ->
+                preferences = nextPreferences
+                renderKeyboard()
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     override fun onCreateInputView(): View {
@@ -48,10 +69,9 @@ class ModernKeyboardImeService : InputMethodService() {
         super.onStartInput(attribute, restarting)
         val gesturesAllowed = gestureTypingEngine.isEnabledFor(attribute)
         val speechAllowed = speechInputEngine.isAvailable(attribute)
-        customizationState = if (gesturesAllowed || speechAllowed) {
-            CustomizationState()
-        } else {
-            CustomizationState(hiddenOptionalKeyIds = setOf("mic"))
+        contextHiddenKeyIds = buildSet {
+            if (!gesturesAllowed || !preferences.gestureTypingEnabled) add("gesture")
+            if (!speechAllowed || !preferences.speechInputEnabled) add("mic")
         }
         renderKeyboard()
     }
@@ -66,9 +86,19 @@ class ModernKeyboardImeService : InputMethodService() {
         val orientation = resources.configuration.orientation
         val layout = customizationEngine.apply(
             layout = layoutEngine.layoutFor(keyboardState, orientation),
-            customization = customizationState,
+            customization = preferences.customizationState().let { customization ->
+                customization.copy(
+                    hiddenOptionalKeyIds = customization.hiddenOptionalKeyIds + contextHiddenKeyIds,
+                )
+            },
         )
-        keyboardView?.render(layout, themeEngine.resolve(ThemePreset.LEET_GREEN))
+        keyboardView?.render(
+            layout,
+            themeEngine.resolve(
+                preset = preferences.themePreset,
+                portrait = preferences.portraitGeometry,
+                landscape = preferences.landscapeGeometry,
+            ),
+        )
     }
 }
-

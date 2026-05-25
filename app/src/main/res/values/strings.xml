@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">1337 Board</string>
+    <string name="diagnostics_title">1337 Board Diagnostics</string>
     <string name="settings_title">1337 Board Settings</string>
     <string name="subtype_english">English</string>
 </resources>
-

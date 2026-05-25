@@ -1,7 +1,5 @@
 package org.leetboard.ime.model
 
-import android.graphics.Color
-
 enum class ThemePreset {
     SYSTEM,
     LIGHT,
@@ -46,14 +44,13 @@ data class KeyboardTheme(
         val leetGreen = KeyboardTheme(
             preset = ThemePreset.LEET_GREEN,
             colors = KeyboardColors(
-                background = Color.rgb(5, 8, 7),
-                keyFill = Color.rgb(12, 20, 15),
-                keyStroke = Color.rgb(0, 230, 118),
-                keyText = Color.rgb(230, 244, 234),
-                pressedFill = Color.rgb(0, 92, 45),
-                activeModifierFill = Color.rgb(0, 160, 80),
+                background = 0xFF050807.toInt(),
+                keyFill = 0xFF0C140F.toInt(),
+                keyStroke = 0xFF00E676.toInt(),
+                keyText = 0xFFE6F4EA.toInt(),
+                pressedFill = 0xFF005C2D.toInt(),
+                activeModifierFill = 0xFF00A050.toInt(),
             ),
         )
     }
 }
-

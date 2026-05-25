@@ -2,12 +2,17 @@ package org.leetboard.ime.engine
 
 import android.graphics.Color
 import org.leetboard.ime.model.KeyboardColors
+import org.leetboard.ime.model.KeyboardGeometry
 import org.leetboard.ime.model.KeyboardTheme
 import org.leetboard.ime.model.ThemePreset
 
 class ThemeEngine {
-    fun resolve(preset: ThemePreset): KeyboardTheme {
-        return when (preset) {
+    fun resolve(
+        preset: ThemePreset,
+        portrait: KeyboardGeometry? = null,
+        landscape: KeyboardGeometry? = null,
+    ): KeyboardTheme {
+        val theme = when (preset) {
             ThemePreset.SYSTEM,
             ThemePreset.DARK -> dark(ThemePreset.DARK)
             ThemePreset.LIGHT -> KeyboardTheme(
@@ -39,6 +44,10 @@ class ThemeEngine {
                 text = Color.WHITE,
             )
         }
+        return theme.copy(
+            portrait = portrait ?: theme.portrait,
+            landscape = landscape ?: theme.landscape,
+        )
     }
 
     private fun dark(
@@ -62,4 +71,3 @@ class ThemeEngine {
         )
     }
 }
-
