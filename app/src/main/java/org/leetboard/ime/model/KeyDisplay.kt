@@ -43,6 +43,7 @@ fun KeyIcon.fallbackLabel(): String {
         KeyIcon.FORWARD_DELETE -> "Forward delete"
         KeyIcon.MIC -> "Mic"
         KeyIcon.SWIPE -> "Swipe"
+        KeyIcon.SWIPE_OFF -> "Swipe off"
         KeyIcon.NUMPAD -> "Num"
         KeyIcon.ENTER -> "Enter"
         KeyIcon.TAB -> "Tab"

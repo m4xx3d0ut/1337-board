@@ -491,6 +491,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             KeyIcon.SHIFT -> drawShiftIcon(canvas, iconRect)
             KeyIcon.MIC -> drawMicIcon(canvas, iconRect)
             KeyIcon.SWIPE -> drawSwipeIcon(canvas, iconRect)
+            KeyIcon.SWIPE_OFF -> drawSwipeOffIcon(canvas, iconRect)
             KeyIcon.NUMPAD -> drawNumpadIcon(canvas, iconRect)
             KeyIcon.ENTER -> drawEnterIcon(canvas, iconRect)
             KeyIcon.TAB -> drawTextIcon(canvas, iconRect, "⇥", primary)
@@ -554,6 +555,17 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             cubicTo(rect.left + rect.width() * 0.25f, rect.top, rect.right - rect.width() * 0.2f, rect.bottom, rect.right, rect.top)
         }
         canvas.drawPath(path, strokePaint)
+    }
+
+    private fun drawSwipeOffIcon(canvas: Canvas, rect: RectF) {
+        drawSwipeIcon(canvas, rect)
+        canvas.drawLine(
+            rect.left + rect.width() * 0.16f,
+            rect.bottom - rect.height() * 0.16f,
+            rect.right - rect.width() * 0.16f,
+            rect.top + rect.height() * 0.16f,
+            strokePaint,
+        )
     }
 
     private fun drawNumpadIcon(canvas: Canvas, rect: RectF) {

@@ -89,7 +89,7 @@ class KeyActionEngine(
     ): KeyboardState {
         val modifiers = state.modifiers.effectiveWith(heldModifiers)
         if (text.length == 1 && (modifiers.ctrl || modifiers.alt)) {
-            val keyCode = letterKeyCode(text.first())
+            val keyCode = metaTextKeyCode(text.first())
             if (keyCode != null) return sendKey(keyCode, state, heldModifiers)
         }
 
@@ -171,13 +171,16 @@ class KeyActionEngine(
         return meta
     }
 
-    private fun letterKeyCode(char: Char): Int? {
-        val lower = char.lowercaseChar()
-        if (lower !in 'a'..'z') return null
-        return KeyEvent.KEYCODE_A + (lower - 'a')
-    }
-
     private companion object {
         const val AUTO_CAP_CONTEXT_CHARS = 8
+    }
+}
+
+internal fun metaTextKeyCode(char: Char): Int? {
+    val lower = char.lowercaseChar()
+    return when {
+        lower in 'a'..'z' -> KeyEvent.KEYCODE_A + (lower - 'a')
+        lower in '0'..'9' -> KeyEvent.KEYCODE_0 + (lower - '0')
+        else -> null
     }
 }

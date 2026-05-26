@@ -113,7 +113,7 @@ class LayoutEngine {
                         action("fn", "Fn", KeyActionType.SWITCH_FN, optional = true),
                         action("symbols", "Symbols", KeyActionType.SWITCH_SYMBOLS, longPress = KeyAction(KeyActionType.SETTINGS)),
                         action("space", "Space", KeyActionType.SPACE, 5f),
-                        action("settings", "Settings", KeyActionType.SETTINGS, optional = true),
+                        settingsKey(),
                         micKey(),
                         action("num_toggle", "Num", KeyActionType.NUMPAD_TOGGLE, optional = true),
                         action("left", "◀", KeyActionType.ARROW_LEFT, optional = true, repeatable = true),
@@ -155,7 +155,7 @@ class LayoutEngine {
                     listOf(
                         action("ctrl", "Ctrl", KeyActionType.CTRL, optional = true),
                         action("alt", "Alt", KeyActionType.ALT, optional = true),
-                        action("settings", "Settings", KeyActionType.SETTINGS, optional = true),
+                        settingsKey(),
                         micKey(),
                         action("delete", "Backspace", KeyActionType.DELETE, 1.5f, repeatable = true),
                         action("enter", "Enter", KeyActionType.ENTER, 1.5f),
@@ -165,11 +165,11 @@ class LayoutEngine {
                 ),
                 KeyRow(
                     listOf(
-                        spacer(6f),
+                        spacer(FN_UP_ARROW_LEADING_SPACER),
                         action("up", "▲", KeyActionType.ARROW_UP, optional = true, repeatable = true),
-                        spacer(6f),
+                        spacer(FN_UP_ARROW_TRAILING_SPACER),
                     ),
-                    layoutWeight = FULL_GRID_WEIGHT,
+                    layoutWeight = FN_BOTTOM_ROW_WEIGHT,
                 ),
                 KeyRow(
                     listOf(
@@ -199,7 +199,7 @@ class LayoutEngine {
                 KeyRow(
                     listOf(
                         action("symbols", "ABC", KeyActionType.SWITCH_SYMBOLS, 1.5f, longPress = KeyAction(KeyActionType.SETTINGS)),
-                        action("settings", "Settings", KeyActionType.SETTINGS, optional = true),
+                        settingsKey(),
                         action("left", "◀", KeyActionType.ARROW_LEFT, optional = true, repeatable = true),
                         action("up", "▲", KeyActionType.ARROW_UP, optional = true, repeatable = true),
                         action("down", "▼", KeyActionType.ARROW_DOWN, optional = true, repeatable = true),
@@ -244,7 +244,7 @@ class LayoutEngine {
                     listOf(
                         action("esc", "Esc", KeyActionType.ESCAPE, optional = true),
                         action("symbols", "Symbols", KeyActionType.SWITCH_SYMBOLS, longPress = KeyAction(KeyActionType.SETTINGS)),
-                        action("settings", "Settings", KeyActionType.SETTINGS, optional = true),
+                        settingsKey(),
                         action("space", "Space", KeyActionType.SPACE, 2.2f),
                         micKey(),
                         action("num_toggle", "Num", KeyActionType.NUMPAD_TOGGLE, optional = true),
@@ -332,7 +332,7 @@ class LayoutEngine {
                         action("esc", "Esc", KeyActionType.ESCAPE, optional = true),
                         action("symbols", "Symbols", KeyActionType.SWITCH_SYMBOLS, longPress = KeyAction(KeyActionType.SETTINGS)),
                         action("space", "Space", KeyActionType.SPACE, 3f),
-                        action("settings", "Settings", KeyActionType.SETTINGS, optional = true),
+                        settingsKey(),
                         micKey(),
                         action("left", "◀", KeyActionType.ARROW_LEFT, optional = true, repeatable = true),
                         action("right", "▶", KeyActionType.ARROW_RIGHT, optional = true, repeatable = true),
@@ -402,7 +402,7 @@ class LayoutEngine {
                     listOf(
                         action("num_toggle", "ABC", KeyActionType.NUMPAD_TOGGLE),
                         action("fn", "Fn", KeyActionType.SWITCH_FN),
-                        action("settings", "Settings", KeyActionType.SETTINGS, optional = true),
+                        settingsKey(),
                         action("enter", "Enter", KeyActionType.ENTER, 1.6f),
                     ),
                     layoutWeight = 4.6f,
@@ -499,6 +499,20 @@ class LayoutEngine {
         )
     }
 
+    private fun settingsKey(weight: Float = 1f): KeySpec {
+        return action(
+            id = "settings",
+            label = "Settings",
+            type = KeyActionType.SETTINGS,
+            weight = weight,
+            optional = true,
+            longPress = KeyAction(KeyActionType.TOGGLE_GESTURE_TYPING),
+        ).copy(
+            secondaryIcon = KeyIcon.SWIPE,
+            swipeUpAction = KeyAction(KeyActionType.TOGGLE_GESTURE_TYPING),
+        )
+    }
+
     private fun keyEvent(
         id: String,
         label: String,
@@ -579,6 +593,9 @@ class LayoutEngine {
         private const val FULL_GRID_WEIGHT = 15f
         private const val COMPACT_GRID_WEIGHT = 11f
         private const val PHONE_GRID_WEIGHT = 10f
+        private const val FN_BOTTOM_ROW_WEIGHT = 12.2f
+        private const val FN_UP_ARROW_LEADING_SPACER = 9.7f
+        private const val FN_UP_ARROW_TRAILING_SPACER = 1.5f
         private const val MIN_EDGE_KEY_SCALE = 0.6f
         private const val MAX_EDGE_KEY_SCALE = 1.1f
         private const val UP_ARROW_RIGHT_EDGE_SCALE = 0.56f

@@ -25,6 +25,7 @@ enum class KeyIcon {
     FORWARD_DELETE,
     MIC,
     SWIPE,
+    SWIPE_OFF,
     NUMPAD,
     ENTER,
     TAB,

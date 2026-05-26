@@ -41,6 +41,7 @@ import org.leetboard.ime.engine.pendingGlideCommitMatchesBeforeCursor
 import org.leetboard.ime.model.HeldModifiers
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
+import org.leetboard.ime.model.KeyIcon
 import org.leetboard.ime.model.KeyboardLayout
 import org.leetboard.ime.model.KeyboardState
 import org.leetboard.ime.model.activeKeyIds
@@ -186,7 +187,7 @@ class ModernKeyboardImeService : InputMethodService() {
                     hiddenOptionalKeyIds = customization.hiddenOptionalKeyIds + contextHiddenKeyIds,
                 )
             },
-        ).withSpeechUiState()
+        ).withSpeechUiState().withFeatureUiState()
         keyboardInputView?.render(
             layout,
             themeEngine.resolve(
@@ -425,6 +426,7 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun featureActiveKeyIds(): Set<String> = buildSet {
         if (speechUiState == SpeechUiState.LISTENING || speechUiState == SpeechUiState.PROCESSING) add("mic")
+        if (preferences.gestureTypingEnabled) add("settings")
     }
 
     private fun handleSpeechInput() {
@@ -495,6 +497,19 @@ class ModernKeyboardImeService : InputMethodService() {
                 row.copy(
                     keys = row.keys.map { key ->
                         if (key.id == "mic") key.copy(secondaryLabel = secondaryLabel) else key
+                    },
+                )
+            },
+        )
+    }
+
+    private fun KeyboardLayout.withFeatureUiState(): KeyboardLayout {
+        val glideIcon = if (preferences.gestureTypingEnabled) KeyIcon.SWIPE else KeyIcon.SWIPE_OFF
+        return copy(
+            rows = rows.map { row ->
+                row.copy(
+                    keys = row.keys.map { key ->
+                        if (key.id == "settings") key.copy(secondaryIcon = glideIcon) else key
                     },
                 )
             },

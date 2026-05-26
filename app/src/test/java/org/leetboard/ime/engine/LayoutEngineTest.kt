@@ -128,11 +128,23 @@ class LayoutEngineTest {
     }
 
     @Test
+    fun fnLayerUpArrowAlignsOverDownArrow() {
+        val layout = engine.layoutFor(KeyboardState(fn = true), Configuration.ORIENTATION_PORTRAIT)
+        val upCenter = layout.rows[3].centerOf("up")
+        val downCenter = layout.rows[4].centerOf("down")
+
+        assertEquals(downCenter, upCenter, 0.001f)
+    }
+
+    @Test
     fun actionKeysExposeDefaultIconsAndSecondaryLegends() {
         val layout = engine.layoutFor(KeyboardState(), Configuration.ORIENTATION_PORTRAIT)
         val keys = layout.rows.flattenKeys()
 
         assertEquals(KeyIcon.GEAR, keys.first { it.id == "settings" }.icon)
+        assertEquals(KeyIcon.SWIPE, keys.first { it.id == "settings" }.secondaryIcon)
+        assertEquals(KeyActionType.TOGGLE_GESTURE_TYPING, keys.first { it.id == "settings" }.swipeUpAction?.type)
+        assertEquals(KeyActionType.TOGGLE_GESTURE_TYPING, keys.first { it.id == "settings" }.longPressAction?.type)
         assertEquals(KeyIcon.SYMBOLS, keys.first { it.id == "symbols" }.icon)
         assertEquals(KeyIcon.SPACE_BAR, keys.first { it.id == "space" }.icon)
         assertEquals(KeyIcon.BACKSPACE, keys.first { it.id == "delete" }.icon)
@@ -210,7 +222,13 @@ class LayoutEngineTest {
     private fun KeyRow.centerOf(keyId: String): Float {
         val occupiedWeight = startInsetWeight + endInsetWeight + keys.sumOf { it.weight.toDouble() }.toFloat()
         val effectiveWeight = layoutWeight?.coerceAtLeast(occupiedWeight) ?: occupiedWeight
-        var cursor = startInsetWeight
+        val slackWeight = effectiveWeight - occupiedWeight
+        val alignmentInsetWeight = when (alignment) {
+            org.leetboard.ime.model.RowAlignment.START -> 0f
+            org.leetboard.ime.model.RowAlignment.CENTER -> slackWeight / 2f
+            org.leetboard.ime.model.RowAlignment.END -> slackWeight
+        }
+        var cursor = alignmentInsetWeight + startInsetWeight
         keys.forEach { key ->
             if (key.id == keyId) {
                 return (cursor + key.weight / 2f) / effectiveWeight
