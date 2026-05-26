@@ -4,23 +4,47 @@
 
 1337 Board is a desktop-style Android keyboard for terminals, editors, tablets, and power-user text entry. It is inspired by the practical layout ideas in Hacker's Keyboard, but implemented as a modern Android IME with current APIs, custom rendering, and privacy-focused defaults.
 
+## Acknowledgement
+
+"IT'S DANGEROUS TO GO ALONE! TAKE THIS."
+
+1337 Board is built with deep respect for [Hacker's Keyboard](https://github.com/klausw/hackerskeyboard), the original Android power-user keyboard by Klaus Weidner. Many of us used it from the early Android days, and this project is inspired by the practical layout and terminal-friendly ideas that proved so useful for a hacker or developer on the go.
+
 ## Highlights
 
 - Five-row PC-style QWERTY layout with number row, Esc, Tab, Ctrl, Alt, Shift, Enter, Backspace, Delete, and arrow keys.
 - Phone, compact, landscape, Fn, symbol, and numpad-oriented layouts.
 - Configurable optional keys, preset action slots, key labels/icons, sticky modifiers, and key preview behavior.
-- Local glide typing with bundled word list, ranked suggestions, optional imported word lists, and private on-device prediction.
+- Local glide typing with a bundled word list, ranked suggestions, optional imported word lists, private on-device prediction, and tunable accuracy controls for path tolerance, spatial precision, and dwell sensitivity.
 - Mic input through Android speech recognition, with offline preference requested when supported by the device recognizer.
-- Theme presets and a custom theme slot including light, dark, alternate dark, cyberpunk, terminal, high contrast, and 1337 green-on-black.
+- Theme presets and a custom theme slot including light, dark, alternate dark, cyberpunk, terminal, high contrast, 1337 green-on-black, background images, and transparency controls.
 - Separate portrait and landscape controls for keyboard height, margins, gaps, borders, radius, and label styling.
 
-![1337 Board theme grid captured on OnePlus Pad3](1337-board-theme-grid.png)
+![1337 Board five-theme grid captured on OnePlus Pad3](1337-board-theme-grid.png)
 
 ## Privacy
 
 1337 Board is designed to avoid broad data access. The base app does not request network or contacts permissions. Preferences, customizations, imported glide words, local prediction data, and learned glide corrections stay local to the device. Microphone permission is requested only when mic input is enabled.
 
 Glide prediction is offline. The app stores accepted words, local word pairs, and optional correction learning in app-private storage, and settings include controls to review corrections and reset glide learning.
+
+## Glide Typing
+
+Glide typing is fully local and can be tuned from settings. Path tolerance controls how much off-key travel is allowed, spatial precision controls how strongly the traced shape and endpoints affect ranking, and dwell sensitivity lets deliberate pauses over interior letters influence candidate selection. Use diagnostics to review the last glide path, candidate scores, dwell keys, and corner keys when tuning a device.
+
+## Glide Dictionary Setup
+
+Glide typing is off on a fresh install. Enable it from 1337 Board Settings, then use the bundled English dictionary or import a plain text wordlist from the Glide Dictionary settings. Imported words stay in app-private storage and can be cleared to return to the bundled dictionary.
+
+## Speech Input Setup
+
+Mic input is off on a fresh install. The current release uses Android's system speech recognizer; the APK does not bundle a recognizer or speech model. To test speech input like the OnePlus Pad3 setup, enable or install a device speech recognizer, download offline language data if that recognizer supports it, enable Mic input in 1337 Board Settings, grant microphone permission when prompted, then test in a normal editable text field.
+
+Recognizer availability and offline behavior vary by ROM, OEM, and installed speech package. A future privacy-first speech path is planned around optional local model packs.
+
+## Release Channels
+
+GitHub APK releases are the current distribution target. F-Droid packaging is planned after metadata, licensing, and reproducible-build checks. Google Play distribution is possible later, but not planned for this release.
 
 ## Licensing
 
