@@ -18,9 +18,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.leetboard.ime.engine.CustomizationEngine
+import org.leetboard.ime.engine.FrequencyContextGlidePredictionEngine
 import org.leetboard.ime.engine.GlideDictionaryLoader
+import org.leetboard.ime.engine.GlideCorrectionEntry
 import org.leetboard.ime.engine.GlidePredictionContext
 import org.leetboard.ime.engine.GlideTouchTrace
+import org.leetboard.ime.engine.GlideUserLanguageModel
 import org.leetboard.ime.engine.GestureTypingEngine
 import org.leetboard.ime.engine.KeyActionEngine
 import org.leetboard.ime.engine.LayoutEngine
@@ -49,6 +52,7 @@ class ModernKeyboardImeService : InputMethodService() {
     private val customizationEngine = CustomizationEngine()
     private val textContextPolicy = TextContextPolicy()
     private val themeEngine = ThemeEngine()
+    private val glideUserLanguageModel = GlideUserLanguageModel()
 
     private lateinit var gestureTypingEngine: GestureTypingEngine
     private lateinit var keyActionEngine: KeyActionEngine
@@ -65,17 +69,34 @@ class ModernKeyboardImeService : InputMethodService() {
     private var glideCorrectionRecordJob: Job? = null
     private var pendingGlideUndo: PendingGlideUndo? = null
     private var pendingGlideCorrection: PendingGlideCorrection? = null
+    private var glideLearningResetRevision: Int? = null
     private var glideSuggestions: List<String> = emptyList()
 
     override fun onCreate() {
         super.onCreate()
         val glideDictionaryLoader = GlideDictionaryLoader(this)
-        gestureTypingEngine = GestureTypingEngine(textContextPolicy, wordsProvider = glideDictionaryLoader::loadWords)
+        serviceScope.launch(Dispatchers.IO) {
+            glideUserLanguageModel.loadFrom(GlideUserLanguageModel.storageFile(filesDir))
+        }
+        gestureTypingEngine = GestureTypingEngine(
+            textContextPolicy = textContextPolicy,
+            predictionEngine = FrequencyContextGlidePredictionEngine(glideUserLanguageModel),
+            wordsProvider = glideDictionaryLoader::loadWords,
+        )
         keyActionEngine = KeyActionEngine(this)
         speechInputEngine = SpeechInputEngine(this, textContextPolicy)
         preferenceRepository = PreferenceRepository(this)
         serviceScope.launch {
             preferenceRepository.preferences.collectLatest { nextPreferences ->
+                val previousResetRevision = glideLearningResetRevision
+                glideLearningResetRevision = nextPreferences.glideLearningResetRevision
+                if (
+                    previousResetRevision != null &&
+                    previousResetRevision != nextPreferences.glideLearningResetRevision
+                ) {
+                    glideUserLanguageModel.clear()
+                    persistGlideUserLanguageModel()
+                }
                 gestureTypingEngine.setCorrections(
                     if (nextPreferences.glideCorrectionLearningEnabled) {
                         nextPreferences.glideCorrections
@@ -208,7 +229,7 @@ class ModernKeyboardImeService : InputMethodService() {
         val outputWord = formatGlideWord(word, heldModifiers)
         val committedText = "$outputWord "
         currentInputConnection?.commitText(committedText, 1)
-        gestureTypingEngine.recordAcceptedWord(word, predictionContext)
+        recordAcceptedGlideWord(word, predictionContext)
         scheduleGlideSuggestions(candidates.drop(1).map { candidate -> candidate.word })
         pendingGlideUndo = PendingGlideUndo(
             path = path,
@@ -275,7 +296,7 @@ class ModernKeyboardImeService : InputMethodService() {
         val replacementWord = formatReplacementWord(normalizedWord, undo.committedText)
         val committedText = "$replacementWord "
         if (!replacePendingGlideCommit(undo.committedText, committedText)) return
-        gestureTypingEngine.recordAcceptedWord(normalizedWord, predictionContext)
+        recordAcceptedGlideWord(normalizedWord, predictionContext)
         recordGlideCorrection(
             pathSignature = pathSignature,
             replacementWord = normalizedWord,
@@ -480,8 +501,14 @@ class ModernKeyboardImeService : InputMethodService() {
         if (heldModifiers.isActive() || modifiers.shift || modifiers.shiftLocked || modifiers.ctrl || modifiers.alt) return false
         deletePendingGlideCommit(undo.committedText)
         gestureTypingEngine.rejectCandidate(undo.path, undo.word)
-        pendingGlideCorrection = if (preferences.glideCorrectionLearningEnabled) {
-            gestureTypingEngine.pathSignature(undo.path)?.let { pathSignature ->
+        val pathSignature = gestureTypingEngine.pathSignature(undo.path)
+        if (pathSignature != null) {
+            serviceScope.launch {
+                preferenceRepository.rejectGlideCorrection(pathSignature, undo.word)
+            }
+        }
+        pendingGlideCorrection = if (canLearnFromCurrentInput() && preferences.glideCorrectionLearningEnabled) {
+            pathSignature?.let {
                 PendingGlideCorrection(pathSignature = pathSignature, rejectedWord = undo.word)
             }
         } else {
@@ -600,15 +627,47 @@ class ModernKeyboardImeService : InputMethodService() {
         pendingGlideCorrection = null
     }
 
+    private fun recordAcceptedGlideWord(word: String, context: GlidePredictionContext) {
+        if (!preferences.glidePredictiveRankingEnabled || !canLearnFromCurrentInput()) return
+        gestureTypingEngine.recordAcceptedWord(word, context)
+        persistGlideUserLanguageModel()
+    }
+
+    private fun persistGlideUserLanguageModel() {
+        serviceScope.launch(Dispatchers.IO) {
+            glideUserLanguageModel.saveTo(GlideUserLanguageModel.storageFile(filesDir))
+        }
+    }
+
     private fun recordGlideCorrection(pathSignature: String, replacementWord: String, rejectedWord: String) {
-        if (!preferences.glideCorrectionLearningEnabled) return
+        if (!preferences.glideCorrectionLearningEnabled || !canLearnFromCurrentInput()) return
         val normalizedWord = normalizeWord(replacementWord) ?: return
-        if (normalizedWord == normalizeWord(rejectedWord)) return
-        val nextCorrections = preferences.glideCorrections + (pathSignature to normalizedWord)
+        val normalizedRejectedWord = normalizeWord(rejectedWord) ?: return
+        if (normalizedWord == normalizedRejectedWord) return
+        if (!replacementLooksRelated(pathSignature, normalizedWord)) return
+        val nextCorrections = preferences.glideCorrections + (
+            pathSignature to (
+                preferences.glideCorrections[pathSignature]
+                    ?.copy(word = normalizedWord)
+                    ?.accepted(System.currentTimeMillis())
+                    ?: GlideCorrectionEntry.fromWord(normalizedWord, System.currentTimeMillis())
+                    ?: return
+                )
+            )
         gestureTypingEngine.setCorrections(nextCorrections)
         serviceScope.launch {
             preferenceRepository.recordGlideCorrection(pathSignature, normalizedWord)
         }
+    }
+
+    private fun replacementLooksRelated(pathSignature: String, word: String): Boolean {
+        if (word.length !in MIN_GLIDE_MANUAL_CORRECTION_LENGTH..MAX_GLIDE_MANUAL_CORRECTION_LENGTH) return false
+        val lengthDelta = kotlin.math.abs(pathSignature.length - word.length)
+        return lengthDelta <= MAX_GLIDE_CORRECTION_LENGTH_DELTA
+    }
+
+    private fun canLearnFromCurrentInput(): Boolean {
+        return !isTermuxInput() && textContextPolicy.allowsLearning(currentInputEditorInfo)
     }
 
     private fun showToast(message: String) {
@@ -643,6 +702,8 @@ class ModernKeyboardImeService : InputMethodService() {
         const val GLIDE_SUGGESTION_DELAY_MS = 450L
         const val GLIDE_MANUAL_CORRECTION_RECORD_DELAY_MS = 700L
         const val MIN_GLIDE_MANUAL_CORRECTION_LENGTH = 2
+        const val MAX_GLIDE_MANUAL_CORRECTION_LENGTH = 24
+        const val MAX_GLIDE_CORRECTION_LENGTH_DELTA = 4
         const val TERMUX_PACKAGE_PREFIX = "com.termux"
     }
 }

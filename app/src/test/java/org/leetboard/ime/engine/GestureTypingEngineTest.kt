@@ -116,10 +116,10 @@ class GestureTypingEngineTest {
     @Test
     fun localCorrectionWinsForExactPath() {
         val engine = GestureTypingEngine(TextContextPolicy()) {
-            listOf("word", "world")
+            listOf("word", "ward", "world")
         }
 
-        engine.setCorrections(mapOf("wrd" to "ward"))
+        engine.setCorrections(mapOf("wrd" to GlideCorrectionEntry(word = "ward", acceptedCount = 6)))
 
         assertEquals("ward", engine.decode(listOf("w", "r", "d")))
         assertEquals("world", engine.decode(listOf("w", "o", "r", "l", "d")))
@@ -131,31 +131,31 @@ class GestureTypingEngineTest {
             listOf("test")
         }
 
-        engine.setCorrections(mapOf("tresdt" to "rest"))
+        engine.setCorrections(mapOf("tresdt" to GlideCorrectionEntry(word = "rest", acceptedCount = 10)))
 
         assertEquals("test", engine.decode(listOf("t", "r", "e", "s", "d", "t")))
     }
 
     @Test
-    fun localCorrectionCanBypassEndpointsWhenStrictEndpointsAreDisabled() {
+    fun softLocalCorrectionCannotForceUnrelatedCandidate() {
         val engine = GestureTypingEngine(TextContextPolicy()) {
             listOf("test")
         }
         val options = GlideTypingOptions(strictFirstLastLetter = false)
 
-        engine.setCorrections(mapOf("tresdt" to "rest"))
+        engine.setCorrections(mapOf("tresdt" to GlideCorrectionEntry(word = "rest", acceptedCount = 10)))
 
-        assertEquals("rest", engine.decode(listOf("t", "r", "e", "s", "d", "t"), options))
+        assertEquals("test", engine.decode(listOf("t", "r", "e", "s", "d", "t"), options))
     }
 
     @Test
     fun rejectedLocalCorrectionFallsBackToDictionaryCandidate() {
         val engine = GestureTypingEngine(TextContextPolicy()) {
-            listOf("word")
+            listOf("ward", "word")
         }
         val path = listOf("w", "r", "d")
 
-        engine.setCorrections(mapOf("wrd" to "ward"))
+        engine.setCorrections(mapOf("wrd" to GlideCorrectionEntry(word = "ward", acceptedCount = 6)))
         engine.rejectCandidate(path, "ward")
 
         assertEquals("word", engine.decode(path))
@@ -164,15 +164,28 @@ class GestureTypingEngineTest {
     @Test
     fun localCorrectionIsFirstSuggestion() {
         val engine = GestureTypingEngine(TextContextPolicy()) {
-            listOf("word", "world")
+            listOf("word", "ward", "world")
         }
 
-        engine.setCorrections(mapOf("wrd" to "ward"))
+        engine.setCorrections(mapOf("wrd" to GlideCorrectionEntry(word = "ward", acceptedCount = 6)))
 
         val candidates = engine.candidates(listOf("w", "r", "d"))
 
         assertEquals("ward", candidates.first().word)
         assertEquals(GlideCandidateSource.LOCAL_CORRECTION, candidates.first().source)
+    }
+
+    @Test
+    fun demotedLocalCorrectionIsIgnored() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("word", "ward")
+        }
+
+        engine.setCorrections(
+            mapOf("wrd" to GlideCorrectionEntry(word = "ward", acceptedCount = 1, rejectedCount = 4)),
+        )
+
+        assertTrue(engine.candidates(listOf("w", "r", "d")).none { it.source == GlideCandidateSource.LOCAL_CORRECTION })
     }
 
     @Test
@@ -188,7 +201,7 @@ class GestureTypingEngineTest {
         val engine = GestureTypingEngine(TextContextPolicy()) { words }
 
         assertNull(engine.decode(listOf("t")))
-        assertEquals("xyz", engine.decode(listOf("x", "y", "z")))
+        assertNull(engine.decode(listOf("x", "y", "z")))
         assertNull(engine.decode(listOf("x", "c", "v", "b", "n", "m")))
     }
 

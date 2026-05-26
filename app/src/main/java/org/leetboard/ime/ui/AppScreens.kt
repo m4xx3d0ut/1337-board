@@ -56,6 +56,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.leetboard.ime.engine.CustomizationEngine
+import org.leetboard.ime.engine.GlideCorrectionEntry
 import org.leetboard.ime.engine.GlideImportedWordsPriority
 import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
@@ -651,7 +652,7 @@ private fun FeatureSection(
             },
         )
         SettingSwitch(
-            label = "Local glide correction map",
+            label = "Learn from glide corrections",
             checked = preferences.glideCorrectionLearningEnabled,
             onCheckedChange = { checked ->
                 scope.launch { repository.setGlideCorrectionLearningEnabled(checked) }
@@ -670,6 +671,12 @@ private fun FeatureSection(
             ) {
                 Text("Clear glide corrections (${preferences.glideCorrections.size})")
             }
+        }
+        OutlinedButton(
+            onClick = { scope.launch { repository.resetGlideLearning() } },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Reset glide learning")
         }
         SettingSwitch(
             label = "Strict first/last glide letters",
@@ -791,13 +798,15 @@ private fun SettingsActions(
 
 @Composable
 private fun GlideCorrectionsDialog(
-    corrections: Map<String, String>,
+    corrections: Map<String, GlideCorrectionEntry>,
     repository: PreferenceRepository,
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val sortedCorrections = corrections.toSortedMap()
-    var editedCorrections by remember(corrections) { mutableStateOf(sortedCorrections) }
+    var editedCorrections by remember(corrections) {
+        mutableStateOf(sortedCorrections.mapValues { (_, entry) -> entry.word })
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -810,16 +819,20 @@ private fun GlideCorrectionsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                sortedCorrections.forEach { (path, word) ->
-                    val editedWord = editedCorrections[path] ?: word
+                sortedCorrections.forEach { (path, entry) ->
+                    val editedWord = editedCorrections[path] ?: entry.word
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Path: $path", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "Accepted ${entry.acceptedCount}, rejected ${entry.rejectedCount}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                         OutlinedTextField(
                             value = editedWord,
                             onValueChange = { next ->
                                 editedCorrections = editedCorrections.toMutableMap().apply {
                                     this[path] = next.lowercase().filter { char -> char in 'a'..'z' }.take(24)
-                                }.toSortedMap()
+                                }
                             },
                             label = { Text("Replacement word") },
                             modifier = Modifier.fillMaxWidth(),
@@ -835,7 +848,7 @@ private fun GlideCorrectionsDialog(
                                         repository.setGlideCorrection(path, editedWord)
                                     }
                                 },
-                                enabled = editedWord.isNotBlank() && editedWord != word,
+                                enabled = editedWord.isNotBlank() && editedWord != entry.word,
                                 modifier = Modifier.weight(1f),
                             ) {
                                 Text("Save")

@@ -4,6 +4,7 @@ import org.leetboard.ime.engine.GlideImportedWordsPriority
 import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
 import org.leetboard.ime.engine.GlideTypingOptions
+import org.leetboard.ime.engine.GlideCorrectionEntry
 import org.leetboard.ime.model.CustomizationState
 import org.leetboard.ime.model.CustomThemeConfig
 import org.leetboard.ime.model.EscTouchMode
@@ -34,14 +35,15 @@ data class KeyboardPreferences(
     val swipeUpActionsEnabled: Boolean = true,
     val speechInputEnabled: Boolean = false,
     val glideImportedWordCount: Int = 0,
-    val glideCorrectionLearningEnabled: Boolean = true,
-    val glideCorrections: Map<String, String> = emptyMap(),
+    val glideCorrectionLearningEnabled: Boolean = false,
+    val glideCorrections: Map<String, GlideCorrectionEntry> = emptyMap(),
     val glidePreferShorterWords: Boolean = false,
-    val glideStrictFirstLastLetter: Boolean = true,
+    val glideStrictFirstLastLetter: Boolean = false,
     val glidePathTolerance: GlidePathTolerance = GlidePathTolerance.BALANCED,
     val glideImportedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
-    val glideRawFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.SHORT_ONLY,
+    val glideRawFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.OFF,
     val glidePredictiveRankingEnabled: Boolean = true,
+    val glideLearningResetRevision: Int = 0,
     val customTheme: CustomThemeConfig = CustomThemeConfig(),
 ) {
     fun customizationState(): CustomizationState {

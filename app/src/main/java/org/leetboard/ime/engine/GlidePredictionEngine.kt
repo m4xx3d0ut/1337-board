@@ -36,9 +36,9 @@ object NoOpGlidePredictionEngine : GlidePredictionEngine {
     ): List<GlideCandidate> = candidates
 }
 
-class FrequencyContextGlidePredictionEngine : GlidePredictionEngine {
-    private val acceptedWords = linkedMapOf<String, Int>()
-    private val acceptedPairs = linkedMapOf<Pair<String, String>, Int>()
+class FrequencyContextGlidePredictionEngine(
+    private val userLanguageModel: GlideUserLanguageModel = GlideUserLanguageModel(),
+) : GlidePredictionEngine {
 
     override fun rank(
         candidates: List<GlideCandidate>,
@@ -60,11 +60,7 @@ class FrequencyContextGlidePredictionEngine : GlidePredictionEngine {
 
     override fun recordAcceptedWord(word: String, context: GlidePredictionContext) {
         val normalizedWord = normalizeWord(word) ?: return
-        incrementBounded(acceptedWords, normalizedWord)
-        val previousWord = context.previousWord() ?: return
-        if (previousWord != normalizedWord) {
-            incrementBounded(acceptedPairs, previousWord to normalizedWord)
-        }
+        userLanguageModel.recordAcceptedWord(normalizedWord, context.previousWord())
     }
 
     private fun predictiveScore(
@@ -77,9 +73,9 @@ class FrequencyContextGlidePredictionEngine : GlidePredictionEngine {
         var score = candidate.score
         score += frequencyPenalty(candidate.priority)
         score += endpointPenalty(candidate.word, pathSignature, options)
-        score -= sessionWordBoost(candidate.word)
+        score -= userLanguageModel.wordBoost(candidate.word)
         if (previousWord != null) {
-            score -= sessionPairBoost(previousWord, candidate.word)
+            score -= userLanguageModel.bigramBoost(previousWord, candidate.word)
         }
         if (candidate.source == GlideCandidateSource.IMPORTED_WORDLIST) {
             score -= if (options.importedWordsPriority == GlideImportedWordsPriority.HIGH) {
@@ -105,32 +101,10 @@ class FrequencyContextGlidePredictionEngine : GlidePredictionEngine {
         return penalty
     }
 
-    private fun sessionWordBoost(word: String): Int {
-        return (acceptedWords[word].orZero() * SESSION_WORD_BOOST).coerceAtMost(MAX_SESSION_WORD_BOOST)
-    }
-
-    private fun sessionPairBoost(previousWord: String, word: String): Int {
-        return (acceptedPairs[previousWord to word].orZero() * SESSION_PAIR_BOOST).coerceAtMost(MAX_SESSION_PAIR_BOOST)
-    }
-
-    private fun <K> incrementBounded(map: LinkedHashMap<K, Int>, key: K) {
-        map[key] = map[key].orZero() + 1
-        while (map.size > MAX_SESSION_ENTRIES) {
-            map.remove(map.keys.first())
-        }
-    }
-
-    private fun Int?.orZero() = this ?: 0
-
     private companion object {
         const val FREQUENCY_LOG_WEIGHT = 90
         const val LOOSE_ENDPOINT_MISMATCH_PENALTY = 700
         const val NORMAL_IMPORT_BOOST = 250
         const val HIGH_IMPORT_BOOST = 650
-        const val SESSION_WORD_BOOST = 180
-        const val SESSION_PAIR_BOOST = 360
-        const val MAX_SESSION_WORD_BOOST = 900
-        const val MAX_SESSION_PAIR_BOOST = 1400
-        const val MAX_SESSION_ENTRIES = 256
     }
 }

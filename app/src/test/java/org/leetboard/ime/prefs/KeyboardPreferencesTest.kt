@@ -44,14 +44,14 @@ class KeyboardPreferencesTest {
         assertTrue(preferences.shiftCapsLockEnabled)
         assertTrue(preferences.swipeUpActionsEnabled)
         assertTrue(preferences.autoCapAfterPeriodEnabled)
-        assertTrue(preferences.glideCorrectionLearningEnabled)
+        assertFalse(preferences.glideCorrectionLearningEnabled)
         assertTrue(preferences.glideCorrections.isEmpty())
         assertFalse(preferences.glidePreferShorterWords)
-        assertTrue(preferences.glideStrictFirstLastLetter)
+        assertFalse(preferences.glideStrictFirstLastLetter)
         assertTrue(preferences.glidePredictiveRankingEnabled)
         assertEquals(GlidePathTolerance.BALANCED, preferences.glidePathTolerance)
         assertEquals(GlideImportedWordsPriority.NORMAL, preferences.glideImportedWordsPriority)
-        assertEquals(GlideRawFallbackMode.SHORT_ONLY, preferences.glideRawFallbackMode)
+        assertEquals(GlideRawFallbackMode.OFF, preferences.glideRawFallbackMode)
         assertEquals(EscTouchMode.REGULAR, preferences.escTouchMode)
         assertEquals(0.75f, preferences.edgeKeyWidthScale, 0.001f)
         assertEquals(34f, preferences.portraitGeometry.keyboardHeightPercent, 0.001f)
@@ -91,12 +91,16 @@ class KeyboardPreferencesTest {
             "TTE\tThe",
             "x\ttooShort",
             "valid\tbad-value",
-            "wrd\tWard",
+            "wrd\tWard\t4\t2\t99",
         ).joinToString(separator = "\n")
 
         val corrections = glideCorrectionsFromPreferenceValue(encoded)
 
-        assertEquals(mapOf("te" to "the", "wrd" to "ward"), corrections)
-        assertEquals("te\tthe\nwrd\tward", glideCorrectionsToPreferenceValue(corrections))
+        assertEquals("the", corrections["te"]?.word)
+        assertEquals("ward", corrections["wrd"]?.word)
+        assertEquals(1, corrections["te"]?.acceptedCount)
+        assertEquals(4, corrections["wrd"]?.acceptedCount)
+        assertEquals(2, corrections["wrd"]?.rejectedCount)
+        assertEquals("te\tthe\t1\t0\t0\nwrd\tward\t4\t2\t99", glideCorrectionsToPreferenceValue(corrections))
     }
 }

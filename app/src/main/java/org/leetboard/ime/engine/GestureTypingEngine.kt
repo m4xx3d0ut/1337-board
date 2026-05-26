@@ -9,7 +9,7 @@ class GestureTypingEngine(
     private val wordsProvider: () -> List<String> = { emptyList() },
 ) {
     private val rejectedWordsByPath = mutableMapOf<String, MutableSet<String>>()
-    private var correctionMap: Map<String, String> = emptyMap()
+    private var correctionMap: Map<String, GlideCorrectionEntry> = emptyMap()
 
     fun isEnabledFor(editorInfo: EditorInfo?): Boolean {
         return textContextPolicy.allowsGestureTyping(editorInfo)
@@ -39,20 +39,32 @@ class GestureTypingEngine(
         if (path.size < MIN_KEYS_FOR_GESTURE) return emptyList()
         val pathSignature = path.joinToString(separator = "")
         val rejectedWords = rejectedWordsByPath[pathSignature].orEmpty()
+        val normalizedWords = wordsProvider().mapNotNull(::normalizeWord)
+        val availableWords = normalizedWords.toSet()
         val correctionCandidate = correctionMap[pathSignature]
-            ?.takeIf { word -> word !in rejectedWords }
-            ?.takeIf { word -> localCorrectionAllowed(word, pathSignature, options) }
-            ?.let { correctedWord ->
+            ?.takeIf { correction -> correction.word !in rejectedWords }
+            ?.takeIf { correction -> correction.word in availableWords }
+            ?.takeIf { correction -> localCorrectionAllowed(correction.word, pathSignature, options) }
+            ?.takeUnless { correction -> correction.isDemoted() }
+            ?.let { correction ->
+                val score = scoreCandidate(
+                    word = correction.word,
+                    pathSignature = pathSignature,
+                    priority = CORRECTION_PRIORITY,
+                    options = options,
+                    touchTrace = touchTrace,
+                ) ?: return@let null
                 GlideCandidate(
-                    word = correctedWord,
-                    score = CORRECTION_SCORE,
+                    word = correction.word,
+                    score = score - correction.softBoost(),
                     source = GlideCandidateSource.LOCAL_CORRECTION,
+                    priority = CORRECTION_PRIORITY,
                 )
             }
-        val dictionaryCandidates = wordsProvider()
+        val dictionaryCandidates = normalizedWords
             .asSequence()
             .mapIndexedNotNull { index, rawWord ->
-                val word = normalizeWord(rawWord) ?: return@mapIndexedNotNull null
+                val word = rawWord
                 if (word in rejectedWords || word == correctionCandidate?.word) return@mapIndexedNotNull null
                 val score = scoreCandidate(word, pathSignature, index, options, touchTrace)
                     ?: return@mapIndexedNotNull null
@@ -94,11 +106,11 @@ class GestureTypingEngine(
         }
     }
 
-    fun setCorrections(corrections: Map<String, String>) {
+    fun setCorrections(corrections: Map<String, GlideCorrectionEntry>) {
         correctionMap = corrections.mapNotNull { (pathSignature, word) ->
             val normalizedPathSignature = normalizeGlidePathSignature(pathSignature) ?: return@mapNotNull null
-            val normalizedWord = normalizeWord(word) ?: return@mapNotNull null
-            normalizedPathSignature to normalizedWord
+            val normalizedWord = normalizeWord(word.word) ?: return@mapNotNull null
+            normalizedPathSignature to word.copy(word = normalizedWord)
         }.toMap()
     }
 
@@ -190,7 +202,7 @@ class GestureTypingEngine(
         const val DEFAULT_CANDIDATE_LIMIT = 5
         const val MIN_WORD_LENGTH = 2
         const val MAX_FALLBACK_SIGNATURE_LENGTH = 4
-        const val CORRECTION_SCORE = -100_000
+        const val CORRECTION_PRIORITY = 3_000
         const val RAW_FALLBACK_SCORE = 1_000_000
         const val IMPORTED_WORD_BOOST = -700
         const val DISTANCE_WEIGHT = 1000
@@ -217,7 +229,7 @@ data class GlideTypingOptions(
     val strictFirstLastLetter: Boolean = true,
     val pathTolerance: GlidePathTolerance = GlidePathTolerance.BALANCED,
     val importedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
-    val rawPathFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.SHORT_ONLY,
+    val rawPathFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.OFF,
     val importedWordCount: Int = 0,
     val predictiveRankingEnabled: Boolean = true,
 )

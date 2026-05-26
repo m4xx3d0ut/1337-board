@@ -14,9 +14,11 @@ import androidx.datastore.preferences.preferencesDataStore
 import java.io.Reader
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.leetboard.ime.engine.GlideCorrectionEntry
 import org.leetboard.ime.engine.GlideImportedWordsPriority
 import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
+import org.leetboard.ime.engine.GlideUserLanguageModel
 import org.leetboard.ime.engine.normalizeGlidePathSignature
 import org.leetboard.ime.engine.normalizeWord
 import org.leetboard.ime.model.CustomThemeConfig
@@ -70,16 +72,20 @@ class PreferenceRepository(context: Context) {
             glideCorrectionLearningEnabled = values[Keys.glideCorrectionLearningEnabled]
                 ?: KeyboardPreferences.defaults().glideCorrectionLearningEnabled,
             glideCorrections = glideCorrections,
-            glidePreferShorterWords = values[Keys.glidePreferShorterWords] ?: false,
-            glideStrictFirstLastLetter = values[Keys.glideStrictFirstLastLetter] ?: true,
+            glidePreferShorterWords = values[Keys.glidePreferShorterWords]
+                ?: KeyboardPreferences.defaults().glidePreferShorterWords,
+            glideStrictFirstLastLetter = values[Keys.glideStrictFirstLastLetter]
+                ?: KeyboardPreferences.defaults().glideStrictFirstLastLetter,
             glidePathTolerance = values[Keys.glidePathTolerance]?.let(::glidePathToleranceFromName)
-                ?: GlidePathTolerance.BALANCED,
+                ?: KeyboardPreferences.defaults().glidePathTolerance,
             glideImportedWordsPriority = values[Keys.glideImportedWordsPriority]?.let(::glideImportedWordsPriorityFromName)
-                ?: GlideImportedWordsPriority.NORMAL,
+                ?: KeyboardPreferences.defaults().glideImportedWordsPriority,
             glideRawFallbackMode = values[Keys.glideRawFallbackMode]?.let(::glideRawFallbackModeFromName)
-                ?: GlideRawFallbackMode.SHORT_ONLY,
+                ?: KeyboardPreferences.defaults().glideRawFallbackMode,
             glidePredictiveRankingEnabled = values[Keys.glidePredictiveRankingEnabled]
                 ?: KeyboardPreferences.defaults().glidePredictiveRankingEnabled,
+            glideLearningResetRevision = values[Keys.glideLearningResetRevision]
+                ?: KeyboardPreferences.defaults().glideLearningResetRevision,
             customTheme = customTheme(values),
         )
     }
@@ -227,23 +233,41 @@ class PreferenceRepository(context: Context) {
     suspend fun recordGlideCorrection(pathSignature: String, word: String) {
         val normalizedPathSignature = normalizeGlidePathSignature(pathSignature) ?: return
         val normalizedWord = normalizeWord(word) ?: return
+        val now = System.currentTimeMillis()
         dataStore.edit { values ->
             val corrections = glideCorrectionsFromPreferenceValue(values[Keys.glideCorrections]).toMutableMap()
-            corrections.remove(normalizedPathSignature)
+            val nextEntry = corrections.remove(normalizedPathSignature)
+                ?.copy(word = normalizedWord)
+                ?.accepted(now)
+                ?: GlideCorrectionEntry.fromWord(normalizedWord, now)
+                ?: return@edit
             while (corrections.size >= MAX_GLIDE_CORRECTIONS) {
                 corrections.remove(corrections.keys.first())
             }
-            corrections[normalizedPathSignature] = normalizedWord
+            corrections[normalizedPathSignature] = nextEntry
             values[Keys.glideCorrections] = glideCorrectionsToPreferenceValue(corrections)
         }
     }
 
     suspend fun setGlideCorrection(pathSignature: String, word: String) {
         val normalizedPathSignature = normalizeGlidePathSignature(pathSignature) ?: return
-        val normalizedWord = normalizeWord(word) ?: return
+        val entry = GlideCorrectionEntry.fromWord(word, System.currentTimeMillis()) ?: return
         dataStore.edit { values ->
             val corrections = glideCorrectionsFromPreferenceValue(values[Keys.glideCorrections]).toMutableMap()
-            corrections[normalizedPathSignature] = normalizedWord
+            corrections[normalizedPathSignature] = entry
+            values[Keys.glideCorrections] = glideCorrectionsToPreferenceValue(corrections)
+        }
+    }
+
+    suspend fun rejectGlideCorrection(pathSignature: String, word: String) {
+        val normalizedPathSignature = normalizeGlidePathSignature(pathSignature) ?: return
+        val normalizedWord = normalizeWord(word) ?: return
+        val now = System.currentTimeMillis()
+        dataStore.edit { values ->
+            val corrections = glideCorrectionsFromPreferenceValue(values[Keys.glideCorrections]).toMutableMap()
+            val entry = corrections[normalizedPathSignature] ?: return@edit
+            if (entry.word != normalizedWord) return@edit
+            corrections[normalizedPathSignature] = entry.rejected(now)
             values[Keys.glideCorrections] = glideCorrectionsToPreferenceValue(corrections)
         }
     }
@@ -263,6 +287,14 @@ class PreferenceRepository(context: Context) {
 
     suspend fun clearGlideCorrections() {
         dataStore.edit { values -> values.remove(Keys.glideCorrections) }
+    }
+
+    suspend fun resetGlideLearning() {
+        GlideUserLanguageModel.storageFile(appContext.filesDir).delete()
+        dataStore.edit { values ->
+            values.remove(Keys.glideCorrections)
+            values[Keys.glideLearningResetRevision] = (values[Keys.glideLearningResetRevision] ?: 0) + 1
+        }
     }
 
     suspend fun setGlidePreferShorterWords(enabled: Boolean) {
@@ -477,6 +509,7 @@ class PreferenceRepository(context: Context) {
         val glideImportedWordsPriority = stringPreferencesKey("glide_imported_words_priority")
         val glideRawFallbackMode = stringPreferencesKey("glide_raw_fallback_mode")
         val glidePredictiveRankingEnabled = booleanPreferencesKey("glide_predictive_ranking_enabled")
+        val glideLearningResetRevision = intPreferencesKey("glide_learning_reset_revision")
         val customBasePreset = stringPreferencesKey("custom_base_preset")
         val customBackgroundColor = intPreferencesKey("custom_background_color")
         val customKeyFillColor = intPreferencesKey("custom_key_fill_color")
@@ -528,24 +561,38 @@ class PreferenceRepository(context: Context) {
     private fun importedGlideWordsFile() = appContext.filesDir.resolve(IMPORTED_GLIDE_WORDS_FILE)
 }
 
-fun glideCorrectionsFromPreferenceValue(value: String?): Map<String, String> {
+fun glideCorrectionsFromPreferenceValue(value: String?): Map<String, GlideCorrectionEntry> {
     if (value.isNullOrBlank()) return emptyMap()
-    val corrections = linkedMapOf<String, String>()
+    val corrections = linkedMapOf<String, GlideCorrectionEntry>()
     value.lineSequence().forEach { line ->
-        val parts = line.split(GLIDE_CORRECTION_SEPARATOR, limit = 2)
+        val parts = line.split(GLIDE_CORRECTION_SEPARATOR)
         val pathSignature = parts.getOrNull(0)?.let(::normalizeGlidePathSignature) ?: return@forEach
         val word = parts.getOrNull(1)?.let(::normalizeWord) ?: return@forEach
-        corrections[pathSignature] = word
+        val acceptedCount = parts.getOrNull(2)?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+        val rejectedCount = parts.getOrNull(3)?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+        val lastUsedEpochMillis = parts.getOrNull(4)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+        corrections[pathSignature] = GlideCorrectionEntry(
+            word = word,
+            acceptedCount = acceptedCount,
+            rejectedCount = rejectedCount,
+            lastUsedEpochMillis = lastUsedEpochMillis,
+        )
     }
     return corrections
 }
 
-fun glideCorrectionsToPreferenceValue(corrections: Map<String, String>): String {
+fun glideCorrectionsToPreferenceValue(corrections: Map<String, GlideCorrectionEntry>): String {
     return corrections.entries
-        .mapNotNull { (pathSignature, word) ->
+        .mapNotNull { (pathSignature, entry) ->
             val normalizedPathSignature = normalizeGlidePathSignature(pathSignature) ?: return@mapNotNull null
-            val normalizedWord = normalizeWord(word) ?: return@mapNotNull null
-            "$normalizedPathSignature$GLIDE_CORRECTION_SEPARATOR$normalizedWord"
+            val normalizedWord = normalizeWord(entry.word) ?: return@mapNotNull null
+            listOf(
+                normalizedPathSignature,
+                normalizedWord,
+                entry.acceptedCount.coerceAtLeast(1).toString(),
+                entry.rejectedCount.coerceAtLeast(0).toString(),
+                entry.lastUsedEpochMillis.coerceAtLeast(0L).toString(),
+            ).joinToString(separator = GLIDE_CORRECTION_SEPARATOR)
         }
         .takeLast(MAX_GLIDE_CORRECTIONS)
         .joinToString(separator = "\n")
