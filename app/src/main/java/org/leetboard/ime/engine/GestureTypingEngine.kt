@@ -138,8 +138,10 @@ class GestureTypingEngine(
         val orderedCost = orderedMatchCost(wordSignature, pathSignature)
         if (orderedCost != null) {
             val lengthPenalty = abs(pathSignature.length - wordSignature.length)
+            val geometryPenalty = GlideGeometryScorer.cost(wordSignature, pathSignature) * options.geometryWeight()
             return orderedCost * options.orderedSkipWeight() +
                 lengthPenalty * LENGTH_WEIGHT +
+                geometryPenalty +
                 options.shortWordPenalty(word) +
                 priorityPenalty
         }
@@ -147,7 +149,12 @@ class GestureTypingEngine(
         val maximumDistance = options.maximumDistance(pathSignature.length)
         if (distance > maximumDistance) return null
         val lengthPenalty = abs(pathSignature.length - wordSignature.length)
-        return distance * DISTANCE_WEIGHT + lengthPenalty * LENGTH_WEIGHT + options.shortWordPenalty(word) + priorityPenalty
+        val geometryPenalty = GlideGeometryScorer.cost(wordSignature, pathSignature) * options.geometryWeight()
+        return distance * DISTANCE_WEIGHT +
+            lengthPenalty * LENGTH_WEIGHT +
+            geometryPenalty +
+            options.shortWordPenalty(word) +
+            priorityPenalty
     }
 
     private fun rawPathFallback(pathSignature: String, options: GlideTypingOptions): String? {
@@ -258,10 +265,21 @@ private fun GlideTypingOptions.shortWordPenalty(word: String): Int {
     return if (preferShorterWords) word.length * GestureScoring.SHORT_WORD_WEIGHT else 0
 }
 
+private fun GlideTypingOptions.geometryWeight(): Int {
+    return when (pathTolerance) {
+        GlidePathTolerance.STRICT -> GestureScoring.STRICT_GEOMETRY_WEIGHT
+        GlidePathTolerance.BALANCED -> GestureScoring.GEOMETRY_WEIGHT
+        GlidePathTolerance.LOOSE -> GestureScoring.LOOSE_GEOMETRY_WEIGHT
+    }
+}
+
 private object GestureScoring {
     const val ORDERED_SKIP_WEIGHT = 1000
     const val STRICT_ORDERED_SKIP_WEIGHT = 1300
     const val LOOSE_ORDERED_SKIP_WEIGHT = 750
+    const val GEOMETRY_WEIGHT = 2
+    const val STRICT_GEOMETRY_WEIGHT = 3
+    const val LOOSE_GEOMETRY_WEIGHT = 1
     const val NORMAL_PRIORITY_BUCKET_SIZE = 50
     const val HIGH_PRIORITY_BUCKET_SIZE = 18
     const val SHORT_WORD_WEIGHT = 20

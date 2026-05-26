@@ -41,6 +41,15 @@ class GestureTypingEngineTest {
     }
 
     @Test
+    fun geometryScoringFavorsPhysicallyNearCandidates() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("tost", "test")
+        }
+
+        assertEquals("test", engine.decode(listOf("t", "r", "s", "t")))
+    }
+
+    @Test
     fun importedWordsWinTiesByProviderOrder() {
         val engine = GestureTypingEngine(TextContextPolicy()) {
             listOf("helo", "hello")
