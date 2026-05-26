@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import org.leetboard.ime.engine.CustomizationEngine
 import org.leetboard.ime.engine.GlideDictionaryLoader
 import org.leetboard.ime.engine.GlidePredictionContext
+import org.leetboard.ime.engine.GlideTouchTrace
 import org.leetboard.ime.engine.GestureTypingEngine
 import org.leetboard.ime.engine.KeyActionEngine
 import org.leetboard.ime.engine.LayoutEngine
@@ -109,8 +110,8 @@ class ModernKeyboardImeService : InputMethodService() {
                 handleKeyAction(action, heldModifiers)
                 renderKeyboard()
             }
-            view.keyboardView.onGlide = { path, heldModifiers ->
-                handleGlide(path, heldModifiers)
+            view.keyboardView.onGlide = { path, touchTrace, heldModifiers ->
+                handleGlide(path, touchTrace, heldModifiers)
                 renderKeyboard()
             }
             view.onSuggestion = { word ->
@@ -188,13 +189,14 @@ class ModernKeyboardImeService : InputMethodService() {
         }
     }
 
-    private fun handleGlide(path: List<String>, heldModifiers: HeldModifiers) {
+    private fun handleGlide(path: List<String>, touchTrace: GlideTouchTrace?, heldModifiers: HeldModifiers) {
         if (!preferences.gestureTypingEnabled || !gestureTypingEngine.isEnabledFor(currentInputEditorInfo)) return
         val predictionContext = glidePredictionContext()
         val candidates = gestureTypingEngine.candidates(
             pathLabels = path,
             options = preferences.glideTypingOptions(),
             context = predictionContext,
+            touchTrace = touchTrace,
             limit = GLIDE_SUGGESTION_LIMIT,
         )
         val word = candidates.firstOrNull()?.word ?: return

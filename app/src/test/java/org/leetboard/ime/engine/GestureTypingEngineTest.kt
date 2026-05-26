@@ -50,6 +50,36 @@ class GestureTypingEngineTest {
     }
 
     @Test
+    fun touchTraceCanCorrectMisleadingCrossedKeyPath() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("tost", "test")
+        }
+        val trace = GlideTouchTrace(
+            points = listOf(
+                GlidePoint(4f, 0f),
+                GlidePoint(2f, 0f),
+                GlidePoint(1.5f, 1f),
+                GlidePoint(4f, 0f),
+            ),
+            keyCenters = mapOf(
+                't' to GlidePoint(4f, 0f),
+                'o' to GlidePoint(8f, 0f),
+                'e' to GlidePoint(2f, 0f),
+                's' to GlidePoint(1.5f, 1f),
+            ),
+        )
+
+        assertEquals(
+            "test",
+            engine.decode(
+                pathLabels = listOf("t", "o", "s", "t"),
+                options = GlideTypingOptions(),
+                touchTrace = trace,
+            ),
+        )
+    }
+
+    @Test
     fun importedWordsWinTiesByProviderOrder() {
         val engine = GestureTypingEngine(TextContextPolicy()) {
             listOf("helo", "hello")

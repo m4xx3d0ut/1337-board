@@ -23,14 +23,16 @@ class GestureTypingEngine(
         pathLabels: List<String>,
         options: GlideTypingOptions,
         context: GlidePredictionContext = GlidePredictionContext(),
+        touchTrace: GlideTouchTrace? = null,
     ): String? {
-        return candidates(pathLabels, options, context).firstOrNull()?.word
+        return candidates(pathLabels, options, context, touchTrace).firstOrNull()?.word
     }
 
     fun candidates(
         pathLabels: List<String>,
         options: GlideTypingOptions = GlideTypingOptions(),
         context: GlidePredictionContext = GlidePredictionContext(),
+        touchTrace: GlideTouchTrace? = null,
         limit: Int = DEFAULT_CANDIDATE_LIMIT,
     ): List<GlideCandidate> {
         val path = normalizePath(pathLabels)
@@ -52,7 +54,8 @@ class GestureTypingEngine(
             .mapIndexedNotNull { index, rawWord ->
                 val word = normalizeWord(rawWord) ?: return@mapIndexedNotNull null
                 if (word in rejectedWords || word == correctionCandidate?.word) return@mapIndexedNotNull null
-                val score = scoreCandidate(word, pathSignature, index, options) ?: return@mapIndexedNotNull null
+                val score = scoreCandidate(word, pathSignature, index, options, touchTrace)
+                    ?: return@mapIndexedNotNull null
                 GlideCandidate(
                     word = word,
                     score = score,
@@ -128,6 +131,7 @@ class GestureTypingEngine(
         pathSignature: String,
         priority: Int,
         options: GlideTypingOptions,
+        touchTrace: GlideTouchTrace?,
     ): Int? {
         if (word.length < MIN_WORD_LENGTH) return null
         if (options.strictFirstLastLetter && (word.first() != pathSignature.first() || word.last() != pathSignature.last())) {
@@ -139,9 +143,11 @@ class GestureTypingEngine(
         if (orderedCost != null) {
             val lengthPenalty = abs(pathSignature.length - wordSignature.length)
             val geometryPenalty = GlideGeometryScorer.cost(wordSignature, pathSignature) * options.geometryWeight()
+            val touchPenalty = GlideGeometryScorer.touchCost(wordSignature, touchTrace) * options.touchTraceWeight()
             return orderedCost * options.orderedSkipWeight() +
                 lengthPenalty * LENGTH_WEIGHT +
                 geometryPenalty +
+                touchPenalty +
                 options.shortWordPenalty(word) +
                 priorityPenalty
         }
@@ -150,9 +156,11 @@ class GestureTypingEngine(
         if (distance > maximumDistance) return null
         val lengthPenalty = abs(pathSignature.length - wordSignature.length)
         val geometryPenalty = GlideGeometryScorer.cost(wordSignature, pathSignature) * options.geometryWeight()
+        val touchPenalty = GlideGeometryScorer.touchCost(wordSignature, touchTrace) * options.touchTraceWeight()
         return distance * DISTANCE_WEIGHT +
             lengthPenalty * LENGTH_WEIGHT +
             geometryPenalty +
+            touchPenalty +
             options.shortWordPenalty(word) +
             priorityPenalty
     }
@@ -273,6 +281,14 @@ private fun GlideTypingOptions.geometryWeight(): Int {
     }
 }
 
+private fun GlideTypingOptions.touchTraceWeight(): Int {
+    return when (pathTolerance) {
+        GlidePathTolerance.STRICT -> GestureScoring.STRICT_TOUCH_TRACE_WEIGHT
+        GlidePathTolerance.BALANCED -> GestureScoring.TOUCH_TRACE_WEIGHT
+        GlidePathTolerance.LOOSE -> GestureScoring.LOOSE_TOUCH_TRACE_WEIGHT
+    }
+}
+
 private object GestureScoring {
     const val ORDERED_SKIP_WEIGHT = 1000
     const val STRICT_ORDERED_SKIP_WEIGHT = 1300
@@ -280,6 +296,9 @@ private object GestureScoring {
     const val GEOMETRY_WEIGHT = 2
     const val STRICT_GEOMETRY_WEIGHT = 3
     const val LOOSE_GEOMETRY_WEIGHT = 1
+    const val TOUCH_TRACE_WEIGHT = 4
+    const val STRICT_TOUCH_TRACE_WEIGHT = 5
+    const val LOOSE_TOUCH_TRACE_WEIGHT = 2
     const val NORMAL_PRIORITY_BUCKET_SIZE = 50
     const val HIGH_PRIORITY_BUCKET_SIZE = 18
     const val SHORT_WORD_WEIGHT = 20

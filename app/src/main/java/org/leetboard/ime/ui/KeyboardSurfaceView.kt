@@ -15,6 +15,8 @@ import android.os.Looper
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
+import org.leetboard.ime.engine.GlidePoint
+import org.leetboard.ime.engine.GlideTouchTrace
 import org.leetboard.ime.model.HeldModifiers
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
@@ -31,7 +33,7 @@ import org.leetboard.ime.model.resolvedDisplay
 
 class KeyboardSurfaceView(context: Context) : View(context) {
     var onKey: ((KeyAction, HeldModifiers) -> Unit)? = null
-    var onGlide: ((List<String>, HeldModifiers) -> Unit)? = null
+    var onGlide: ((List<String>, GlideTouchTrace?, HeldModifiers) -> Unit)? = null
 
     private var layout: KeyboardLayout? = null
     private var theme: KeyboardTheme = KeyboardTheme.leetGreen
@@ -267,10 +269,19 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val index = event.actionIndex
         val pointerId = event.getPointerId(index)
         val press = pointerPresses[pointerId] ?: return
-        val hitKey = findKey(event.getX(index), event.getY(index))
+        val releaseX = event.getX(index)
+        val releaseY = event.getY(index)
+        val hitKey = findKey(releaseX, releaseY)
+        val pressWithReleasePoint = press.copy(
+            glidePoints = press.glidePoints + PointF(releaseX, releaseY),
+        )
         val releasePress = alphaKeyLabel(hitKey?.key)?.let { label ->
-            if (press.glidePath.lastOrNull() == label) press else press.copy(glidePath = press.glidePath + label)
-        } ?: press
+            if (press.glidePath.lastOrNull() == label) {
+                pressWithReleasePoint
+            } else {
+                pressWithReleasePoint.copy(glidePath = press.glidePath + label)
+            }
+        } ?: pressWithReleasePoint
         val pressedHitKey = hitKeys.firstOrNull { it.key.id == press.keyId }
         if (repeatPointerId == pointerId) {
             handler.removeCallbacks(repeatRunnable)
@@ -288,11 +299,11 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             (
                 glideTypingEnabled &&
                     releasePress.glidePath.distinct().size >= MIN_GLIDE_KEYS &&
-                    distanceSquared(press.downX, press.downY, event.getX(index), event.getY(index)) >= glideStartThresholdSquared()
+                    distanceSquared(press.downX, press.downY, releaseX, releaseY) >= glideStartThresholdSquared()
                 )
         if (releaseGliding && releasePress.glidePath.size >= MIN_GLIDE_KEYS) {
             if (heldModifiers.isActive()) markActiveModifiersUsedInCombo()
-            onGlide?.invoke(releasePress.glidePath, heldModifiers)
+            onGlide?.invoke(releasePress.glidePath, buildGlideTouchTrace(releasePress.glidePoints), heldModifiers)
             return
         }
         if (press.longPressConsumed || pressedHitKey == null) return
@@ -624,6 +635,31 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private fun alphaKeyLabel(key: KeySpec?): String? {
         val text = key?.action?.text?.lowercase() ?: return null
         return text.takeIf { it.length == 1 && it.first() in 'a'..'z' }
+    }
+
+    private fun buildGlideTouchTrace(points: List<PointF>): GlideTouchTrace? {
+        val alphaKeys = hitKeys.mapNotNull { hitKey ->
+            val label = alphaKeyLabel(hitKey.key)?.firstOrNull() ?: return@mapNotNull null
+            label to hitKey.rect
+        }
+        if (alphaKeys.isEmpty() || points.size < MIN_GLIDE_KEYS) return null
+        val unitWidth = alphaKeys.map { (_, rect) -> rect.width() }.average().toFloat().coerceAtLeast(1f)
+        val unitHeight = alphaKeys.map { (_, rect) -> rect.height() }.average().toFloat().coerceAtLeast(1f)
+        val originX = alphaKeys.minOf { (_, rect) -> rect.centerX() }
+        val originY = alphaKeys.minOf { (_, rect) -> rect.centerY() }
+        val keyCenters = alphaKeys.associate { (label, rect) ->
+            label to GlidePoint(
+                x = (rect.centerX() - originX) / unitWidth,
+                y = (rect.centerY() - originY) / unitHeight,
+            )
+        }
+        val tracePoints = points.map { point ->
+            GlidePoint(
+                x = (point.x - originX) / unitWidth,
+                y = (point.y - originY) / unitHeight,
+            )
+        }
+        return GlideTouchTrace(points = tracePoints, keyCenters = keyCenters)
     }
 
     private fun distanceSquared(startX: Float, startY: Float, endX: Float, endY: Float): Float {

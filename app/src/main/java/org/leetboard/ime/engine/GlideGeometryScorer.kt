@@ -9,6 +9,20 @@ object GlideGeometryScorer {
         val pathPoints = pathSignature.mapNotNull { keyPositions[it] }
         if (wordPoints.isEmpty() || pathPoints.isEmpty()) return 0
 
+        return dynamicTimeWarpingCost(wordPoints, pathPoints)
+    }
+
+    fun touchCost(wordSignature: String, trace: GlideTouchTrace?): Int {
+        if (trace?.isUsable() != true) return 0
+        val wordPoints = wordSignature.mapNotNull { trace.keyCenters[it] }
+        if (wordPoints.isEmpty()) return 0
+        return dynamicTimeWarpingCost(wordPoints, sampleTrace(trace.points))
+    }
+
+    private fun dynamicTimeWarpingCost(
+        wordPoints: List<GlidePoint>,
+        pathPoints: List<GlidePoint>,
+    ): Int {
         val distances = Array(wordPoints.size) { FloatArray(pathPoints.size) { Float.POSITIVE_INFINITY } }
         wordPoints.forEachIndexed { wordIndex, wordPoint ->
             pathPoints.forEachIndexed { pathIndex, pathPoint ->
@@ -30,26 +44,30 @@ object GlideGeometryScorer {
         return (normalizedCost * GEOMETRY_COST_SCALE).roundToInt()
     }
 
-    private fun KeyPoint.distanceTo(other: KeyPoint): Float {
+    private fun sampleTrace(points: List<GlidePoint>): List<GlidePoint> {
+        if (points.size <= MAX_TRACE_POINTS) return points
+        val step = (points.lastIndex).toFloat() / (MAX_TRACE_POINTS - 1)
+        return List(MAX_TRACE_POINTS) { index ->
+            points[(index * step).roundToInt().coerceIn(points.indices)]
+        }
+    }
+
+    private fun GlidePoint.distanceTo(other: GlidePoint): Float {
         return hypot(x - other.x, y - other.y)
     }
 
-    private data class KeyPoint(
-        val x: Float,
-        val y: Float,
-    )
-
-    private val keyPositions: Map<Char, KeyPoint> = buildMap {
+    private val keyPositions: Map<Char, GlidePoint> = buildMap {
         "qwertyuiop".forEachIndexed { index, char ->
-            put(char, KeyPoint(index.toFloat(), 0f))
+            put(char, GlidePoint(index.toFloat(), 0f))
         }
         "asdfghjkl".forEachIndexed { index, char ->
-            put(char, KeyPoint(index + 0.5f, 1f))
+            put(char, GlidePoint(index + 0.5f, 1f))
         }
         "zxcvbnm".forEachIndexed { index, char ->
-            put(char, KeyPoint(index + 1.25f, 2f))
+            put(char, GlidePoint(index + 1.25f, 2f))
         }
     }
 
     private const val GEOMETRY_COST_SCALE = 1000
+    private const val MAX_TRACE_POINTS = 32
 }
