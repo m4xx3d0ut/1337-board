@@ -9,4 +9,8 @@ local.properties
 *.iml
 *.keystore
 *.jks
+*.p12
+*.pem
+*.idsig
+.env.release
 app/build/

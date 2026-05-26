@@ -46,6 +46,14 @@ Recognizer availability and offline behavior vary by ROM, OEM, and installed spe
 
 GitHub APK releases are the current distribution target. F-Droid packaging is planned after metadata, licensing, and reproducible-build checks. Google Play distribution is possible later, but not planned for this release.
 
+Release artifacts may include three different APK types:
+
+- Debug preview APKs are installable test builds and are not production signing identities.
+- Unsigned release APKs are produced by local builds and GitHub Actions for review/reproducibility checks, but must be signed before installation.
+- Production-signed APKs are the installable release artifacts once the project release key is established.
+
+Production signing setup is documented in [docs/release-signing.md](docs/release-signing.md). Users who installed a debug-key preview may need to uninstall it before installing the first production-signed APK.
+
 ## Licensing
 
 1337 Board is distributed under the Apache License 2.0. Bundled third-party assets and reference projects are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
@@ -78,6 +86,12 @@ Run unit tests:
 
 ```sh
 ./gradlew testDebugUnitTest
+```
+
+Build release artifacts:
+
+```sh
+scripts/build-release.sh v0.1.0
 ```
 
 After installing, open 1337 Board, open input settings, enable the IME, then choose it from the keyboard picker.

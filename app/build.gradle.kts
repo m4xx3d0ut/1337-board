@@ -4,6 +4,19 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+fun releaseEnv(name: String): String? = System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val releaseStoreFilePath = releaseEnv("LEETBOARD_RELEASE_STORE_FILE")
+val releaseStorePassword = releaseEnv("LEETBOARD_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = releaseEnv("LEETBOARD_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseEnv("LEETBOARD_RELEASE_KEY_PASSWORD")
+val releaseSigningConfigured = listOf(
+    releaseStoreFilePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it != null }
+
 android {
     namespace = "org.leetboard.ime"
     compileSdk = 35
@@ -20,6 +33,25 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    signingConfigs {
+        create("releaseEnv") {
+            if (releaseSigningConfigured) {
+                storeFile = file(releaseStoreFilePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("releaseEnv")
+            }
+        }
     }
 
     compileOptions {
