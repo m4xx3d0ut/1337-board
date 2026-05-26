@@ -1,4 +1,5 @@
 .codex/
+.local/
 .gradle/
 .android-sdk/
 .idea/
