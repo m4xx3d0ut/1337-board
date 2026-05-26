@@ -11,8 +11,10 @@
 - Configurable optional keys, preset action slots, key labels/icons, sticky modifiers, and key preview behavior.
 - Local glide typing with bundled word list, ranked suggestions, optional imported word lists, and an opt-in local correction map.
 - Mic input through Android speech recognition, with offline preference requested when supported by the device recognizer.
-- Theme presets including light, dark, alternate dark, cyberpunk, terminal, high contrast, and 1337 green-on-black.
+- Theme presets and a custom theme slot including light, dark, alternate dark, cyberpunk, terminal, high contrast, and 1337 green-on-black.
 - Separate portrait and landscape controls for keyboard height, margins, gaps, borders, radius, and label styling.
+
+![1337 Board theme grid captured on OnePlus Pad3](1337-board-theme-grid.png)
 
 ## Privacy
 

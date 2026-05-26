@@ -168,6 +168,7 @@ class ModernKeyboardImeService : InputMethodService() {
                 preset = preferences.themePreset,
                 portrait = preferences.portraitGeometry,
                 landscape = preferences.landscapeGeometry,
+                customTheme = preferences.customTheme,
             ),
             layoutState.activeKeyIds() + featureActiveKeyIds(),
             preferences.keyPreviewEnabled,

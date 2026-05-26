@@ -1,6 +1,7 @@
 package org.leetboard.ime.ui
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Paint
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -59,6 +61,7 @@ import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
 import org.leetboard.ime.engine.LayoutEngine
 import org.leetboard.ime.engine.ThemeEngine
+import org.leetboard.ime.model.CustomThemeConfig
 import org.leetboard.ime.model.EscTouchMode
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
@@ -74,7 +77,10 @@ import org.leetboard.ime.model.RowAlignment
 import org.leetboard.ime.model.ThemePreset
 import org.leetboard.ime.model.displayLabel
 import org.leetboard.ime.model.fallbackLabel
+import org.leetboard.ime.model.opaque
 import org.leetboard.ime.model.resolvedDisplay
+import org.leetboard.ime.prefs.CustomThemeColorField
+import org.leetboard.ime.prefs.CustomThemeOpacityField
 import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
 import org.leetboard.ime.prefs.KeyLabelStyleField
@@ -153,6 +159,7 @@ fun SettingsScreen(
                         ) {
                             SettingsHeader()
                             LayoutThemeSection(preferences, repository)
+                            CustomThemeSection(preferences, repository)
                             OptionalKeysSection(preferences, repository)
                             InteractionSection(preferences, repository)
                             FeatureSection(preferences, repository)
@@ -181,6 +188,7 @@ fun SettingsScreen(
                         SettingsHeader()
                         KeymapPreviewSection(preferences)
                         LayoutThemeSection(preferences, repository)
+                        CustomThemeSection(preferences, repository)
                         GeometrySection(preferences, repository)
                         InteractionSection(preferences, repository)
                         LabelStyleSection(preferences, repository)
@@ -255,6 +263,94 @@ private fun LayoutThemeSection(
                     scope.launch { repository.setThemePreset(preset) }
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun CustomThemeSection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val themeEngine = remember { ThemeEngine() }
+    val currentTheme = themeEngine.resolve(
+        preset = preferences.themePreset,
+        portrait = preferences.portraitGeometry,
+        landscape = preferences.landscapeGeometry,
+        customTheme = preferences.customTheme,
+    )
+    val cloneBase = if (preferences.themePreset == ThemePreset.CUSTOM) {
+        preferences.customTheme.basePreset
+    } else {
+        preferences.themePreset
+    }
+    val imageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            } catch (_: SecurityException) {
+                // Some providers do not offer persistable grants; keep the URI as a best-effort preview source.
+            }
+            scope.launch { repository.setCustomThemeBackgroundImage(uri.toString()) }
+        }
+    }
+
+    SettingsGroup(
+        title = "Custom Theme",
+        body = "Clone a preset, then tune colors, transparency, and an optional local background image.",
+    ) {
+        Button(
+            onClick = {
+                scope.launch {
+                    repository.setCustomTheme(CustomThemeConfig.fromTheme(cloneBase, currentTheme))
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Clone ${cloneBase.label} into custom")
+        }
+        CustomThemeColorField.entries.forEach { field ->
+            HexColorControl(
+                label = field.label,
+                color = preferences.customTheme.colorFor(field),
+                onApply = { color ->
+                    scope.launch { repository.setCustomThemeColor(field, color) }
+                },
+            )
+        }
+        CustomThemeOpacityField.entries.forEach { field ->
+            OpacitySlider(
+                label = field.label,
+                value = preferences.customTheme.opacityFor(field),
+                onChange = { value ->
+                    scope.launch { repository.setCustomThemeOpacity(field, value) }
+                },
+            )
+        }
+        OutlinedButton(
+            onClick = { imageLauncher.launch(arrayOf("image/*")) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (preferences.customTheme.backgroundImageUri == null) "Pick background image" else "Replace background image")
+        }
+        if (preferences.customTheme.backgroundImageUri != null) {
+            OutlinedButton(
+                onClick = { scope.launch { repository.setCustomThemeBackgroundImage(null) } },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Remove background image")
+            }
+        }
+        OutlinedButton(
+            onClick = { scope.launch { repository.resetCustomTheme() } },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Reset custom theme")
         }
     }
 }
@@ -526,6 +622,7 @@ private fun FeatureSection(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var showGlideCorrections by remember { mutableStateOf(false) }
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -561,6 +658,12 @@ private fun FeatureSection(
             },
         )
         if (preferences.glideCorrections.isNotEmpty()) {
+            OutlinedButton(
+                onClick = { showGlideCorrections = true },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Review glide corrections (${preferences.glideCorrections.size})")
+            }
             OutlinedButton(
                 onClick = { scope.launch { repository.clearGlideCorrections() } },
                 modifier = Modifier.fillMaxWidth(),
@@ -651,6 +754,13 @@ private fun FeatureSection(
             }
         }
     }
+    if (showGlideCorrections) {
+        GlideCorrectionsDialog(
+            corrections = preferences.glideCorrections,
+            repository = repository,
+            onDismiss = { showGlideCorrections = false },
+        )
+    }
 }
 
 @Composable
@@ -670,6 +780,90 @@ private fun SettingsActions(
             Text("Done")
         }
     }
+}
+
+@Composable
+private fun GlideCorrectionsDialog(
+    corrections: Map<String, String>,
+    repository: PreferenceRepository,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val sortedCorrections = corrections.toSortedMap()
+    var editedCorrections by remember(corrections) { mutableStateOf(sortedCorrections) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Learned glide corrections") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                sortedCorrections.forEach { (path, word) ->
+                    val editedWord = editedCorrections[path] ?: word
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Path: $path", style = MaterialTheme.typography.labelLarge)
+                        OutlinedTextField(
+                            value = editedWord,
+                            onValueChange = { next ->
+                                editedCorrections = editedCorrections.toMutableMap().apply {
+                                    this[path] = next.lowercase().filter { char -> char in 'a'..'z' }.take(24)
+                                }.toSortedMap()
+                            },
+                            label = { Text("Replacement word") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        repository.setGlideCorrection(path, editedWord)
+                                    }
+                                },
+                                enabled = editedWord.isNotBlank() && editedWord != word,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("Save")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    scope.launch {
+                                        repository.removeGlideCorrection(path)
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("Delete")
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    scope.launch { repository.clearGlideCorrections() }
+                    onDismiss()
+                },
+            ) {
+                Text("Clear all")
+            }
+        },
+    )
 }
 
 @Composable
@@ -707,6 +901,7 @@ private fun KeymapPreview(
         preset = preferences.themePreset,
         portrait = preferences.portraitGeometry,
         landscape = preferences.landscapeGeometry,
+        customTheme = preferences.customTheme,
     )
     val layout = customizationEngine.apply(
         layout = layoutEngine.layoutFor(
@@ -822,7 +1017,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPreviewKey(
     )
 
     val display = key.resolvedDisplay(shiftActive = false, labelStyle = labelStyle)
-    labelPaint.color = theme.colors.keyText.withAlpha((labelStyle.labelOpacity * 255).toInt())
+    labelPaint.color = theme.colors.keyText.withCombinedAlpha((labelStyle.labelOpacity * 255).toInt())
     labelPaint.isFakeBoldText = labelStyle.fontWeight >= 600f
     val label = display.icon?.fallbackLabel() ?: display.label
     labelPaint.textSize = density * if (label.length > 4) labelStyle.primaryTextSizeSp - 4f else labelStyle.primaryTextSizeSp - 2f
@@ -876,6 +1071,150 @@ private fun SelectButton(
         OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
             Text(text)
         }
+    }
+}
+
+@Composable
+private fun HexColorControl(
+    label: String,
+    color: Int,
+    onApply: (Int) -> Unit,
+) {
+    var value by remember(label, color) { mutableStateOf(color.toHexColor()) }
+    var showPicker by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .width(48.dp)
+                    .height(48.dp),
+            ) {
+                drawRoundRect(
+                    color = Color(color.opaque()),
+                    size = size,
+                    cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx()),
+                )
+            }
+            OutlinedTextField(
+                value = value,
+                onValueChange = { next -> value = next.take(9) },
+                label = { Text("#RRGGBB") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = { parseHexColor(value)?.let(onApply) },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Apply")
+            }
+            OutlinedButton(
+                onClick = { showPicker = true },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Pick RGB")
+            }
+        }
+    }
+    if (showPicker) {
+        RgbColorPickerDialog(
+            title = label,
+            initialColor = parseHexColor(value) ?: color.opaque(),
+            onDismiss = { showPicker = false },
+            onApply = { selectedColor ->
+                value = selectedColor.toHexColor()
+                onApply(selectedColor)
+                showPicker = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun RgbColorPickerDialog(
+    title: String,
+    initialColor: Int,
+    onDismiss: () -> Unit,
+    onApply: (Int) -> Unit,
+) {
+    var red by remember(initialColor) { mutableStateOf(initialColor.redChannel().toFloat()) }
+    var green by remember(initialColor) { mutableStateOf(initialColor.greenChannel().toFloat()) }
+    var blue by remember(initialColor) { mutableStateOf(initialColor.blueChannel().toFloat()) }
+    val selectedColor = rgbColor(red.toInt(), green.toInt(), blue.toInt())
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("$title RGB") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp),
+                ) {
+                    drawRoundRect(
+                        color = Color(selectedColor),
+                        size = size,
+                        cornerRadius = CornerRadius(10.dp.toPx(), 10.dp.toPx()),
+                    )
+                }
+                Text(selectedColor.toHexColor(), style = MaterialTheme.typography.labelLarge)
+                RgbChannelSlider("Red", red) { red = it }
+                RgbChannelSlider("Green", green) { green = it }
+                RgbChannelSlider("Blue", blue) { blue = it }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onApply(selectedColor) }) {
+                Text("Use color")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun RgbChannelSlider(
+    label: String,
+    value: Float,
+    onChange: (Float) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("$label: ${value.toInt().coerceIn(0, 255)}")
+        Slider(
+            value = value.coerceIn(0f, 255f),
+            onValueChange = onChange,
+            valueRange = 0f..255f,
+        )
+    }
+}
+
+@Composable
+private fun OpacitySlider(
+    label: String,
+    value: Float,
+    onChange: (Float) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("$label: ${(value.coerceIn(0f, 1f) * 100).toInt()}%")
+        Slider(
+            value = value.coerceIn(0f, 1f),
+            onValueChange = onChange,
+            valueRange = 0f..1f,
+        )
     }
 }
 
@@ -1119,6 +1458,73 @@ private val ThemePreset.label: String
         word.replaceFirstChar { it.uppercase() }
     }
 
+private val CustomThemeColorField.label: String
+    get() = when (this) {
+        CustomThemeColorField.BACKGROUND -> "Keyboard background"
+        CustomThemeColorField.KEY_FILL -> "Key background"
+        CustomThemeColorField.KEY_STROKE -> "Key border"
+        CustomThemeColorField.KEY_TEXT -> "Key label"
+        CustomThemeColorField.PRESSED_FILL -> "Pressed key"
+        CustomThemeColorField.ACTIVE_MODIFIER_FILL -> "Active modifier"
+    }
+
+private val CustomThemeOpacityField.label: String
+    get() = when (this) {
+        CustomThemeOpacityField.BACKGROUND_IMAGE -> "Background image opacity"
+        CustomThemeOpacityField.KEY_FILL -> "Key background opacity"
+        CustomThemeOpacityField.KEY_STROKE -> "Key border opacity"
+        CustomThemeOpacityField.KEY_TEXT -> "Key label opacity"
+    }
+
+private fun CustomThemeConfig.colorFor(field: CustomThemeColorField): Int {
+    return when (field) {
+        CustomThemeColorField.BACKGROUND -> backgroundColor
+        CustomThemeColorField.KEY_FILL -> keyFillColor
+        CustomThemeColorField.KEY_STROKE -> keyStrokeColor
+        CustomThemeColorField.KEY_TEXT -> keyTextColor
+        CustomThemeColorField.PRESSED_FILL -> pressedFillColor
+        CustomThemeColorField.ACTIVE_MODIFIER_FILL -> activeModifierFillColor
+    }
+}
+
+private fun CustomThemeConfig.opacityFor(field: CustomThemeOpacityField): Float {
+    return when (field) {
+        CustomThemeOpacityField.BACKGROUND_IMAGE -> backgroundImageOpacity
+        CustomThemeOpacityField.KEY_FILL -> keyFillOpacity
+        CustomThemeOpacityField.KEY_STROKE -> keyStrokeOpacity
+        CustomThemeOpacityField.KEY_TEXT -> keyTextOpacity
+    }
+}
+
+private fun Int.toHexColor(): String {
+    return "#%06X".format(this and 0x00FFFFFF)
+}
+
+private fun parseHexColor(value: String): Int? {
+    val normalized = value.trim().removePrefix("#")
+    if (normalized.length != 6 && normalized.length != 8) return null
+    return normalized.toLongOrNull(16)?.toInt()?.opaque()
+}
+
+private fun rgbColor(red: Int, green: Int, blue: Int): Int {
+    return 0xFF000000.toInt() or
+        (red.coerceIn(0, 255) shl 16) or
+        (green.coerceIn(0, 255) shl 8) or
+        blue.coerceIn(0, 255)
+}
+
+private fun Int.redChannel(): Int {
+    return (this shr 16) and 0xFF
+}
+
+private fun Int.greenChannel(): Int {
+    return (this shr 8) and 0xFF
+}
+
+private fun Int.blueChannel(): Int {
+    return this and 0xFF
+}
+
 private val GlidePathTolerance.label: String
     get() = when (this) {
         GlidePathTolerance.STRICT -> "Strict"
@@ -1139,6 +1545,8 @@ private val GlideRawFallbackMode.label: String
         GlideRawFallbackMode.ALWAYS -> "Always"
     }
 
-private fun Int.withAlpha(alpha: Int): Int {
-    return (this and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
+private fun Int.withCombinedAlpha(alpha: Int): Int {
+    val baseAlpha = (this ushr 24) and 0xFF
+    val nextAlpha = (baseAlpha * (alpha.coerceIn(0, 255) / 255f)).toInt()
+    return (this and 0x00FFFFFF) or (nextAlpha shl 24)
 }

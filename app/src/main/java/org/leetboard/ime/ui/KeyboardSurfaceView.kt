@@ -1,11 +1,15 @@
 package org.leetboard.ime.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
+import android.graphics.Rect
 import android.graphics.RectF
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
@@ -37,6 +41,8 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private var keyLabelStyle: KeyLabelStyle = KeyLabelStyle()
     private var glideTypingEnabled: Boolean = false
     private var swipeUpActionsEnabled: Boolean = true
+    private var backgroundImageUri: String? = null
+    private var backgroundImageBitmap: Bitmap? = null
     private var pressedKeyIds: Set<String> = emptySet()
     private var previewKey: KeySpec? = null
     private val pointerPresses = mutableMapOf<Int, PointerPress>()
@@ -74,6 +80,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
     }
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
     fun render(
         layout: KeyboardLayout,
@@ -93,6 +100,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         this.keyLabelStyle = keyLabelStyle
         this.glideTypingEnabled = glideTypingEnabled
         this.swipeUpActionsEnabled = swipeUpActionsEnabled
+        loadBackgroundImageIfNeeded(theme.backgroundImageUri)
         invalidate()
     }
 
@@ -118,6 +126,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val keyboardHeight = height.toFloat()
         val rowHeight = (keyboardHeight - geometryPx.topMargin - geometryPx.bottomMargin - geometryPx.rowGap * (rows.size - 1)) / rows.size
         var top = geometryPx.topMargin
+        drawBackgroundImage(canvas)
         rows.forEach { row ->
             val occupiedWeight = row.startInsetWeight + row.endInsetWeight +
                 row.keys.sumOf { it.weight.toDouble() }.toFloat()
@@ -149,6 +158,12 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             }
         }
         drawGlideTrace(canvas)
+    }
+
+    override fun onDetachedFromWindow() {
+        backgroundImageBitmap?.recycle()
+        backgroundImageBitmap = null
+        super.onDetachedFromWindow()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -316,7 +331,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         strokePaint.color = theme.colors.keyStroke
         strokePaint.strokeWidth = geometry.borderWidth
         val textAlpha = (keyLabelStyle.labelOpacity.coerceIn(0f, 1f) * 255).toInt()
-        textPaint.color = theme.colors.keyText.withAlpha(textAlpha)
+        textPaint.color = theme.colors.keyText.withCombinedAlpha(textAlpha)
         textPaint.isFakeBoldText = keyLabelStyle.fontWeight >= BOLD_WEIGHT
         val display = key.resolvedDisplay(
             shiftActive = "shift" in activeKeyIds || "shift_right" in activeKeyIds,
@@ -366,11 +381,22 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             moveTo(points.first().x, points.first().y)
             points.drop(1).forEach { point -> lineTo(point.x, point.y) }
         }
-        strokePaint.color = theme.colors.keyText.withAlpha(GLIDE_TRACE_ALPHA)
+        strokePaint.color = theme.colors.keyText.withCombinedAlpha(GLIDE_TRACE_ALPHA)
         strokePaint.strokeWidth = resources.displayMetrics.density * GLIDE_TRACE_WIDTH_DP
         strokePaint.strokeCap = Paint.Cap.ROUND
         canvas.drawPath(path, strokePaint)
         strokePaint.strokeCap = Paint.Cap.BUTT
+    }
+
+    private fun drawBackgroundImage(canvas: Canvas) {
+        val bitmap = backgroundImageBitmap ?: return
+        val opacity = theme.backgroundImageOpacity
+        if (opacity <= 0f || width <= 0 || height <= 0) return
+        val source = centerCropSource(bitmap.width, bitmap.height, width, height)
+        val destination = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        bitmapPaint.alpha = (opacity.coerceIn(0f, 1f) * 255f).toInt()
+        canvas.drawBitmap(bitmap, source, destination, bitmapPaint)
+        bitmapPaint.alpha = 255
     }
 
     private fun drawSecondaryDisplay(canvas: Canvas, rect: RectF, label: String?, icon: KeyIcon?) {
@@ -528,6 +554,60 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         canvas.drawText(label, rect.centerX(), baseline, textPaint)
     }
 
+    private fun loadBackgroundImageIfNeeded(uriString: String?) {
+        if (backgroundImageUri == uriString) return
+        backgroundImageUri = uriString
+        backgroundImageBitmap?.recycle()
+        backgroundImageBitmap = null
+        if (uriString.isNullOrBlank()) return
+
+        backgroundImageBitmap = try {
+            val uri = Uri.parse(uriString)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, bounds)
+            }
+            val sampleSize = imageSampleSize(
+                bounds.outWidth,
+                bounds.outHeight,
+                resources.displayMetrics.widthPixels,
+                resources.displayMetrics.heightPixels / 2,
+            )
+            val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, options)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun imageSampleSize(sourceWidth: Int, sourceHeight: Int, targetWidth: Int, targetHeight: Int): Int {
+        if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) return 1
+        var sampleSize = 1
+        while (sourceWidth / (sampleSize * 2) >= targetWidth && sourceHeight / (sampleSize * 2) >= targetHeight) {
+            sampleSize *= 2
+        }
+        return sampleSize
+    }
+
+    private fun centerCropSource(bitmapWidth: Int, bitmapHeight: Int, targetWidth: Int, targetHeight: Int): Rect {
+        if (bitmapWidth <= 0 || bitmapHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
+            return Rect(0, 0, bitmapWidth.coerceAtLeast(0), bitmapHeight.coerceAtLeast(0))
+        }
+        val bitmapRatio = bitmapWidth.toFloat() / bitmapHeight.toFloat()
+        val targetRatio = targetWidth.toFloat() / targetHeight.toFloat()
+        return if (bitmapRatio > targetRatio) {
+            val cropWidth = (bitmapHeight * targetRatio).toInt().coerceAtLeast(1)
+            val left = (bitmapWidth - cropWidth) / 2
+            Rect(left, 0, left + cropWidth, bitmapHeight)
+        } else {
+            val cropHeight = (bitmapWidth / targetRatio).toInt().coerceAtLeast(1)
+            val top = (bitmapHeight - cropHeight) / 2
+            Rect(0, top, bitmapWidth, top + cropHeight)
+        }
+    }
+
     private fun findKey(x: Float, y: Float): HitKey? {
         return hitKeys.firstOrNull { it.rect.contains(x, y) }
     }
@@ -639,6 +719,8 @@ private fun KeyboardGeometry.toPx(density: Float): KeyboardSurfaceView.KeyboardG
     )
 }
 
-private fun Int.withAlpha(alpha: Int): Int {
-    return (this and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
+private fun Int.withCombinedAlpha(alpha: Int): Int {
+    val baseAlpha = (this ushr 24) and 0xFF
+    val nextAlpha = (baseAlpha * (alpha.coerceIn(0, 255) / 255f)).toInt()
+    return (this and 0x00FFFFFF) or (nextAlpha shl 24)
 }

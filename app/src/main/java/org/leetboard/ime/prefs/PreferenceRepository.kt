@@ -3,6 +3,7 @@ package org.leetboard.ime.prefs
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -18,6 +19,7 @@ import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
 import org.leetboard.ime.engine.normalizeGlidePathSignature
 import org.leetboard.ime.engine.normalizeWord
+import org.leetboard.ime.model.CustomThemeConfig
 import org.leetboard.ime.model.EscTouchMode
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyDisplayOverride
@@ -26,6 +28,7 @@ import org.leetboard.ime.model.KeyLabelStyle
 import org.leetboard.ime.model.KeyboardGeometry
 import org.leetboard.ime.model.ThemePreset
 import org.leetboard.ime.model.keyActionFromPreferenceValue
+import org.leetboard.ime.model.opaque
 import org.leetboard.ime.model.toPreferenceValue
 
 private val Context.keyboardDataStore: DataStore<Preferences> by preferencesDataStore(name = "keyboard_settings")
@@ -75,11 +78,61 @@ class PreferenceRepository(context: Context) {
                 ?: GlideImportedWordsPriority.NORMAL,
             glideRawFallbackMode = values[Keys.glideRawFallbackMode]?.let(::glideRawFallbackModeFromName)
                 ?: GlideRawFallbackMode.SHORT_ONLY,
+            customTheme = customTheme(values),
         )
     }
 
     suspend fun setThemePreset(preset: ThemePreset) {
         dataStore.edit { values -> values[Keys.themePreset] = preset.name }
+    }
+
+    suspend fun setCustomTheme(config: CustomThemeConfig) {
+        dataStore.edit { values -> writeCustomTheme(values, config) }
+    }
+
+    suspend fun setCustomThemeColor(field: CustomThemeColorField, color: Int) {
+        dataStore.edit { values ->
+            when (field) {
+                CustomThemeColorField.BACKGROUND -> values[Keys.customBackgroundColor] = color.opaque()
+                CustomThemeColorField.KEY_FILL -> values[Keys.customKeyFillColor] = color.opaque()
+                CustomThemeColorField.KEY_STROKE -> values[Keys.customKeyStrokeColor] = color.opaque()
+                CustomThemeColorField.KEY_TEXT -> values[Keys.customKeyTextColor] = color.opaque()
+                CustomThemeColorField.PRESSED_FILL -> values[Keys.customPressedFillColor] = color.opaque()
+                CustomThemeColorField.ACTIVE_MODIFIER_FILL -> values[Keys.customActiveModifierFillColor] = color.opaque()
+            }
+            values[Keys.themePreset] = ThemePreset.CUSTOM.name
+        }
+    }
+
+    suspend fun setCustomThemeOpacity(field: CustomThemeOpacityField, opacity: Float) {
+        dataStore.edit { values ->
+            val next = opacity.coerceIn(0f, 1f)
+            when (field) {
+                CustomThemeOpacityField.BACKGROUND_IMAGE -> values[Keys.customBackgroundImageOpacity] = next
+                CustomThemeOpacityField.KEY_FILL -> values[Keys.customKeyFillOpacity] = next
+                CustomThemeOpacityField.KEY_STROKE -> values[Keys.customKeyStrokeOpacity] = next
+                CustomThemeOpacityField.KEY_TEXT -> values[Keys.customKeyTextOpacity] = next
+            }
+            values[Keys.themePreset] = ThemePreset.CUSTOM.name
+        }
+    }
+
+    suspend fun setCustomThemeBackgroundImage(uri: String?) {
+        dataStore.edit { values ->
+            if (uri.isNullOrBlank()) {
+                values.remove(Keys.customBackgroundImageUri)
+            } else {
+                values[Keys.customBackgroundImageUri] = uri
+            }
+            values[Keys.themePreset] = ThemePreset.CUSTOM.name
+        }
+    }
+
+    suspend fun resetCustomTheme() {
+        dataStore.edit { values ->
+            removeCustomTheme(values)
+            values[Keys.themePreset] = ThemePreset.LEET_GREEN.name
+        }
     }
 
     suspend fun setLayoutId(layoutId: String) {
@@ -180,6 +233,29 @@ class PreferenceRepository(context: Context) {
             }
             corrections[normalizedPathSignature] = normalizedWord
             values[Keys.glideCorrections] = glideCorrectionsToPreferenceValue(corrections)
+        }
+    }
+
+    suspend fun setGlideCorrection(pathSignature: String, word: String) {
+        val normalizedPathSignature = normalizeGlidePathSignature(pathSignature) ?: return
+        val normalizedWord = normalizeWord(word) ?: return
+        dataStore.edit { values ->
+            val corrections = glideCorrectionsFromPreferenceValue(values[Keys.glideCorrections]).toMutableMap()
+            corrections[normalizedPathSignature] = normalizedWord
+            values[Keys.glideCorrections] = glideCorrectionsToPreferenceValue(corrections)
+        }
+    }
+
+    suspend fun removeGlideCorrection(pathSignature: String) {
+        val normalizedPathSignature = normalizeGlidePathSignature(pathSignature) ?: return
+        dataStore.edit { values ->
+            val corrections = glideCorrectionsFromPreferenceValue(values[Keys.glideCorrections]).toMutableMap()
+            corrections.remove(normalizedPathSignature)
+            if (corrections.isEmpty()) {
+                values.remove(Keys.glideCorrections)
+            } else {
+                values[Keys.glideCorrections] = glideCorrectionsToPreferenceValue(corrections)
+            }
         }
     }
 
@@ -291,6 +367,61 @@ class PreferenceRepository(context: Context) {
         return GlideRawFallbackMode.entries.firstOrNull { it.name == name }
     }
 
+    private fun customTheme(values: Preferences): CustomThemeConfig {
+        val defaults = CustomThemeConfig()
+        return CustomThemeConfig(
+            basePreset = values[Keys.customBasePreset]?.let(::themePresetFromName)?.takeUnless { it == ThemePreset.CUSTOM }
+                ?: defaults.basePreset,
+            backgroundColor = values[Keys.customBackgroundColor]?.opaque() ?: defaults.backgroundColor,
+            keyFillColor = values[Keys.customKeyFillColor]?.opaque() ?: defaults.keyFillColor,
+            keyStrokeColor = values[Keys.customKeyStrokeColor]?.opaque() ?: defaults.keyStrokeColor,
+            keyTextColor = values[Keys.customKeyTextColor]?.opaque() ?: defaults.keyTextColor,
+            pressedFillColor = values[Keys.customPressedFillColor]?.opaque() ?: defaults.pressedFillColor,
+            activeModifierFillColor = values[Keys.customActiveModifierFillColor]?.opaque()
+                ?: defaults.activeModifierFillColor,
+            backgroundImageUri = values[Keys.customBackgroundImageUri],
+            backgroundImageOpacity = values[Keys.customBackgroundImageOpacity] ?: defaults.backgroundImageOpacity,
+            keyFillOpacity = values[Keys.customKeyFillOpacity] ?: defaults.keyFillOpacity,
+            keyStrokeOpacity = values[Keys.customKeyStrokeOpacity] ?: defaults.keyStrokeOpacity,
+            keyTextOpacity = values[Keys.customKeyTextOpacity] ?: defaults.keyTextOpacity,
+        )
+    }
+
+    private fun writeCustomTheme(values: MutablePreferences, config: CustomThemeConfig) {
+        values[Keys.customBasePreset] = config.basePreset.name
+        values[Keys.customBackgroundColor] = config.backgroundColor.opaque()
+        values[Keys.customKeyFillColor] = config.keyFillColor.opaque()
+        values[Keys.customKeyStrokeColor] = config.keyStrokeColor.opaque()
+        values[Keys.customKeyTextColor] = config.keyTextColor.opaque()
+        values[Keys.customPressedFillColor] = config.pressedFillColor.opaque()
+        values[Keys.customActiveModifierFillColor] = config.activeModifierFillColor.opaque()
+        if (config.backgroundImageUri.isNullOrBlank()) {
+            values.remove(Keys.customBackgroundImageUri)
+        } else {
+            values[Keys.customBackgroundImageUri] = config.backgroundImageUri
+        }
+        values[Keys.customBackgroundImageOpacity] = config.backgroundImageOpacity.coerceIn(0f, 1f)
+        values[Keys.customKeyFillOpacity] = config.keyFillOpacity.coerceIn(0f, 1f)
+        values[Keys.customKeyStrokeOpacity] = config.keyStrokeOpacity.coerceIn(0f, 1f)
+        values[Keys.customKeyTextOpacity] = config.keyTextOpacity.coerceIn(0f, 1f)
+        values[Keys.themePreset] = ThemePreset.CUSTOM.name
+    }
+
+    private fun removeCustomTheme(values: MutablePreferences) {
+        values.remove(Keys.customBasePreset)
+        values.remove(Keys.customBackgroundColor)
+        values.remove(Keys.customKeyFillColor)
+        values.remove(Keys.customKeyStrokeColor)
+        values.remove(Keys.customKeyTextColor)
+        values.remove(Keys.customPressedFillColor)
+        values.remove(Keys.customActiveModifierFillColor)
+        values.remove(Keys.customBackgroundImageUri)
+        values.remove(Keys.customBackgroundImageOpacity)
+        values.remove(Keys.customKeyFillOpacity)
+        values.remove(Keys.customKeyStrokeOpacity)
+        values.remove(Keys.customKeyTextOpacity)
+    }
+
     private fun keyDisplayOverridesFromPreferenceValues(values: Set<String>): Map<String, KeyDisplayOverride> {
         return values.mapNotNull { value ->
             val parts = value.split(DISPLAY_OVERRIDE_SEPARATOR, limit = 3)
@@ -339,6 +470,18 @@ class PreferenceRepository(context: Context) {
         val glidePathTolerance = stringPreferencesKey("glide_path_tolerance")
         val glideImportedWordsPriority = stringPreferencesKey("glide_imported_words_priority")
         val glideRawFallbackMode = stringPreferencesKey("glide_raw_fallback_mode")
+        val customBasePreset = stringPreferencesKey("custom_base_preset")
+        val customBackgroundColor = intPreferencesKey("custom_background_color")
+        val customKeyFillColor = intPreferencesKey("custom_key_fill_color")
+        val customKeyStrokeColor = intPreferencesKey("custom_key_stroke_color")
+        val customKeyTextColor = intPreferencesKey("custom_key_text_color")
+        val customPressedFillColor = intPreferencesKey("custom_pressed_fill_color")
+        val customActiveModifierFillColor = intPreferencesKey("custom_active_modifier_fill_color")
+        val customBackgroundImageUri = stringPreferencesKey("custom_background_image_uri")
+        val customBackgroundImageOpacity = floatPreferencesKey("custom_background_image_opacity")
+        val customKeyFillOpacity = floatPreferencesKey("custom_key_fill_opacity")
+        val customKeyStrokeOpacity = floatPreferencesKey("custom_key_stroke_opacity")
+        val customKeyTextOpacity = floatPreferencesKey("custom_key_text_opacity")
 
         val actionSlotKeys = mapOf(
             "esc" to stringPreferencesKey("slot_esc_action"),

@@ -261,6 +261,17 @@ Each major feature phase should be validated independently before moving to the 
 5. Expansion, ongoing
    - Layout packs, dictionary work, advanced gestures, production speech packs, production swipe typing, stylus handwriting, freeform non-alphanumeric key editing, and broader terminal/editor compatibility.
 
+## Release Prerequisites
+
+Complete these items before starting GitHub release artifact automation or F-Droid submission prep:
+
+- Custom theme v1: add one custom theme slot that can clone a current preset, persist local colors/opacities, and optionally render a user-selected keyboard background image.
+- Settings UX: expose clone, color/opacity adjustment, background image picker/removal, and custom-theme reset controls without expanding into a full multi-theme library.
+- Rendering QA: verify custom colors, key fill opacity, border opacity, label opacity, image opacity, and image fallback in portrait and landscape.
+- Pad3 smoke test: install the debug APK on the OnePlus Pad3 over ADB, validate typing, glide suggestions, mic input, preset themes, custom theme, and orientation behavior.
+- README visual: capture cyberpunk, 1337 green, light, and high-contrast themes from the Pad3 using a 45% height landscape keyboard, compose a 2x2 PNG, and place it under the README Highlights list.
+- Release handoff: resume GitHub/F-Droid release preparation only after the milestone above has passed smoke testing and the working tree is committed.
+
 ## Source Notes
 
 - Official Hacker's Keyboard repository and README: https://github.com/klausw/hackerskeyboard

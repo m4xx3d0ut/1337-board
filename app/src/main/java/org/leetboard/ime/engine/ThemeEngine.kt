@@ -1,18 +1,33 @@
 package org.leetboard.ime.engine
 
 import android.graphics.Color
+import org.leetboard.ime.model.CustomThemeConfig
 import org.leetboard.ime.model.KeyboardColors
 import org.leetboard.ime.model.KeyboardGeometry
 import org.leetboard.ime.model.KeyboardTheme
 import org.leetboard.ime.model.ThemePreset
+import org.leetboard.ime.model.customBasePreset
+import org.leetboard.ime.model.withOpacity
 
 class ThemeEngine {
     fun resolve(
         preset: ThemePreset,
         portrait: KeyboardGeometry? = null,
         landscape: KeyboardGeometry? = null,
+        customTheme: CustomThemeConfig = CustomThemeConfig(),
     ): KeyboardTheme {
         val theme = when (preset) {
+            ThemePreset.CUSTOM -> custom(customTheme)
+            else -> baseTheme(preset)
+        }
+        return theme.copy(
+            portrait = portrait ?: theme.portrait,
+            landscape = landscape ?: theme.landscape,
+        )
+    }
+
+    private fun baseTheme(preset: ThemePreset): KeyboardTheme {
+        return when (preset.customBasePreset()) {
             ThemePreset.SYSTEM,
             ThemePreset.DARK -> dark(ThemePreset.DARK)
             ThemePreset.LIGHT -> KeyboardTheme(
@@ -43,10 +58,24 @@ class ThemeEngine {
                 accent = Color.WHITE,
                 text = Color.WHITE,
             )
+            ThemePreset.CUSTOM -> KeyboardTheme.leetGreen
         }
-        return theme.copy(
-            portrait = portrait ?: theme.portrait,
-            landscape = landscape ?: theme.landscape,
+    }
+
+    private fun custom(config: CustomThemeConfig): KeyboardTheme {
+        val base = baseTheme(config.basePreset)
+        return base.copy(
+            preset = ThemePreset.CUSTOM,
+            colors = KeyboardColors(
+                background = config.backgroundColor,
+                keyFill = config.keyFillColor.withOpacity(config.keyFillOpacity),
+                keyStroke = config.keyStrokeColor.withOpacity(config.keyStrokeOpacity),
+                keyText = config.keyTextColor.withOpacity(config.keyTextOpacity),
+                pressedFill = config.pressedFillColor,
+                activeModifierFill = config.activeModifierFillColor,
+            ),
+            backgroundImageUri = config.backgroundImageUri,
+            backgroundImageOpacity = config.backgroundImageOpacity.coerceIn(0f, 1f),
         )
     }
 

@@ -9,6 +9,7 @@ enum class ThemePreset {
     CYBERPUNK,
     LEET_GREEN,
     HIGH_CONTRAST,
+    CUSTOM,
 }
 
 data class KeyboardGeometry(
@@ -30,6 +31,35 @@ data class KeyboardColors(
     val activeModifierFill: Int,
 )
 
+data class CustomThemeConfig(
+    val basePreset: ThemePreset = ThemePreset.LEET_GREEN,
+    val backgroundColor: Int = KeyboardTheme.leetGreen.colors.background,
+    val keyFillColor: Int = KeyboardTheme.leetGreen.colors.keyFill,
+    val keyStrokeColor: Int = KeyboardTheme.leetGreen.colors.keyStroke,
+    val keyTextColor: Int = KeyboardTheme.leetGreen.colors.keyText,
+    val pressedFillColor: Int = KeyboardTheme.leetGreen.colors.pressedFill,
+    val activeModifierFillColor: Int = KeyboardTheme.leetGreen.colors.activeModifierFill,
+    val backgroundImageUri: String? = null,
+    val backgroundImageOpacity: Float = 0.35f,
+    val keyFillOpacity: Float = 1f,
+    val keyStrokeOpacity: Float = 1f,
+    val keyTextOpacity: Float = 1f,
+) {
+    companion object {
+        fun fromTheme(basePreset: ThemePreset, theme: KeyboardTheme): CustomThemeConfig {
+            return CustomThemeConfig(
+                basePreset = basePreset.customBasePreset(),
+                backgroundColor = theme.colors.background.opaque(),
+                keyFillColor = theme.colors.keyFill.opaque(),
+                keyStrokeColor = theme.colors.keyStroke.opaque(),
+                keyTextColor = theme.colors.keyText.opaque(),
+                pressedFillColor = theme.colors.pressedFill.opaque(),
+                activeModifierFillColor = theme.colors.activeModifierFill.opaque(),
+            )
+        }
+    }
+}
+
 data class KeyboardTheme(
     val preset: ThemePreset,
     val colors: KeyboardColors,
@@ -43,6 +73,8 @@ data class KeyboardTheme(
         bottomMarginDp = 12f,
         rowGapDp = 5f,
     ),
+    val backgroundImageUri: String? = null,
+    val backgroundImageOpacity: Float = 0f,
 ) {
     companion object {
         val leetGreen = KeyboardTheme(
@@ -57,4 +89,20 @@ data class KeyboardTheme(
             ),
         )
     }
+}
+
+fun ThemePreset.customBasePreset(): ThemePreset {
+    return when (this) {
+        ThemePreset.CUSTOM -> ThemePreset.LEET_GREEN
+        else -> this
+    }
+}
+
+fun Int.withOpacity(opacity: Float): Int {
+    val alpha = (opacity.coerceIn(0f, 1f) * 255f).toInt()
+    return (this and 0x00FFFFFF) or (alpha shl 24)
+}
+
+fun Int.opaque(): Int {
+    return (this and 0x00FFFFFF) or 0xFF000000.toInt()
 }

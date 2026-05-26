@@ -5,6 +5,7 @@ import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
 import org.leetboard.ime.engine.GlideTypingOptions
 import org.leetboard.ime.model.CustomizationState
+import org.leetboard.ime.model.CustomThemeConfig
 import org.leetboard.ime.model.EscTouchMode
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyDisplayOverride
@@ -40,6 +41,7 @@ data class KeyboardPreferences(
     val glidePathTolerance: GlidePathTolerance = GlidePathTolerance.BALANCED,
     val glideImportedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
     val glideRawFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.SHORT_ONLY,
+    val customTheme: CustomThemeConfig = CustomThemeConfig(),
 ) {
     fun customizationState(): CustomizationState {
         val hiddenKeys = buildSet {
@@ -90,6 +92,22 @@ enum class KeyLabelStyleField {
     SECONDARY_TEXT_SIZE,
     FONT_WEIGHT,
     LABEL_OPACITY,
+}
+
+enum class CustomThemeColorField {
+    BACKGROUND,
+    KEY_FILL,
+    KEY_STROKE,
+    KEY_TEXT,
+    PRESSED_FILL,
+    ACTIVE_MODIFIER_FILL,
+}
+
+enum class CustomThemeOpacityField {
+    BACKGROUND_IMAGE,
+    KEY_FILL,
+    KEY_STROKE,
+    KEY_TEXT,
 }
 
 data class LayoutOption(
