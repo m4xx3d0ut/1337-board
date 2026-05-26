@@ -91,7 +91,7 @@ Run unit tests:
 Build release artifacts:
 
 ```sh
-scripts/build-release.sh v0.1.0
+scripts/build-release.sh v0.1.1
 ```
 
 After installing, open 1337 Board, open input settings, enable the IME, then choose it from the keyboard picker.

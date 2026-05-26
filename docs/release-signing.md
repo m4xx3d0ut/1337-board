@@ -45,22 +45,22 @@ When all four variables are set, `assembleRelease` signs the release APK. When a
 Build release artifacts:
 
 ```sh
-scripts/build-release.sh v0.1.0
+scripts/build-release.sh v0.1.1
 ```
 
-The script runs unit tests, builds the release APK, verifies signed APKs with `apksigner`, and writes artifacts to `app/build/release-artifacts/v0.1.0/`.
+The script runs unit tests, builds the release APK, verifies signed APKs with `apksigner`, and writes artifacts to `app/build/release-artifacts/v0.1.1/`.
 
 Publish artifacts after the tag points at `HEAD`:
 
 ```sh
-scripts/publish-github-release.sh v0.1.0
+scripts/publish-github-release.sh v0.1.1
 ```
 
 Push GitHub branches or tags with the project key wrapper:
 
 ```sh
 GIT_SSH_COMMAND="ssh -i ~/.ssh/github-m -o IdentitiesOnly=yes -o IdentityAgent=none -v" git push github dev
-GIT_SSH_COMMAND="ssh -i ~/.ssh/github-m -o IdentitiesOnly=yes -o IdentityAgent=none -v" git push github v0.1.0
+GIT_SSH_COMMAND="ssh -i ~/.ssh/github-m -o IdentitiesOnly=yes -o IdentityAgent=none -v" git push github v0.1.1
 ```
 
 ## Distribution Notes
