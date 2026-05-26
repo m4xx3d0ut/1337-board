@@ -48,6 +48,33 @@ class GlideDictionaryAssetTest {
         )
     }
 
+    @Test
+    fun dwellProtectsTestingFromShortAnchoredSuffixWords() {
+        val words = File("src/main/assets/glide_words_en.txt").readLines()
+        val engine = GestureTypingEngine(TextContextPolicy()) { words }
+        val options = GlideTypingOptions(
+            strictFirstLastLetter = false,
+            pathTolerance = GlidePathTolerance.LOOSE,
+            dwellSensitivity = GlideDwellSensitivity.STANDARD,
+        )
+        val path = "tresdrtyuijnbhg".map(Char::toString)
+        val trace = dwellWeightedTrace(
+            path = "tresdrtyuijnbhg",
+            dwellWeights = mapOf(
+                't' to 1f,
+                'i' to 0.78f,
+                'g' to 0.68f,
+                'e' to 0.52f,
+                's' to 0.45f,
+                'n' to 0.44f,
+                'r' to 0.15f,
+                'u' to 0.11f,
+            ),
+        )
+
+        assertEquals("testing", engine.decode(path, options, touchTrace = trace))
+    }
+
     private fun timedTrace(
         path: String,
         pauseAfterKey: Map<Char, Long> = emptyMap(),
@@ -61,6 +88,18 @@ class GlideDictionaryAssetTest {
         return GlideTouchTrace(
             points = points,
             keyCenters = keyCenters,
+        )
+    }
+
+    private fun dwellWeightedTrace(
+        path: String,
+        dwellWeights: Map<Char, Float>,
+    ): GlideTouchTrace {
+        val points = path.mapNotNull { char -> keyCenters[char] }
+        return GlideTouchTrace(
+            points = points,
+            keyCenters = keyCenters,
+            keyDwellWeights = dwellWeights,
         )
     }
 

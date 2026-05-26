@@ -64,6 +64,7 @@ class KeyboardPreferencesTest {
         assertEquals(GlidePathTolerance.BALANCED, preferences.glidePathTolerance)
         assertEquals(GlideSpatialPrecision.STANDARD, preferences.glideSpatialPrecision)
         assertEquals(GlideDwellSensitivity.STANDARD, preferences.glideDwellSensitivity)
+        assertEquals(0.42f, preferences.glideDwellActivationThreshold, 0.001f)
         assertEquals(GlideImportedWordsPriority.NORMAL, preferences.glideImportedWordsPriority)
         assertEquals(GlideRawFallbackMode.OFF, preferences.glideRawFallbackMode)
         assertEquals(EscTouchMode.REGULAR, preferences.escTouchMode)
@@ -87,6 +88,7 @@ class KeyboardPreferencesTest {
             glidePathTolerance = GlidePathTolerance.LOOSE,
             glideSpatialPrecision = GlideSpatialPrecision.PRECISE,
             glideDwellSensitivity = GlideDwellSensitivity.HIGH,
+            glideDwellActivationThreshold = 0.5f,
             glideImportedWordsPriority = GlideImportedWordsPriority.HIGH,
             glideRawFallbackMode = GlideRawFallbackMode.ALWAYS,
             glidePredictiveRankingEnabled = false,
@@ -100,6 +102,7 @@ class KeyboardPreferencesTest {
         assertEquals(GlidePathTolerance.LOOSE, options.pathTolerance)
         assertEquals(GlideSpatialPrecision.PRECISE, options.spatialPrecision)
         assertEquals(GlideDwellSensitivity.HIGH, options.dwellSensitivity)
+        assertEquals(0.5f, options.dwellActivationThreshold, 0.001f)
         assertEquals(GlideImportedWordsPriority.HIGH, options.importedWordsPriority)
         assertEquals(GlideRawFallbackMode.ALWAYS, options.rawPathFallbackMode)
         assertFalse(options.predictiveRankingEnabled)

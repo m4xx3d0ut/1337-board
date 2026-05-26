@@ -14,6 +14,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import java.io.Reader
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.leetboard.ime.engine.DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.engine.GlideCorrectionEntry
 import org.leetboard.ime.engine.GlideDwellSensitivity
 import org.leetboard.ime.engine.GlideImportedWordsPriority
@@ -84,6 +85,8 @@ class PreferenceRepository(context: Context) {
                 ?: KeyboardPreferences.defaults().glideSpatialPrecision,
             glideDwellSensitivity = values[Keys.glideDwellSensitivity]?.let(::glideDwellSensitivityFromName)
                 ?: KeyboardPreferences.defaults().glideDwellSensitivity,
+            glideDwellActivationThreshold = values[Keys.glideDwellActivationThreshold]
+                ?: KeyboardPreferences.defaults().glideDwellActivationThreshold,
             glideImportedWordsPriority = values[Keys.glideImportedWordsPriority]?.let(::glideImportedWordsPriorityFromName)
                 ?: KeyboardPreferences.defaults().glideImportedWordsPriority,
             glideRawFallbackMode = values[Keys.glideRawFallbackMode]?.let(::glideRawFallbackModeFromName)
@@ -323,6 +326,15 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.glideDwellSensitivity] = sensitivity.name }
     }
 
+    suspend fun setGlideDwellActivationThreshold(threshold: Float) {
+        dataStore.edit {
+            it[Keys.glideDwellActivationThreshold] = threshold.coerceIn(
+                MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD,
+                MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD,
+            )
+        }
+    }
+
     suspend fun setGlideImportedWordsPriority(priority: GlideImportedWordsPriority) {
         dataStore.edit { values -> values[Keys.glideImportedWordsPriority] = priority.name }
     }
@@ -530,6 +542,7 @@ class PreferenceRepository(context: Context) {
         val glidePathTolerance = stringPreferencesKey("glide_path_tolerance")
         val glideSpatialPrecision = stringPreferencesKey("glide_spatial_precision")
         val glideDwellSensitivity = stringPreferencesKey("glide_dwell_sensitivity")
+        val glideDwellActivationThreshold = floatPreferencesKey("glide_dwell_activation_threshold")
         val glideImportedWordsPriority = stringPreferencesKey("glide_imported_words_priority")
         val glideRawFallbackMode = stringPreferencesKey("glide_raw_fallback_mode")
         val glidePredictiveRankingEnabled = booleanPreferencesKey("glide_predictive_ranking_enabled")
@@ -584,6 +597,9 @@ class PreferenceRepository(context: Context) {
 
     private fun importedGlideWordsFile() = appContext.filesDir.resolve(IMPORTED_GLIDE_WORDS_FILE)
 }
+
+const val MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.2f
+const val MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.85f
 
 fun glideCorrectionsFromPreferenceValue(value: String?): Map<String, GlideCorrectionEntry> {
     if (value.isNullOrBlank()) return emptyMap()

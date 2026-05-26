@@ -7,6 +7,7 @@ import org.leetboard.ime.engine.GlideDwellSensitivity
 import org.leetboard.ime.engine.GlideSpatialPrecision
 import org.leetboard.ime.engine.GlideTypingOptions
 import org.leetboard.ime.engine.GlideCorrectionEntry
+import org.leetboard.ime.engine.DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.model.CustomizationState
 import org.leetboard.ime.model.CustomThemeConfig
 import org.leetboard.ime.model.EscTouchMode
@@ -44,6 +45,7 @@ data class KeyboardPreferences(
     val glidePathTolerance: GlidePathTolerance = GlidePathTolerance.BALANCED,
     val glideSpatialPrecision: GlideSpatialPrecision = GlideSpatialPrecision.STANDARD,
     val glideDwellSensitivity: GlideDwellSensitivity = GlideDwellSensitivity.STANDARD,
+    val glideDwellActivationThreshold: Float = DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD,
     val glideImportedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
     val glideRawFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.OFF,
     val glidePredictiveRankingEnabled: Boolean = true,
@@ -71,6 +73,7 @@ data class KeyboardPreferences(
             pathTolerance = glidePathTolerance,
             spatialPrecision = glideSpatialPrecision,
             dwellSensitivity = glideDwellSensitivity,
+            dwellActivationThreshold = glideDwellActivationThreshold,
             importedWordsPriority = glideImportedWordsPriority,
             rawPathFallbackMode = glideRawFallbackMode,
             importedWordCount = glideImportedWordCount,

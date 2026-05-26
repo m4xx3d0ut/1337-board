@@ -721,6 +721,7 @@ class ModernKeyboardImeService : InputMethodService() {
             appendLine("pathTolerance=${preferences.glidePathTolerance}")
             appendLine("spatialPrecision=${preferences.glideSpatialPrecision}")
             appendLine("dwellSensitivity=${preferences.glideDwellSensitivity}")
+            appendLine("dwellActivationThreshold=${"%.2f".format(preferences.glideDwellActivationThreshold)}")
             appendLine("predictiveRanking=${preferences.glidePredictiveRankingEnabled}")
             appendLine("importedWordCount=${preferences.glideImportedWordCount}")
             appendLine("candidates=${candidates.size}")

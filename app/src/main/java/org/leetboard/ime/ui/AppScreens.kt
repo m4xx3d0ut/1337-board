@@ -88,6 +88,8 @@ import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
 import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
+import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
+import org.leetboard.ime.prefs.MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.defaultLayoutOptions
 
@@ -772,6 +774,9 @@ private fun FeatureSection(
                 onClick = { scope.launch { repository.setGlideDwellSensitivity(sensitivity) } },
             )
         }
+        GlideDwellThresholdSlider(preferences.glideDwellActivationThreshold) { value ->
+            scope.launch { repository.setGlideDwellActivationThreshold(value) }
+        }
         Text("Imported word priority", style = MaterialTheme.typography.labelLarge)
         GlideImportedWordsPriority.entries.forEach { priority ->
             SelectButton(
@@ -1306,6 +1311,21 @@ private fun EdgeKeyWidthSlider(
             value = value.coerceIn(0.6f, 1.1f),
             onValueChange = onChange,
             valueRange = 0.6f..1.1f,
+        )
+    }
+}
+
+@Composable
+private fun GlideDwellThresholdSlider(
+    value: Float,
+    onChange: (Float) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("Dwell key threshold: ${(value.coerceIn(0f, 1f) * 100).toInt()}%")
+        Slider(
+            value = value.coerceIn(MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD, MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD),
+            onValueChange = onChange,
+            valueRange = MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD..MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD,
         )
     }
 }

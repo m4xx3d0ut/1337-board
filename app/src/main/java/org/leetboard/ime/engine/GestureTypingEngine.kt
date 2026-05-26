@@ -219,7 +219,11 @@ class GestureTypingEngine(
     ): Int {
         traceProfile ?: return 0
         return GlideGeometryScorer.touchCost(wordSignature, traceProfile) * options.touchTraceWeight() +
-            GlideGeometryScorer.dwellCost(wordSignature, traceProfile) * options.dwellWeight() +
+            GlideGeometryScorer.dwellCost(
+                wordSignature = wordSignature,
+                profile = traceProfile,
+                activationThreshold = options.dwellActivationThreshold,
+            ) * options.dwellWeight() +
             GlideGeometryScorer.cornerCost(wordSignature, traceProfile) * options.cornerTraceWeight() +
             GlideGeometryScorer.anchorCost(wordSignature, traceProfile) * options.anchorWeight() +
             GlideGeometryScorer.cornerKeyCost(wordSignature, traceProfile) * options.cornerKeyWeight()
@@ -303,6 +307,7 @@ data class GlideTypingOptions(
     val pathTolerance: GlidePathTolerance = GlidePathTolerance.BALANCED,
     val spatialPrecision: GlideSpatialPrecision = GlideSpatialPrecision.STANDARD,
     val dwellSensitivity: GlideDwellSensitivity = GlideDwellSensitivity.STANDARD,
+    val dwellActivationThreshold: Float = DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD,
     val importedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
     val rawPathFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.OFF,
     val importedWordCount: Int = 0,
@@ -487,6 +492,7 @@ fun collapseRepeats(value: String): String {
 
 private const val MIN_KEYS_FOR_GESTURE = 2
 private const val MAX_GLIDE_PATH_SIGNATURE_LENGTH = 64
+const val DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.42f
 
 private fun normalizePath(labels: List<String>): List<String> {
     return labels

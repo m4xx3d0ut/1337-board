@@ -39,16 +39,25 @@ object GlideGeometryScorer {
         return dynamicTimeWarpingCost(wordPoints, profile.sampledPoints)
     }
 
-    fun dwellCost(wordSignature: String, trace: GlideTouchTrace?): Int {
-        return dwellCost(wordSignature, profile(trace))
+    fun dwellCost(
+        wordSignature: String,
+        trace: GlideTouchTrace?,
+        activationThreshold: Float = DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD,
+    ): Int {
+        return dwellCost(wordSignature, profile(trace), activationThreshold)
     }
 
-    fun dwellCost(wordSignature: String, profile: GlideTraceProfile?): Int {
+    fun dwellCost(
+        wordSignature: String,
+        profile: GlideTraceProfile?,
+        activationThreshold: Float = DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD,
+    ): Int {
         if (profile == null || profile.keyDwellWeights.isEmpty()) return 0
+        val threshold = activationThreshold.coerceIn(MIN_DWELL_THRESHOLD, MAX_DWELL_THRESHOLD)
         val wordLetters = wordSignature.toSet()
         val strongDwellKeys = profile.keyDwellWeights.entries
             .asSequence()
-            .filter { (_, weight) -> weight >= STRONG_DWELL_THRESHOLD }
+            .filter { (_, weight) -> weight >= threshold }
             .sortedByDescending { (_, weight) -> weight }
             .take(MAX_DWELL_KEYS)
             .toList()
@@ -268,7 +277,8 @@ object GlideGeometryScorer {
     private const val PRESENT_CORNER_KEY_BOOST = 500
     private const val MISSING_CORNER_KEY_PENALTY = 1400
     private const val DWELL_KEY_RADIUS = 0.72f
-    private const val STRONG_DWELL_THRESHOLD = 0.7f
+    private const val MIN_DWELL_THRESHOLD = 0.2f
+    private const val MAX_DWELL_THRESHOLD = 0.85f
     private const val MAX_DWELL_KEYS = 6
     private const val PRESENT_DWELL_BOOST = 300
     private const val MISSING_DWELL_PENALTY = 3000
