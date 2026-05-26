@@ -19,6 +19,16 @@ class GlideUserLanguageModel(
     }
 
     @Synchronized
+    fun rejectAcceptedWord(word: String, previousWord: String?) {
+        val normalizedWord = normalizeWord(word) ?: return
+        decrement(words, normalizedWord)
+        val normalizedPrevious = previousWord?.let(::normalizeWord)
+        if (normalizedPrevious != null && normalizedPrevious != normalizedWord) {
+            decrement(bigrams, bigramKey(normalizedPrevious, normalizedWord))
+        }
+    }
+
+    @Synchronized
     fun wordBoost(word: String): Int {
         val normalizedWord = normalizeWord(word) ?: return 0
         return (words[normalizedWord]?.count.orZero() * WORD_BOOST).coerceAtMost(MAX_WORD_BOOST)
@@ -113,6 +123,12 @@ class GlideUserLanguageModel(
         trim(map, maxSize)
     }
 
+    private fun decrement(map: LinkedHashMap<String, LanguageEntry>, key: String) {
+        val entry = map.remove(key) ?: return
+        val nextEntry = entry.decremented(clock()) ?: return
+        map[key] = nextEntry
+    }
+
     private fun trim(map: LinkedHashMap<String, LanguageEntry>, maxSize: Int) {
         while (map.size > maxSize) {
             map.remove(map.keys.first())
@@ -132,6 +148,14 @@ class GlideUserLanguageModel(
         fun incremented(nowEpochMillis: Long): LanguageEntry {
             return copy(
                 count = (count + 1).coerceAtMost(MAX_LANGUAGE_COUNT),
+                lastUsedEpochMillis = nowEpochMillis,
+            )
+        }
+
+        fun decremented(nowEpochMillis: Long): LanguageEntry? {
+            if (count <= 1) return null
+            return copy(
+                count = count - 1,
                 lastUsedEpochMillis = nowEpochMillis,
             )
         }

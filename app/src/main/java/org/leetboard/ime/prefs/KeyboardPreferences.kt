@@ -3,6 +3,8 @@ package org.leetboard.ime.prefs
 import org.leetboard.ime.engine.GlideImportedWordsPriority
 import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
+import org.leetboard.ime.engine.GlideDwellSensitivity
+import org.leetboard.ime.engine.GlideSpatialPrecision
 import org.leetboard.ime.engine.GlideTypingOptions
 import org.leetboard.ime.engine.GlideCorrectionEntry
 import org.leetboard.ime.model.CustomizationState
@@ -40,6 +42,8 @@ data class KeyboardPreferences(
     val glidePreferShorterWords: Boolean = false,
     val glideStrictFirstLastLetter: Boolean = false,
     val glidePathTolerance: GlidePathTolerance = GlidePathTolerance.BALANCED,
+    val glideSpatialPrecision: GlideSpatialPrecision = GlideSpatialPrecision.STANDARD,
+    val glideDwellSensitivity: GlideDwellSensitivity = GlideDwellSensitivity.STANDARD,
     val glideImportedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
     val glideRawFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.OFF,
     val glidePredictiveRankingEnabled: Boolean = true,
@@ -50,6 +54,7 @@ data class KeyboardPreferences(
         val hiddenKeys = buildSet {
             addAll(hiddenOptionalKeyIds)
             if (!numpadToggleEnabled) add("num_toggle")
+            if (!speechInputEnabled) add("mic")
         }
         return CustomizationState(
             hiddenOptionalKeyIds = hiddenKeys,
@@ -64,6 +69,8 @@ data class KeyboardPreferences(
             preferShorterWords = glidePreferShorterWords,
             strictFirstLastLetter = glideStrictFirstLastLetter,
             pathTolerance = glidePathTolerance,
+            spatialPrecision = glideSpatialPrecision,
+            dwellSensitivity = glideDwellSensitivity,
             importedWordsPriority = glideImportedWordsPriority,
             rawPathFallbackMode = glideRawFallbackMode,
             importedWordCount = glideImportedWordCount,

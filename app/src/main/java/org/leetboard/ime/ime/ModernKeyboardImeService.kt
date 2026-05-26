@@ -19,8 +19,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.leetboard.ime.engine.CustomizationEngine
 import org.leetboard.ime.engine.FrequencyContextGlidePredictionEngine
+import org.leetboard.ime.engine.GlideCandidate
 import org.leetboard.ime.engine.GlideDictionaryLoader
 import org.leetboard.ime.engine.GlideCorrectionEntry
+import org.leetboard.ime.engine.GlideGeometryScorer
 import org.leetboard.ime.engine.GlidePredictionContext
 import org.leetboard.ime.engine.GlideTouchTrace
 import org.leetboard.ime.engine.GlideUserLanguageModel
@@ -220,7 +222,17 @@ class ModernKeyboardImeService : InputMethodService() {
             touchTrace = touchTrace,
             limit = GLIDE_SUGGESTION_LIMIT,
         )
-        val word = candidates.firstOrNull()?.word ?: return
+        val word = candidates.firstOrNull()?.word
+        if (word == null) {
+            persistGlideDebugSnapshot(
+                path = path,
+                touchTrace = touchTrace,
+                candidates = candidates,
+                committedWord = null,
+                learningStatus = "not recorded: no candidate",
+            )
+            return
+        }
         if (pendingGlideCorrection?.buffer?.isNotEmpty() == true) {
             finalizePendingGlideCorrection()
         } else {
@@ -229,12 +241,20 @@ class ModernKeyboardImeService : InputMethodService() {
         val outputWord = formatGlideWord(word, heldModifiers)
         val committedText = "$outputWord "
         currentInputConnection?.commitText(committedText, 1)
-        recordAcceptedGlideWord(word, predictionContext)
+        val learningStatus = recordAcceptedGlideWord(word, predictionContext)
+        persistGlideDebugSnapshot(
+            path = path,
+            touchTrace = touchTrace,
+            candidates = candidates,
+            committedWord = word,
+            learningStatus = learningStatus,
+        )
         scheduleGlideSuggestions(candidates.drop(1).map { candidate -> candidate.word })
         pendingGlideUndo = PendingGlideUndo(
             path = path,
             word = word,
             committedText = committedText,
+            predictionContext = predictionContext,
         )
         keyboardState = keyboardState.clearTransientModifiers()
     }
@@ -296,6 +316,7 @@ class ModernKeyboardImeService : InputMethodService() {
         val replacementWord = formatReplacementWord(normalizedWord, undo.committedText)
         val committedText = "$replacementWord "
         if (!replacePendingGlideCommit(undo.committedText, committedText)) return
+        rejectAcceptedGlideWord(undo.word, predictionContext, persist = false)
         recordAcceptedGlideWord(normalizedWord, predictionContext)
         recordGlideCorrection(
             pathSignature = pathSignature,
@@ -501,6 +522,7 @@ class ModernKeyboardImeService : InputMethodService() {
         if (heldModifiers.isActive() || modifiers.shift || modifiers.shiftLocked || modifiers.ctrl || modifiers.alt) return false
         deletePendingGlideCommit(undo.committedText)
         gestureTypingEngine.rejectCandidate(undo.path, undo.word)
+        rejectAcceptedGlideWord(undo.word, undo.predictionContext)
         val pathSignature = gestureTypingEngine.pathSignature(undo.path)
         if (pathSignature != null) {
             serviceScope.launch {
@@ -627,15 +649,74 @@ class ModernKeyboardImeService : InputMethodService() {
         pendingGlideCorrection = null
     }
 
-    private fun recordAcceptedGlideWord(word: String, context: GlidePredictionContext) {
-        if (!preferences.glidePredictiveRankingEnabled || !canLearnFromCurrentInput()) return
+    private fun recordAcceptedGlideWord(word: String, context: GlidePredictionContext): String {
+        if (!preferences.glidePredictiveRankingEnabled) return "skipped: predictive glide ranking disabled"
+        val skipReason = glideLearningSkipReason()
+        if (skipReason != null) return "skipped: $skipReason"
         gestureTypingEngine.recordAcceptedWord(word, context)
         persistGlideUserLanguageModel()
+        return "recorded"
+    }
+
+    private fun rejectAcceptedGlideWord(
+        word: String,
+        context: GlidePredictionContext,
+        persist: Boolean = true,
+    ) {
+        if (!preferences.glidePredictiveRankingEnabled || glideLearningSkipReason() != null) return
+        gestureTypingEngine.rejectAcceptedWord(word, context)
+        if (persist) persistGlideUserLanguageModel()
     }
 
     private fun persistGlideUserLanguageModel() {
         serviceScope.launch(Dispatchers.IO) {
             glideUserLanguageModel.saveTo(GlideUserLanguageModel.storageFile(filesDir))
+        }
+    }
+
+    private fun persistGlideDebugSnapshot(
+        path: List<String>,
+        touchTrace: GlideTouchTrace?,
+        candidates: List<GlideCandidate>,
+        committedWord: String?,
+        learningStatus: String,
+    ) {
+        val pathSignature = gestureTypingEngine.pathSignature(path).orEmpty()
+        val correctionSkipReason = glideLearningSkipReason()
+        val traceProfile = GlideGeometryScorer.profile(touchTrace)
+        val correctionStatus = when {
+            !preferences.glideCorrectionLearningEnabled -> "disabled"
+            correctionSkipReason != null -> "skipped: $correctionSkipReason"
+            else -> "enabled"
+        }
+        val snapshot = buildString {
+            appendLine("Last glide")
+            appendLine("timestamp=${System.currentTimeMillis()}")
+            appendLine("package=${currentInputEditorInfo?.packageName.orEmpty()}")
+            appendLine("path=${path.joinToString(separator = " ")}")
+            appendLine("signature=$pathSignature")
+            appendLine("touchTrace=${touchTrace?.points?.size ?: 0} points, usable=${touchTrace?.isUsable() == true}")
+            appendLine("dwell=${traceProfile?.keyDwellWeights?.debugDwellWeights().orEmpty()}")
+            appendLine("cornerKeys=${traceProfile?.cornerKeys?.debugDwellWeights().orEmpty()}")
+            appendLine("corners=${traceProfile?.cornerPoints?.size ?: 0}")
+            appendLine("committed=${committedWord ?: "<none>"}")
+            appendLine("learning=$learningStatus")
+            appendLine("correctionLearning=$correctionStatus")
+            appendLine("strictFirstLast=${preferences.glideStrictFirstLastLetter}")
+            appendLine("pathTolerance=${preferences.glidePathTolerance}")
+            appendLine("spatialPrecision=${preferences.glideSpatialPrecision}")
+            appendLine("dwellSensitivity=${preferences.glideDwellSensitivity}")
+            appendLine("predictiveRanking=${preferences.glidePredictiveRankingEnabled}")
+            appendLine("importedWordCount=${preferences.glideImportedWordCount}")
+            appendLine("candidates=${candidates.size}")
+            candidates.forEachIndexed { index, candidate ->
+                appendLine(
+                    "${index + 1}. ${candidate.word}\t${candidate.source}\tscore=${candidate.score}\tpriority=${candidate.priority}",
+                )
+            }
+        }
+        serviceScope.launch(Dispatchers.IO) {
+            filesDir.resolve(GLIDE_DEBUG_SNAPSHOT_FILE).writeText(snapshot)
         }
     }
 
@@ -663,11 +744,27 @@ class ModernKeyboardImeService : InputMethodService() {
     private fun replacementLooksRelated(pathSignature: String, word: String): Boolean {
         if (word.length !in MIN_GLIDE_MANUAL_CORRECTION_LENGTH..MAX_GLIDE_MANUAL_CORRECTION_LENGTH) return false
         val lengthDelta = kotlin.math.abs(pathSignature.length - word.length)
-        return lengthDelta <= MAX_GLIDE_CORRECTION_LENGTH_DELTA
+        val maximumDelta = maxOf(MAX_GLIDE_CORRECTION_LENGTH_DELTA, word.length)
+        return lengthDelta <= maximumDelta
     }
 
     private fun canLearnFromCurrentInput(): Boolean {
-        return !isTermuxInput() && textContextPolicy.allowsLearning(currentInputEditorInfo)
+        return glideLearningSkipReason() == null
+    }
+
+    private fun glideLearningSkipReason(): String? {
+        return when {
+            isTermuxInput() -> "Termux input"
+            !textContextPolicy.allowsLearning(currentInputEditorInfo) -> "field blocks personalized learning"
+            else -> null
+        }
+    }
+
+    private fun Map<Char, Float>.debugDwellWeights(): String {
+        return entries
+            .sortedByDescending { (_, weight) -> weight }
+            .take(8)
+            .joinToString(separator = " ") { (key, weight) -> "$key=${"%.2f".format(weight)}" }
     }
 
     private fun showToast(message: String) {
@@ -686,6 +783,7 @@ class ModernKeyboardImeService : InputMethodService() {
         val path: List<String>,
         val word: String,
         val committedText: String,
+        val predictionContext: GlidePredictionContext,
     )
 
     private data class PendingGlideCorrection(
@@ -704,6 +802,7 @@ class ModernKeyboardImeService : InputMethodService() {
         const val MIN_GLIDE_MANUAL_CORRECTION_LENGTH = 2
         const val MAX_GLIDE_MANUAL_CORRECTION_LENGTH = 24
         const val MAX_GLIDE_CORRECTION_LENGTH_DELTA = 4
+        const val GLIDE_DEBUG_SNAPSHOT_FILE = "glide_debug_snapshot.txt"
         const val TERMUX_PACKAGE_PREFIX = "com.termux"
     }
 }

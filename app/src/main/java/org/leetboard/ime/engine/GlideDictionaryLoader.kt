@@ -4,9 +4,17 @@ import android.content.Context
 
 class GlideDictionaryLoader(context: Context) {
     private val appContext = context.applicationContext
+    private var cache: CachedWords? = null
 
+    @Synchronized
     fun loadWords(): List<String> {
-        return importedWords() + bundledWords()
+        val importedFile = appContext.filesDir.resolve(IMPORTED_WORDS_FILE)
+        val stamp = importedFile.cacheStamp()
+        val cached = cache
+        if (cached != null && cached.importedStamp == stamp) return cached.words
+        return (importedWords(importedFile) + bundledWords()).also { words ->
+            cache = CachedWords(stamp, words)
+        }
     }
 
     private fun bundledWords(): List<String> {
@@ -15,11 +23,25 @@ class GlideDictionaryLoader(context: Context) {
         }
     }
 
-    private fun importedWords(): List<String> {
-        val file = appContext.filesDir.resolve(IMPORTED_WORDS_FILE)
+    private fun importedWords(file: java.io.File): List<String> {
         if (!file.isFile) return emptyList()
         return file.useLines { lines -> lines.mapNotNull(::normalizeWord).toList() }
     }
+
+    private fun java.io.File.cacheStamp(): ImportedWordsStamp? {
+        if (!isFile) return null
+        return ImportedWordsStamp(lastModified(), length())
+    }
+
+    private data class CachedWords(
+        val importedStamp: ImportedWordsStamp?,
+        val words: List<String>,
+    )
+
+    private data class ImportedWordsStamp(
+        val lastModifiedMs: Long,
+        val byteCount: Long,
+    )
 
     private companion object {
         const val BUNDLED_WORDS_ASSET = "glide_words_en.txt"

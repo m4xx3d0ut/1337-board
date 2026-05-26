@@ -15,9 +15,11 @@ import java.io.Reader
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.leetboard.ime.engine.GlideCorrectionEntry
+import org.leetboard.ime.engine.GlideDwellSensitivity
 import org.leetboard.ime.engine.GlideImportedWordsPriority
 import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
+import org.leetboard.ime.engine.GlideSpatialPrecision
 import org.leetboard.ime.engine.GlideUserLanguageModel
 import org.leetboard.ime.engine.normalizeGlidePathSignature
 import org.leetboard.ime.engine.normalizeWord
@@ -78,6 +80,10 @@ class PreferenceRepository(context: Context) {
                 ?: KeyboardPreferences.defaults().glideStrictFirstLastLetter,
             glidePathTolerance = values[Keys.glidePathTolerance]?.let(::glidePathToleranceFromName)
                 ?: KeyboardPreferences.defaults().glidePathTolerance,
+            glideSpatialPrecision = values[Keys.glideSpatialPrecision]?.let(::glideSpatialPrecisionFromName)
+                ?: KeyboardPreferences.defaults().glideSpatialPrecision,
+            glideDwellSensitivity = values[Keys.glideDwellSensitivity]?.let(::glideDwellSensitivityFromName)
+                ?: KeyboardPreferences.defaults().glideDwellSensitivity,
             glideImportedWordsPriority = values[Keys.glideImportedWordsPriority]?.let(::glideImportedWordsPriorityFromName)
                 ?: KeyboardPreferences.defaults().glideImportedWordsPriority,
             glideRawFallbackMode = values[Keys.glideRawFallbackMode]?.let(::glideRawFallbackModeFromName)
@@ -309,6 +315,14 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.glidePathTolerance] = tolerance.name }
     }
 
+    suspend fun setGlideSpatialPrecision(precision: GlideSpatialPrecision) {
+        dataStore.edit { values -> values[Keys.glideSpatialPrecision] = precision.name }
+    }
+
+    suspend fun setGlideDwellSensitivity(sensitivity: GlideDwellSensitivity) {
+        dataStore.edit { values -> values[Keys.glideDwellSensitivity] = sensitivity.name }
+    }
+
     suspend fun setGlideImportedWordsPriority(priority: GlideImportedWordsPriority) {
         dataStore.edit { values -> values[Keys.glideImportedWordsPriority] = priority.name }
     }
@@ -395,6 +409,14 @@ class PreferenceRepository(context: Context) {
 
     private fun glidePathToleranceFromName(name: String): GlidePathTolerance? {
         return GlidePathTolerance.entries.firstOrNull { it.name == name }
+    }
+
+    private fun glideSpatialPrecisionFromName(name: String): GlideSpatialPrecision? {
+        return GlideSpatialPrecision.entries.firstOrNull { it.name == name }
+    }
+
+    private fun glideDwellSensitivityFromName(name: String): GlideDwellSensitivity? {
+        return GlideDwellSensitivity.entries.firstOrNull { it.name == name }
     }
 
     private fun glideImportedWordsPriorityFromName(name: String): GlideImportedWordsPriority? {
@@ -506,6 +528,8 @@ class PreferenceRepository(context: Context) {
         val glidePreferShorterWords = booleanPreferencesKey("glide_prefer_shorter_words")
         val glideStrictFirstLastLetter = booleanPreferencesKey("glide_strict_first_last_letter")
         val glidePathTolerance = stringPreferencesKey("glide_path_tolerance")
+        val glideSpatialPrecision = stringPreferencesKey("glide_spatial_precision")
+        val glideDwellSensitivity = stringPreferencesKey("glide_dwell_sensitivity")
         val glideImportedWordsPriority = stringPreferencesKey("glide_imported_words_priority")
         val glideRawFallbackMode = stringPreferencesKey("glide_raw_fallback_mode")
         val glidePredictiveRankingEnabled = booleanPreferencesKey("glide_predictive_ranking_enabled")

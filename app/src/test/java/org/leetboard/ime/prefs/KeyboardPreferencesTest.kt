@@ -4,9 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.leetboard.ime.engine.GlideDwellSensitivity
 import org.leetboard.ime.engine.GlideImportedWordsPriority
 import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
+import org.leetboard.ime.engine.GlideSpatialPrecision
 import org.leetboard.ime.model.EscTouchMode
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
@@ -24,6 +26,7 @@ class KeyboardPreferencesTest {
 
         assertTrue("esc" in customization.hiddenOptionalKeyIds)
         assertTrue("num_toggle" in customization.hiddenOptionalKeyIds)
+        assertTrue("mic" in customization.hiddenOptionalKeyIds)
     }
 
     @Test
@@ -32,6 +35,15 @@ class KeyboardPreferencesTest {
         val preferences = KeyboardPreferences(slotActions = mapOf("esc" to action))
 
         assertEquals(action, preferences.customizationState().slotActions["esc"])
+    }
+
+    @Test
+    fun customizationStateShowsMicOnlyAfterSpeechOptIn() {
+        val disabled = KeyboardPreferences(speechInputEnabled = false)
+        val enabled = KeyboardPreferences(speechInputEnabled = true)
+
+        assertTrue("mic" in disabled.customizationState().hiddenOptionalKeyIds)
+        assertFalse("mic" in enabled.customizationState().hiddenOptionalKeyIds)
     }
 
     @Test
@@ -50,10 +62,14 @@ class KeyboardPreferencesTest {
         assertFalse(preferences.glideStrictFirstLastLetter)
         assertTrue(preferences.glidePredictiveRankingEnabled)
         assertEquals(GlidePathTolerance.BALANCED, preferences.glidePathTolerance)
+        assertEquals(GlideSpatialPrecision.STANDARD, preferences.glideSpatialPrecision)
+        assertEquals(GlideDwellSensitivity.STANDARD, preferences.glideDwellSensitivity)
         assertEquals(GlideImportedWordsPriority.NORMAL, preferences.glideImportedWordsPriority)
         assertEquals(GlideRawFallbackMode.OFF, preferences.glideRawFallbackMode)
         assertEquals(EscTouchMode.REGULAR, preferences.escTouchMode)
         assertEquals(0.75f, preferences.edgeKeyWidthScale, 0.001f)
+        assertEquals(18.5f, preferences.keyLabelStyle.primaryTextSizeSp, 0.001f)
+        assertEquals(10.5f, preferences.keyLabelStyle.secondaryTextSizeSp, 0.001f)
         assertEquals(34f, preferences.portraitGeometry.keyboardHeightPercent, 0.001f)
         assertEquals(16f, preferences.portraitGeometry.horizontalMarginDp, 0.001f)
         assertEquals(12f, preferences.portraitGeometry.bottomMarginDp, 0.001f)
@@ -69,6 +85,8 @@ class KeyboardPreferencesTest {
             glidePreferShorterWords = true,
             glideStrictFirstLastLetter = false,
             glidePathTolerance = GlidePathTolerance.LOOSE,
+            glideSpatialPrecision = GlideSpatialPrecision.PRECISE,
+            glideDwellSensitivity = GlideDwellSensitivity.HIGH,
             glideImportedWordsPriority = GlideImportedWordsPriority.HIGH,
             glideRawFallbackMode = GlideRawFallbackMode.ALWAYS,
             glidePredictiveRankingEnabled = false,
@@ -80,6 +98,8 @@ class KeyboardPreferencesTest {
         assertTrue(options.preferShorterWords)
         assertFalse(options.strictFirstLastLetter)
         assertEquals(GlidePathTolerance.LOOSE, options.pathTolerance)
+        assertEquals(GlideSpatialPrecision.PRECISE, options.spatialPrecision)
+        assertEquals(GlideDwellSensitivity.HIGH, options.dwellSensitivity)
         assertEquals(GlideImportedWordsPriority.HIGH, options.importedWordsPriority)
         assertEquals(GlideRawFallbackMode.ALWAYS, options.rawPathFallbackMode)
         assertFalse(options.predictiveRankingEnabled)

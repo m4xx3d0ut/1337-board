@@ -15,6 +15,7 @@ import android.os.Looper
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
+import org.leetboard.ime.engine.GlideGeometryScorer
 import org.leetboard.ime.engine.GlidePoint
 import org.leetboard.ime.engine.GlideTouchTrace
 import org.leetboard.ime.model.HeldModifiers
@@ -214,6 +215,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             downY = event.getY(index),
             glidePath = alphaKeyLabel(hitKey.key)?.let(::listOf).orEmpty(),
             glidePoints = listOf(PointF(event.getX(index), event.getY(index))),
+            glidePointTimes = listOf(event.eventTime),
         )
         pressedKeyIds = pressedKeyIds + hitKey.key.id
         previewKey = hitKey.key.takeIf { keyPreviewEnabled }
@@ -237,11 +239,26 @@ class KeyboardSurfaceView(context: Context) : View(context) {
 
             val x = event.getX(index)
             val y = event.getY(index)
-            val hitKey = findKey(x, y)
-            val nextPath = alphaKeyLabel(hitKey?.key)?.let { label ->
-                if (press.glidePath.lastOrNull() == label) press.glidePath else press.glidePath + label
-            } ?: press.glidePath
-            val nextPoints = press.glidePoints + PointF(x, y)
+            val samples = buildList {
+                repeat(event.historySize) { historyIndex ->
+                    add(
+                        TimedPoint(
+                            point = PointF(
+                                event.getHistoricalX(index, historyIndex),
+                                event.getHistoricalY(index, historyIndex),
+                            ),
+                            timeMs = event.getHistoricalEventTime(historyIndex),
+                        ),
+                    )
+                }
+                add(TimedPoint(PointF(x, y), event.eventTime))
+            }
+            val nextPath = samples.fold(press.glidePath) { path, sample ->
+                val label = alphaKeyLabel(findKey(sample.point.x, sample.point.y)?.key) ?: return@fold path
+                if (path.lastOrNull() == label) path else path + label
+            }
+            val nextPoints = press.glidePoints + samples.map { sample -> sample.point }
+            val nextPointTimes = press.glidePointTimes + samples.map { sample -> sample.timeMs }
             val movedEnough = distanceSquared(press.downX, press.downY, x, y) >= glideStartThresholdSquared()
             val crossesLetters = nextPath.distinct().size >= MIN_GLIDE_KEYS
             val isGliding = press.gliding || (movedEnough && crossesLetters)
@@ -260,6 +277,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             pointerPresses[pointerId] = press.copy(
                 glidePath = nextPath,
                 glidePoints = nextPoints,
+                glidePointTimes = nextPointTimes,
                 gliding = isGliding,
             )
         }
@@ -274,6 +292,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val hitKey = findKey(releaseX, releaseY)
         val pressWithReleasePoint = press.copy(
             glidePoints = press.glidePoints + PointF(releaseX, releaseY),
+            glidePointTimes = press.glidePointTimes + event.eventTime,
         )
         val releasePress = alphaKeyLabel(hitKey?.key)?.let { label ->
             if (press.glidePath.lastOrNull() == label) {
@@ -303,7 +322,11 @@ class KeyboardSurfaceView(context: Context) : View(context) {
                 )
         if (releaseGliding && releasePress.glidePath.size >= MIN_GLIDE_KEYS) {
             if (heldModifiers.isActive()) markActiveModifiersUsedInCombo()
-            onGlide?.invoke(releasePress.glidePath, buildGlideTouchTrace(releasePress.glidePoints), heldModifiers)
+            onGlide?.invoke(
+                releasePress.glidePath,
+                buildGlideTouchTrace(releasePress.glidePoints, releasePress.glidePointTimes),
+                heldModifiers,
+            )
             return
         }
         if (press.longPressConsumed || pressedHitKey == null) return
@@ -637,7 +660,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         return text.takeIf { it.length == 1 && it.first() in 'a'..'z' }
     }
 
-    private fun buildGlideTouchTrace(points: List<PointF>): GlideTouchTrace? {
+    private fun buildGlideTouchTrace(points: List<PointF>, pointTimes: List<Long>): GlideTouchTrace? {
         val alphaKeys = hitKeys.mapNotNull { hitKey ->
             val label = alphaKeyLabel(hitKey.key)?.firstOrNull() ?: return@mapNotNull null
             label to hitKey.rect
@@ -653,13 +676,18 @@ class KeyboardSurfaceView(context: Context) : View(context) {
                 y = (rect.centerY() - originY) / unitHeight,
             )
         }
-        val tracePoints = points.map { point ->
+        val tracePoints = points.mapIndexed { index, point ->
             GlidePoint(
                 x = (point.x - originX) / unitWidth,
                 y = (point.y - originY) / unitHeight,
+                timeMs = pointTimes.getOrNull(index),
             )
         }
-        return GlideTouchTrace(points = tracePoints, keyCenters = keyCenters)
+        return GlideTouchTrace(
+            points = tracePoints,
+            keyCenters = keyCenters,
+            keyDwellWeights = GlideGeometryScorer.keyDwellWeights(tracePoints, keyCenters),
+        )
     }
 
     private fun distanceSquared(startX: Float, startY: Float, endX: Float, endY: Float): Float {
@@ -707,6 +735,11 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val rect: RectF,
     )
 
+    private data class TimedPoint(
+        val point: PointF,
+        val timeMs: Long,
+    )
+
     private data class PointerPress(
         val keyId: String,
         val downX: Float,
@@ -716,6 +749,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val gliding: Boolean = false,
         val glidePath: List<String> = emptyList(),
         val glidePoints: List<PointF> = emptyList(),
+        val glidePointTimes: List<Long> = emptyList(),
     )
 
     data class KeyboardGeometryPx(

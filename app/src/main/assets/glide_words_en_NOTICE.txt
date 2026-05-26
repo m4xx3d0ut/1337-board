@@ -5,4 +5,4 @@ License: ISC
 
 The source list is sorted by spoken-English frequency from the SUBTLEXus
 corpus. This project filters it to lowercase alphabetic words from 2 to 24
-characters and keeps the first 12,000 unique entries for bundled glide typing.
+characters and keeps the first 25,000 unique entries for bundled glide typing.

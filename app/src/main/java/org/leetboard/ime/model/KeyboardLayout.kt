@@ -51,8 +51,8 @@ enum class EscTouchMode {
 }
 
 data class KeyLabelStyle(
-    val primaryTextSizeSp: Float = 16f,
-    val secondaryTextSizeSp: Float = 9f,
+    val primaryTextSizeSp: Float = 18.5f,
+    val secondaryTextSizeSp: Float = 10.5f,
     val fontWeight: Float = 400f,
     val labelOpacity: Float = 1f,
     val uppercaseOnShift: Boolean = true,

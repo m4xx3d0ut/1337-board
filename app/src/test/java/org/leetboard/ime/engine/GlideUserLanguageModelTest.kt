@@ -39,4 +39,15 @@ class GlideUserLanguageModelTest {
 
         assertEquals(0, model.wordBoost("keyboard"))
     }
+
+    @Test
+    fun rejectAcceptedWordDemotesWordAndBigramBoosts() {
+        val model = GlideUserLanguageModel(clock = { 400L })
+        model.recordAcceptedWord("enjoyed", "keyboard")
+
+        model.rejectAcceptedWord("enjoyed", "keyboard")
+
+        assertEquals(0, model.wordBoost("enjoyed"))
+        assertEquals(0, model.bigramBoost("keyboard", "enjoyed"))
+    }
 }

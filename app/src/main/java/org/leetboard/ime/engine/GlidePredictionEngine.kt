@@ -11,6 +11,8 @@ interface GlidePredictionEngine {
     ): List<GlideCandidate>
 
     fun recordAcceptedWord(word: String, context: GlidePredictionContext) = Unit
+
+    fun rejectAcceptedWord(word: String, context: GlidePredictionContext) = Unit
 }
 
 data class GlidePredictionContext(
@@ -61,6 +63,11 @@ class FrequencyContextGlidePredictionEngine(
     override fun recordAcceptedWord(word: String, context: GlidePredictionContext) {
         val normalizedWord = normalizeWord(word) ?: return
         userLanguageModel.recordAcceptedWord(normalizedWord, context.previousWord())
+    }
+
+    override fun rejectAcceptedWord(word: String, context: GlidePredictionContext) {
+        val normalizedWord = normalizeWord(word) ?: return
+        userLanguageModel.rejectAcceptedWord(normalizedWord, context.previousWord())
     }
 
     private fun predictiveScore(

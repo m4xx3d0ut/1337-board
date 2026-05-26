@@ -126,6 +126,20 @@ class GestureTypingEngineTest {
     }
 
     @Test
+    fun localCorrectionCanSupplyWordMissingFromDictionary() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("word", "world")
+        }
+
+        engine.setCorrections(mapOf("wrd" to GlideCorrectionEntry(word = "ward", acceptedCount = 6)))
+
+        val candidates = engine.candidates(listOf("w", "r", "d"))
+
+        assertEquals("ward", candidates.first().word)
+        assertEquals(GlideCandidateSource.LOCAL_CORRECTION, candidates.first().source)
+    }
+
+    @Test
     fun localCorrectionCannotBypassStrictEndpoints() {
         val engine = GestureTypingEngine(TextContextPolicy()) {
             listOf("test")
@@ -220,11 +234,143 @@ class GestureTypingEngineTest {
     }
 
     @Test
+    fun shortNoisyPathsPreferShorterCommonMatches() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("three", "the")
+        }
+        val options = GlideTypingOptions(strictFirstLastLetter = false)
+
+        assertEquals("the", engine.decode(listOf("t", "h", "r"), options))
+    }
+
+    @Test
+    fun shortAnchoredWordsBeatLongNoisyPathMatches() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf(
+                "you",
+                "your",
+                "are",
+                "our",
+                "young",
+                "hour",
+                "word",
+                "weird",
+                "weir",
+                "writ",
+                "error",
+                "serve",
+                "ate",
+                "assure",
+                "average",
+                "assert",
+            )
+        }
+        val options = GlideTypingOptions(
+            preferShorterWords = true,
+            strictFirstLastLetter = false,
+            pathTolerance = GlidePathTolerance.LOOSE,
+        )
+
+        assertEquals("are", engine.decode(listOf("a", "s", "e", "r", "t", "r", "e"), options))
+        assertEquals("you", engine.decode(listOf("y", "u", "i", "o", "u"), options))
+        assertEquals("word", engine.decode(listOf("w", "e", "r", "t", "y", "u", "i", "o", "i", "u", "y", "t", "r", "d"), options))
+    }
+
+    @Test
+    fun dwellOnInteriorKeysCanLiftLongerIntendedWord() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("weed", "wed", "weird", "weir", "writ")
+        }
+        val options = GlideTypingOptions(
+            preferShorterWords = true,
+            strictFirstLastLetter = false,
+            pathTolerance = GlidePathTolerance.LOOSE,
+        )
+        val path = listOf("w", "e", "r", "t", "y", "u", "i", "u", "y", "t", "r", "d")
+
+        assertEquals("weed", engine.decode(path, options))
+        assertEquals("weird", engine.decode(path, options, touchTrace = dwellTrace("weird")))
+    }
+
+    @Test
+    fun timedDwellCanLiftIntendedInteriorLetters() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("word", "weird", "wired", "writ")
+        }
+        val options = GlideTypingOptions(
+            preferShorterWords = true,
+            strictFirstLastLetter = false,
+            pathTolerance = GlidePathTolerance.LOOSE,
+        )
+        val path = listOf("w", "e", "r", "t", "y", "u", "i", "u", "y", "t", "r", "d")
+        val trace = timedTrace(
+            "wertyuiuytrd",
+            mapOf('i' to 150L),
+        )
+
+        assertEquals("weird", engine.decode(path, options, touchTrace = trace))
+    }
+
+    @Test
+    fun traceAnchorsProtectShortCommonWordsFromNearbyAlternates() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("you", "your", "young", "hour")
+        }
+        val options = GlideTypingOptions(
+            preferShorterWords = true,
+            strictFirstLastLetter = false,
+            pathTolerance = GlidePathTolerance.LOOSE,
+        )
+        val path = listOf("y", "u", "i", "o", "u")
+        val trace = timedTrace("yuiou")
+
+        assertEquals("you", engine.decode(path, options, touchTrace = trace))
+    }
+
+    @Test
     fun rawPathFallbackCanBeDisabledOrExpanded() {
         val engine = GestureTypingEngine(TextContextPolicy()) { emptyList() }
         val path = listOf("x", "c", "v", "b", "n", "m")
 
         assertNull(engine.decode(path, GlideTypingOptions(rawPathFallbackMode = GlideRawFallbackMode.OFF)))
         assertEquals("xcvbnm", engine.decode(path, GlideTypingOptions(rawPathFallbackMode = GlideRawFallbackMode.ALWAYS)))
+    }
+
+    private fun dwellTrace(word: String): GlideTouchTrace {
+        val dwellWeights = word.toSet().associateWith { 1f }
+        val tracePoints = word.mapNotNull { keyCenters[it] }
+        return GlideTouchTrace(
+            points = tracePoints,
+            keyCenters = keyCenters,
+            keyDwellWeights = dwellWeights,
+        )
+    }
+
+    private fun timedTrace(
+        path: String,
+        pauseAfterKey: Map<Char, Long> = emptyMap(),
+    ): GlideTouchTrace {
+        var timeMs = 0L
+        val tracePoints = path.mapNotNull { char ->
+            val center = keyCenters[char] ?: return@mapNotNull null
+            timeMs += pauseAfterKey[char] ?: 16L
+            center.copy(timeMs = timeMs)
+        }
+        return GlideTouchTrace(
+            points = tracePoints,
+            keyCenters = keyCenters,
+        )
+    }
+
+    private val keyCenters = buildMap {
+        "qwertyuiop".forEachIndexed { index, char ->
+            put(char, GlidePoint(index.toFloat(), 0f))
+        }
+        "asdfghjkl".forEachIndexed { index, char ->
+            put(char, GlidePoint(index + 0.5f, 1f))
+        }
+        "zxcvbnm".forEachIndexed { index, char ->
+            put(char, GlidePoint(index + 1.25f, 2f))
+        }
     }
 }

@@ -57,9 +57,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.leetboard.ime.engine.CustomizationEngine
 import org.leetboard.ime.engine.GlideCorrectionEntry
+import org.leetboard.ime.engine.GlideDwellSensitivity
 import org.leetboard.ime.engine.GlideImportedWordsPriority
 import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
+import org.leetboard.ime.engine.GlideSpatialPrecision
 import org.leetboard.ime.engine.LayoutEngine
 import org.leetboard.ime.engine.ThemeEngine
 import org.leetboard.ime.model.CustomThemeConfig
@@ -641,16 +643,63 @@ private fun FeatureSection(
         }
     }
     SettingsGroup(
-        title = "Privacy-Gated Features",
-        body = "Mic and glide typing stay disabled in sensitive fields. Optional glide corrections are stored only on this device.",
+        title = "Feature Opt-In",
+        body = "Glide typing and system speech input are off on fresh installs. Enable only the input features you want.",
     ) {
         SettingSwitch(
-            label = "Glide typing",
+            label = "Enable glide typing",
             checked = preferences.gestureTypingEnabled,
             onCheckedChange = { checked ->
                 scope.launch { repository.setGestureTypingEnabled(checked) }
             },
         )
+        SettingSwitch(
+            label = "Enable system mic input",
+            checked = preferences.speechInputEnabled,
+            onCheckedChange = { checked ->
+                if (!checked) {
+                    scope.launch { repository.setSpeechInputEnabled(false) }
+                } else if (
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    scope.launch { repository.setSpeechInputEnabled(true) }
+                } else {
+                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+        )
+    }
+    SettingsGroup(
+        title = "Glide Dictionary",
+        body = "Bundled English words stay local. Import a plain text wordlist only when you want different vocabulary.",
+    ) {
+        OutlinedButton(
+            onClick = { scope.launch { repository.clearImportedGlideWords() } },
+            enabled = preferences.glideImportedWordCount > 0,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Use bundled English dictionary")
+        }
+        OutlinedButton(
+            onClick = { wordImportLauncher.launch(arrayOf("text/*", "application/octet-stream")) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Import glide wordlist (${preferences.glideImportedWordCount})")
+        }
+        if (preferences.glideImportedWordCount > 0) {
+            OutlinedButton(
+                onClick = { scope.launch { repository.clearImportedGlideWords() } },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Clear imported wordlist")
+            }
+        }
+    }
+    SettingsGroup(
+        title = "Glide Behavior",
+        body = "Glide decoding is local. Correction learning is optional and stored only on this device.",
+    ) {
         SettingSwitch(
             label = "Learn from glide corrections",
             checked = preferences.glideCorrectionLearningEnabled,
@@ -707,6 +756,22 @@ private fun FeatureSection(
                 onClick = { scope.launch { repository.setGlidePathTolerance(tolerance) } },
             )
         }
+        Text("Spatial precision", style = MaterialTheme.typography.labelLarge)
+        GlideSpatialPrecision.entries.forEach { precision ->
+            SelectButton(
+                label = precision.label,
+                selected = preferences.glideSpatialPrecision == precision,
+                onClick = { scope.launch { repository.setGlideSpatialPrecision(precision) } },
+            )
+        }
+        Text("Dwell sensitivity", style = MaterialTheme.typography.labelLarge)
+        GlideDwellSensitivity.entries.forEach { sensitivity ->
+            SelectButton(
+                label = sensitivity.label,
+                selected = preferences.glideDwellSensitivity == sensitivity,
+                onClick = { scope.launch { repository.setGlideDwellSensitivity(sensitivity) } },
+            )
+        }
         Text("Imported word priority", style = MaterialTheme.typography.labelLarge)
         GlideImportedWordsPriority.entries.forEach { priority ->
             SelectButton(
@@ -737,36 +802,6 @@ private fun FeatureSection(
                 scope.launch { repository.setSwipeUpActionsEnabled(checked) }
             },
         )
-        SettingSwitch(
-            label = "Mic input key",
-            checked = preferences.speechInputEnabled,
-            onCheckedChange = { checked ->
-                if (!checked) {
-                    scope.launch { repository.setSpeechInputEnabled(false) }
-                } else if (
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                    PackageManager.PERMISSION_GRANTED
-                ) {
-                    scope.launch { repository.setSpeechInputEnabled(true) }
-                } else {
-                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            },
-        )
-        OutlinedButton(
-            onClick = { wordImportLauncher.launch(arrayOf("text/*", "application/octet-stream")) },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Import glide wordlist (${preferences.glideImportedWordCount})")
-        }
-        if (preferences.glideImportedWordCount > 0) {
-            OutlinedButton(
-                onClick = { scope.launch { repository.clearImportedGlideWords() } },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Clear imported glide words")
-            }
-        }
     }
     if (showGlideCorrections) {
         GlideCorrectionsDialog(
@@ -1550,6 +1585,20 @@ private val GlidePathTolerance.label: String
         GlidePathTolerance.STRICT -> "Strict"
         GlidePathTolerance.BALANCED -> "Balanced"
         GlidePathTolerance.LOOSE -> "Loose"
+    }
+
+private val GlideSpatialPrecision.label: String
+    get() = when (this) {
+        GlideSpatialPrecision.FORGIVING -> "Forgiving"
+        GlideSpatialPrecision.STANDARD -> "Standard"
+        GlideSpatialPrecision.PRECISE -> "Precise"
+    }
+
+private val GlideDwellSensitivity.label: String
+    get() = when (this) {
+        GlideDwellSensitivity.OFF -> "Off"
+        GlideDwellSensitivity.STANDARD -> "Standard"
+        GlideDwellSensitivity.HIGH -> "High"
     }
 
 private val GlideImportedWordsPriority.label: String

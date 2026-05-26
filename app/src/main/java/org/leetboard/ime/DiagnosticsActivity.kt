@@ -2,6 +2,8 @@ package org.leetboard.ime
 
 import android.os.Bundle
 import android.text.InputType
+import android.graphics.Typeface
+import android.content.Intent
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
@@ -11,6 +13,8 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 
 class DiagnosticsActivity : ComponentActivity() {
+    private lateinit var glideSnapshot: TextView
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -21,6 +25,23 @@ class DiagnosticsActivity : ComponentActivity() {
 
         content.addView(label("IME smoke and behavior checks"))
         content.addView(label("Use this screen to test typing, modifier keys, Enter actions, privacy suppression, rotation, and landscape numpad mode."))
+
+        content.addView(label("Glide debug snapshot"))
+        glideSnapshot = TextView(this).apply {
+            text = glideDebugText()
+            textSize = 13f
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 6, 0, 6)
+        }
+        content.addView(glideSnapshot)
+        content.addView(Button(this).apply {
+            text = "Refresh glide debug"
+            setOnClickListener { glideSnapshot.text = glideDebugText() }
+        })
+        content.addView(Button(this).apply {
+            text = "Share glide debug"
+            setOnClickListener { shareGlideDebug() }
+        })
 
         content.addView(label("Normal text"))
         content.addView(field("Type here", InputType.TYPE_CLASS_TEXT, EditorInfo.IME_ACTION_DONE))
@@ -79,5 +100,38 @@ class DiagnosticsActivity : ComponentActivity() {
             minLines = if (inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE != 0) 3 else 1
             setSingleLine(inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE == 0)
         }
+    }
+
+    private fun glideDebugText(): String {
+        val debugFile = filesDir.resolve(GLIDE_DEBUG_SNAPSHOT_FILE)
+        val modelFile = filesDir.resolve(GLIDE_USER_LANGUAGE_MODEL_FILE)
+        val wordCount = assets.open(GLIDE_WORDS_ASSET).bufferedReader().useLines { lines -> lines.count() }
+        val modelCount = if (modelFile.isFile) modelFile.useLines { lines -> lines.count() } else 0
+        val snapshot = if (debugFile.isFile) {
+            debugFile.readText()
+        } else {
+            "No glide has been recorded yet."
+        }
+        return buildString {
+            appendLine("bundledWords=$wordCount")
+            appendLine("userModelRows=$modelCount")
+            appendLine()
+            append(snapshot)
+        }
+    }
+
+    private fun shareGlideDebug() {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "1337 Board glide debug")
+            putExtra(Intent.EXTRA_TEXT, glideDebugText())
+        }
+        startActivity(Intent.createChooser(intent, "Share glide debug"))
+    }
+
+    private companion object {
+        const val GLIDE_DEBUG_SNAPSHOT_FILE = "glide_debug_snapshot.txt"
+        const val GLIDE_USER_LANGUAGE_MODEL_FILE = "glide_user_language_model.tsv"
+        const val GLIDE_WORDS_ASSET = "glide_words_en.txt"
     }
 }

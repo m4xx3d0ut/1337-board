@@ -10,6 +10,8 @@ class GestureTypingEngine(
 ) {
     private val rejectedWordsByPath = mutableMapOf<String, MutableSet<String>>()
     private var correctionMap: Map<String, GlideCorrectionEntry> = emptyMap()
+    private var cachedProviderWords: List<String>? = null
+    private var cachedNormalizedWords: List<String> = emptyList()
 
     fun isEnabledFor(editorInfo: EditorInfo?): Boolean {
         return textContextPolicy.allowsGestureTyping(editorInfo)
@@ -39,11 +41,10 @@ class GestureTypingEngine(
         if (path.size < MIN_KEYS_FOR_GESTURE) return emptyList()
         val pathSignature = path.joinToString(separator = "")
         val rejectedWords = rejectedWordsByPath[pathSignature].orEmpty()
-        val normalizedWords = wordsProvider().mapNotNull(::normalizeWord)
-        val availableWords = normalizedWords.toSet()
+        val normalizedWords = normalizedWords()
+        val traceProfile = GlideGeometryScorer.profile(touchTrace)
         val correctionCandidate = correctionMap[pathSignature]
             ?.takeIf { correction -> correction.word !in rejectedWords }
-            ?.takeIf { correction -> correction.word in availableWords }
             ?.takeIf { correction -> localCorrectionAllowed(correction.word, pathSignature, options) }
             ?.takeUnless { correction -> correction.isDemoted() }
             ?.let { correction ->
@@ -52,11 +53,13 @@ class GestureTypingEngine(
                     pathSignature = pathSignature,
                     priority = CORRECTION_PRIORITY,
                     options = options,
-                    touchTrace = touchTrace,
+                    traceProfile = traceProfile,
                 ) ?: return@let null
                 GlideCandidate(
                     word = correction.word,
-                    score = score - correction.softBoost(),
+                    score = score +
+                        localCorrectionEndpointPenalty(correction.word, pathSignature, options) -
+                        correction.softBoost(),
                     source = GlideCandidateSource.LOCAL_CORRECTION,
                     priority = CORRECTION_PRIORITY,
                 )
@@ -66,7 +69,7 @@ class GestureTypingEngine(
             .mapIndexedNotNull { index, rawWord ->
                 val word = rawWord
                 if (word in rejectedWords || word == correctionCandidate?.word) return@mapIndexedNotNull null
-                val score = scoreCandidate(word, pathSignature, index, options, touchTrace)
+                val score = scoreCandidate(word, pathSignature, index, options, traceProfile)
                     ?: return@mapIndexedNotNull null
                 GlideCandidate(
                     word = word,
@@ -128,6 +131,10 @@ class GestureTypingEngine(
         predictionEngine.recordAcceptedWord(word, context)
     }
 
+    fun rejectAcceptedWord(word: String, context: GlidePredictionContext) {
+        predictionEngine.rejectAcceptedWord(word, context)
+    }
+
     private fun localCorrectionAllowed(
         word: String,
         pathSignature: String,
@@ -138,12 +145,24 @@ class GestureTypingEngine(
             word.lastOrNull() == pathSignature.lastOrNull()
     }
 
+    private fun localCorrectionEndpointPenalty(
+        word: String,
+        pathSignature: String,
+        options: GlideTypingOptions,
+    ): Int {
+        if (pathSignature.isEmpty() || options.strictFirstLastLetter) return 0
+        var penalty = 0
+        if (word.firstOrNull() != pathSignature.first()) penalty += LOCAL_CORRECTION_ENDPOINT_MISMATCH_PENALTY
+        if (word.lastOrNull() != pathSignature.last()) penalty += LOCAL_CORRECTION_ENDPOINT_MISMATCH_PENALTY
+        return penalty
+    }
+
     private fun scoreCandidate(
         word: String,
         pathSignature: String,
         priority: Int,
         options: GlideTypingOptions,
-        touchTrace: GlideTouchTrace?,
+        traceProfile: GlideTraceProfile?,
     ): Int? {
         if (word.length < MIN_WORD_LENGTH) return null
         if (options.strictFirstLastLetter && (word.first() != pathSignature.first() || word.last() != pathSignature.last())) {
@@ -151,15 +170,22 @@ class GestureTypingEngine(
         }
         val wordSignature = collapseRepeats(word)
         val priorityPenalty = priorityPenalty(priority, options)
+        val shortAnchoredCost = shortAnchoredMatchCost(wordSignature, pathSignature)
+        if (shortAnchoredCost != null) {
+            return shortAnchoredCost +
+                tracePenalty(wordSignature, traceProfile, options) +
+                priorityPenalty +
+                options.shortWordPenalty(word)
+        }
         val orderedCost = orderedMatchCost(wordSignature, pathSignature)
         if (orderedCost != null) {
             val lengthPenalty = abs(pathSignature.length - wordSignature.length)
             val geometryPenalty = GlideGeometryScorer.cost(wordSignature, pathSignature) * options.geometryWeight()
-            val touchPenalty = GlideGeometryScorer.touchCost(wordSignature, touchTrace) * options.touchTraceWeight()
             return orderedCost * options.orderedSkipWeight() +
                 lengthPenalty * LENGTH_WEIGHT +
                 geometryPenalty +
-                touchPenalty +
+                tracePenalty(wordSignature, traceProfile, options) +
+                shortPathLengthPenalty(wordSignature, pathSignature) +
                 options.shortWordPenalty(word) +
                 priorityPenalty
         }
@@ -168,13 +194,53 @@ class GestureTypingEngine(
         if (distance > maximumDistance) return null
         val lengthPenalty = abs(pathSignature.length - wordSignature.length)
         val geometryPenalty = GlideGeometryScorer.cost(wordSignature, pathSignature) * options.geometryWeight()
-        val touchPenalty = GlideGeometryScorer.touchCost(wordSignature, touchTrace) * options.touchTraceWeight()
         return distance * DISTANCE_WEIGHT +
             lengthPenalty * LENGTH_WEIGHT +
             geometryPenalty +
-            touchPenalty +
+            tracePenalty(wordSignature, traceProfile, options) +
+            shortPathLengthPenalty(wordSignature, pathSignature) +
             options.shortWordPenalty(word) +
             priorityPenalty
+    }
+
+    private fun normalizedWords(): List<String> {
+        val providerWords = wordsProvider()
+        if (providerWords === cachedProviderWords) return cachedNormalizedWords
+        return providerWords.mapNotNull(::normalizeWord).also { words ->
+            cachedProviderWords = providerWords
+            cachedNormalizedWords = words
+        }
+    }
+
+    private fun tracePenalty(
+        wordSignature: String,
+        traceProfile: GlideTraceProfile?,
+        options: GlideTypingOptions,
+    ): Int {
+        traceProfile ?: return 0
+        return GlideGeometryScorer.touchCost(wordSignature, traceProfile) * options.touchTraceWeight() +
+            GlideGeometryScorer.dwellCost(wordSignature, traceProfile) * options.dwellWeight() +
+            GlideGeometryScorer.cornerCost(wordSignature, traceProfile) * options.cornerTraceWeight() +
+            GlideGeometryScorer.anchorCost(wordSignature, traceProfile) * options.anchorWeight() +
+            GlideGeometryScorer.cornerKeyCost(wordSignature, traceProfile) * options.cornerKeyWeight()
+    }
+
+    private fun shortPathLengthPenalty(wordSignature: String, pathSignature: String): Int {
+        if (pathSignature.length > SHORT_PATH_LENGTH) return 0
+        return (wordSignature.length - pathSignature.length)
+            .coerceAtLeast(0) * SHORT_PATH_EXTRA_LENGTH_WEIGHT
+    }
+
+    private fun shortAnchoredMatchCost(wordSignature: String, pathSignature: String): Int? {
+        if (wordSignature.length !in 2..SHORT_ANCHORED_MAX_WORD_LENGTH) return null
+        if (pathSignature.length <= wordSignature.length || pathSignature.length > SHORT_ANCHORED_MAX_PATH_LENGTH) {
+            return null
+        }
+        if (wordSignature.first() != pathSignature.first() || wordSignature.last() != pathSignature.last()) return null
+        val middleLetters = wordSignature.drop(1).dropLast(1)
+        if (middleLetters.any { char -> char !in pathSignature }) return null
+        val extraLetters = pathSignature.length - wordSignature.length
+        return SHORT_ANCHORED_BASE_COST + extraLetters * SHORT_ANCHORED_EXTRA_LETTER_WEIGHT
     }
 
     private fun rawPathFallback(pathSignature: String, options: GlideTypingOptions): String? {
@@ -207,6 +273,13 @@ class GestureTypingEngine(
         const val IMPORTED_WORD_BOOST = -700
         const val DISTANCE_WEIGHT = 1000
         const val LENGTH_WEIGHT = 100
+        const val SHORT_PATH_LENGTH = 5
+        const val SHORT_PATH_EXTRA_LENGTH_WEIGHT = 350
+        const val SHORT_ANCHORED_MAX_WORD_LENGTH = 4
+        const val SHORT_ANCHORED_MAX_PATH_LENGTH = 16
+        const val SHORT_ANCHORED_BASE_COST = 1200
+        const val SHORT_ANCHORED_EXTRA_LETTER_WEIGHT = 160
+        const val LOCAL_CORRECTION_ENDPOINT_MISMATCH_PENALTY = 1200
     }
 }
 
@@ -228,6 +301,8 @@ data class GlideTypingOptions(
     val preferShorterWords: Boolean = false,
     val strictFirstLastLetter: Boolean = true,
     val pathTolerance: GlidePathTolerance = GlidePathTolerance.BALANCED,
+    val spatialPrecision: GlideSpatialPrecision = GlideSpatialPrecision.STANDARD,
+    val dwellSensitivity: GlideDwellSensitivity = GlideDwellSensitivity.STANDARD,
     val importedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
     val rawPathFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.OFF,
     val importedWordCount: Int = 0,
@@ -238,6 +313,18 @@ enum class GlidePathTolerance {
     STRICT,
     BALANCED,
     LOOSE,
+}
+
+enum class GlideSpatialPrecision {
+    FORGIVING,
+    STANDARD,
+    PRECISE,
+}
+
+enum class GlideDwellSensitivity {
+    OFF,
+    STANDARD,
+    HIGH,
 }
 
 enum class GlideImportedWordsPriority {
@@ -294,11 +381,58 @@ private fun GlideTypingOptions.geometryWeight(): Int {
 }
 
 private fun GlideTypingOptions.touchTraceWeight(): Int {
-    return when (pathTolerance) {
+    return scaledSpatialWeight(when (pathTolerance) {
         GlidePathTolerance.STRICT -> GestureScoring.STRICT_TOUCH_TRACE_WEIGHT
         GlidePathTolerance.BALANCED -> GestureScoring.TOUCH_TRACE_WEIGHT
         GlidePathTolerance.LOOSE -> GestureScoring.LOOSE_TOUCH_TRACE_WEIGHT
+    })
+}
+
+private fun GlideTypingOptions.dwellWeight(): Int {
+    if (dwellSensitivity == GlideDwellSensitivity.OFF) return 0
+    val base = when (pathTolerance) {
+        GlidePathTolerance.STRICT -> GestureScoring.STRICT_DWELL_WEIGHT
+        GlidePathTolerance.BALANCED -> GestureScoring.DWELL_WEIGHT
+        GlidePathTolerance.LOOSE -> GestureScoring.LOOSE_DWELL_WEIGHT
     }
+    return when (dwellSensitivity) {
+        GlideDwellSensitivity.OFF -> 0
+        GlideDwellSensitivity.STANDARD -> base
+        GlideDwellSensitivity.HIGH -> base * 3
+    }
+}
+
+private fun GlideTypingOptions.cornerTraceWeight(): Int {
+    return scaledSpatialWeight(when (pathTolerance) {
+        GlidePathTolerance.STRICT -> GestureScoring.STRICT_CORNER_TRACE_WEIGHT
+        GlidePathTolerance.BALANCED -> GestureScoring.CORNER_TRACE_WEIGHT
+        GlidePathTolerance.LOOSE -> GestureScoring.LOOSE_CORNER_TRACE_WEIGHT
+    })
+}
+
+private fun GlideTypingOptions.anchorWeight(): Int {
+    return scaledSpatialWeight(when (pathTolerance) {
+        GlidePathTolerance.STRICT -> GestureScoring.STRICT_ANCHOR_WEIGHT
+        GlidePathTolerance.BALANCED -> GestureScoring.ANCHOR_WEIGHT
+        GlidePathTolerance.LOOSE -> GestureScoring.LOOSE_ANCHOR_WEIGHT
+    })
+}
+
+private fun GlideTypingOptions.cornerKeyWeight(): Int {
+    return scaledSpatialWeight(when (pathTolerance) {
+        GlidePathTolerance.STRICT -> GestureScoring.STRICT_CORNER_KEY_WEIGHT
+        GlidePathTolerance.BALANCED -> GestureScoring.CORNER_KEY_WEIGHT
+        GlidePathTolerance.LOOSE -> GestureScoring.LOOSE_CORNER_KEY_WEIGHT
+    })
+}
+
+private fun GlideTypingOptions.scaledSpatialWeight(baseWeight: Int): Int {
+    val percent = when (spatialPrecision) {
+        GlideSpatialPrecision.FORGIVING -> 70
+        GlideSpatialPrecision.STANDARD -> 100
+        GlideSpatialPrecision.PRECISE -> 145
+    }
+    return ((baseWeight * percent) / 100).coerceAtLeast(1)
 }
 
 private object GestureScoring {
@@ -308,9 +442,21 @@ private object GestureScoring {
     const val GEOMETRY_WEIGHT = 2
     const val STRICT_GEOMETRY_WEIGHT = 3
     const val LOOSE_GEOMETRY_WEIGHT = 1
-    const val TOUCH_TRACE_WEIGHT = 4
-    const val STRICT_TOUCH_TRACE_WEIGHT = 5
-    const val LOOSE_TOUCH_TRACE_WEIGHT = 2
+    const val TOUCH_TRACE_WEIGHT = 7
+    const val STRICT_TOUCH_TRACE_WEIGHT = 8
+    const val LOOSE_TOUCH_TRACE_WEIGHT = 4
+    const val DWELL_WEIGHT = 1
+    const val STRICT_DWELL_WEIGHT = 1
+    const val LOOSE_DWELL_WEIGHT = 1
+    const val CORNER_TRACE_WEIGHT = 3
+    const val STRICT_CORNER_TRACE_WEIGHT = 4
+    const val LOOSE_CORNER_TRACE_WEIGHT = 2
+    const val ANCHOR_WEIGHT = 5
+    const val STRICT_ANCHOR_WEIGHT = 6
+    const val LOOSE_ANCHOR_WEIGHT = 3
+    const val CORNER_KEY_WEIGHT = 1
+    const val STRICT_CORNER_KEY_WEIGHT = 1
+    const val LOOSE_CORNER_KEY_WEIGHT = 1
     const val NORMAL_PRIORITY_BUCKET_SIZE = 50
     const val HIGH_PRIORITY_BUCKET_SIZE = 18
     const val SHORT_WORD_WEIGHT = 20
