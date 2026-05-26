@@ -87,6 +87,29 @@ class GestureTypingEngineTest {
     }
 
     @Test
+    fun localCorrectionCannotBypassStrictEndpoints() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("test")
+        }
+
+        engine.setCorrections(mapOf("tresdt" to "rest"))
+
+        assertEquals("test", engine.decode(listOf("t", "r", "e", "s", "d", "t")))
+    }
+
+    @Test
+    fun localCorrectionCanBypassEndpointsWhenStrictEndpointsAreDisabled() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("test")
+        }
+        val options = GlideTypingOptions(strictFirstLastLetter = false)
+
+        engine.setCorrections(mapOf("tresdt" to "rest"))
+
+        assertEquals("rest", engine.decode(listOf("t", "r", "e", "s", "d", "t"), options))
+    }
+
+    @Test
     fun rejectedLocalCorrectionFallsBackToDictionaryCandidate() {
         val engine = GestureTypingEngine(TextContextPolicy()) {
             listOf("word")

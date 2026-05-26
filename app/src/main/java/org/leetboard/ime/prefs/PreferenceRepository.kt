@@ -78,6 +78,8 @@ class PreferenceRepository(context: Context) {
                 ?: GlideImportedWordsPriority.NORMAL,
             glideRawFallbackMode = values[Keys.glideRawFallbackMode]?.let(::glideRawFallbackModeFromName)
                 ?: GlideRawFallbackMode.SHORT_ONLY,
+            glidePredictiveRankingEnabled = values[Keys.glidePredictiveRankingEnabled]
+                ?: KeyboardPreferences.defaults().glidePredictiveRankingEnabled,
             customTheme = customTheme(values),
         )
     }
@@ -283,6 +285,10 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.glideRawFallbackMode] = mode.name }
     }
 
+    suspend fun setGlidePredictiveRankingEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.glidePredictiveRankingEnabled] = enabled }
+    }
+
     suspend fun setAutoCapAfterPeriodEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.autoCapAfterPeriodEnabled] = enabled }
     }
@@ -470,6 +476,7 @@ class PreferenceRepository(context: Context) {
         val glidePathTolerance = stringPreferencesKey("glide_path_tolerance")
         val glideImportedWordsPriority = stringPreferencesKey("glide_imported_words_priority")
         val glideRawFallbackMode = stringPreferencesKey("glide_raw_fallback_mode")
+        val glidePredictiveRankingEnabled = booleanPreferencesKey("glide_predictive_ranking_enabled")
         val customBasePreset = stringPreferencesKey("custom_base_preset")
         val customBackgroundColor = intPreferencesKey("custom_background_color")
         val customKeyFillColor = intPreferencesKey("custom_key_fill_color")

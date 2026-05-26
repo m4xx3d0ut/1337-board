@@ -48,6 +48,7 @@ class KeyboardPreferencesTest {
         assertTrue(preferences.glideCorrections.isEmpty())
         assertFalse(preferences.glidePreferShorterWords)
         assertTrue(preferences.glideStrictFirstLastLetter)
+        assertTrue(preferences.glidePredictiveRankingEnabled)
         assertEquals(GlidePathTolerance.BALANCED, preferences.glidePathTolerance)
         assertEquals(GlideImportedWordsPriority.NORMAL, preferences.glideImportedWordsPriority)
         assertEquals(GlideRawFallbackMode.SHORT_ONLY, preferences.glideRawFallbackMode)
@@ -70,6 +71,7 @@ class KeyboardPreferencesTest {
             glidePathTolerance = GlidePathTolerance.LOOSE,
             glideImportedWordsPriority = GlideImportedWordsPriority.HIGH,
             glideRawFallbackMode = GlideRawFallbackMode.ALWAYS,
+            glidePredictiveRankingEnabled = false,
         )
 
         val options = preferences.glideTypingOptions()
@@ -80,6 +82,7 @@ class KeyboardPreferencesTest {
         assertEquals(GlidePathTolerance.LOOSE, options.pathTolerance)
         assertEquals(GlideImportedWordsPriority.HIGH, options.importedWordsPriority)
         assertEquals(GlideRawFallbackMode.ALWAYS, options.rawPathFallbackMode)
+        assertFalse(options.predictiveRankingEnabled)
     }
 
     @Test

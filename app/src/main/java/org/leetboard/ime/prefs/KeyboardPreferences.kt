@@ -41,6 +41,7 @@ data class KeyboardPreferences(
     val glidePathTolerance: GlidePathTolerance = GlidePathTolerance.BALANCED,
     val glideImportedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
     val glideRawFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.SHORT_ONLY,
+    val glidePredictiveRankingEnabled: Boolean = true,
     val customTheme: CustomThemeConfig = CustomThemeConfig(),
 ) {
     fun customizationState(): CustomizationState {
@@ -64,6 +65,7 @@ data class KeyboardPreferences(
             importedWordsPriority = glideImportedWordsPriority,
             rawPathFallbackMode = glideRawFallbackMode,
             importedWordCount = glideImportedWordCount,
+            predictiveRankingEnabled = glidePredictiveRankingEnabled,
         )
     }
 

@@ -5,6 +5,7 @@ import kotlin.math.abs
 
 class GestureTypingEngine(
     private val textContextPolicy: TextContextPolicy,
+    private val predictionEngine: GlidePredictionEngine = FrequencyContextGlidePredictionEngine(),
     private val wordsProvider: () -> List<String> = { emptyList() },
 ) {
     private val rejectedWordsByPath = mutableMapOf<String, MutableSet<String>>()
@@ -18,13 +19,18 @@ class GestureTypingEngine(
         return decode(pathLabels, GlideTypingOptions())
     }
 
-    fun decode(pathLabels: List<String>, options: GlideTypingOptions): String? {
-        return candidates(pathLabels, options).firstOrNull()?.word
+    fun decode(
+        pathLabels: List<String>,
+        options: GlideTypingOptions,
+        context: GlidePredictionContext = GlidePredictionContext(),
+    ): String? {
+        return candidates(pathLabels, options, context).firstOrNull()?.word
     }
 
     fun candidates(
         pathLabels: List<String>,
         options: GlideTypingOptions = GlideTypingOptions(),
+        context: GlidePredictionContext = GlidePredictionContext(),
         limit: Int = DEFAULT_CANDIDATE_LIMIT,
     ): List<GlideCandidate> {
         val path = normalizePath(pathLabels)
@@ -33,6 +39,7 @@ class GestureTypingEngine(
         val rejectedWords = rejectedWordsByPath[pathSignature].orEmpty()
         val correctionCandidate = correctionMap[pathSignature]
             ?.takeIf { word -> word !in rejectedWords }
+            ?.takeIf { word -> localCorrectionAllowed(word, pathSignature, options) }
             ?.let { correctedWord ->
                 GlideCandidate(
                     word = correctedWord,
@@ -54,6 +61,7 @@ class GestureTypingEngine(
                     } else {
                         GlideCandidateSource.BUNDLED_WORDLIST
                     },
+                    priority = index,
                 )
             }
             .distinctBy { candidate -> candidate.word }
@@ -70,6 +78,9 @@ class GestureTypingEngine(
             addAll(dictionaryCandidates)
         }
             .distinctBy { candidate -> candidate.word }
+            .let { candidates ->
+                predictionEngine.rank(candidates, pathSignature, context, options)
+            }
 
         return if (rankedCandidates.isNotEmpty()) {
             rankedCandidates.take(limit)
@@ -96,6 +107,20 @@ class GestureTypingEngine(
         val pathSignature = glidePathSignature(pathLabels) ?: return
         val normalizedWord = normalizeWord(word) ?: return
         rejectedWordsByPath.getOrPut(pathSignature) { mutableSetOf() } += normalizedWord
+    }
+
+    fun recordAcceptedWord(word: String, context: GlidePredictionContext) {
+        predictionEngine.recordAcceptedWord(word, context)
+    }
+
+    private fun localCorrectionAllowed(
+        word: String,
+        pathSignature: String,
+        options: GlideTypingOptions,
+    ): Boolean {
+        if (!options.strictFirstLastLetter) return true
+        return word.firstOrNull() == pathSignature.firstOrNull() &&
+            word.lastOrNull() == pathSignature.lastOrNull()
     }
 
     private fun scoreCandidate(
@@ -162,6 +187,7 @@ data class GlideCandidate(
     val word: String,
     val score: Int,
     val source: GlideCandidateSource,
+    val priority: Int = Int.MAX_VALUE,
 )
 
 enum class GlideCandidateSource {
@@ -178,6 +204,7 @@ data class GlideTypingOptions(
     val importedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
     val rawPathFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.SHORT_ONLY,
     val importedWordCount: Int = 0,
+    val predictiveRankingEnabled: Boolean = true,
 )
 
 enum class GlidePathTolerance {

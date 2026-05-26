@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.leetboard.ime.engine.CustomizationEngine
 import org.leetboard.ime.engine.GlideDictionaryLoader
+import org.leetboard.ime.engine.GlidePredictionContext
 import org.leetboard.ime.engine.GestureTypingEngine
 import org.leetboard.ime.engine.KeyActionEngine
 import org.leetboard.ime.engine.LayoutEngine
@@ -68,7 +69,7 @@ class ModernKeyboardImeService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         val glideDictionaryLoader = GlideDictionaryLoader(this)
-        gestureTypingEngine = GestureTypingEngine(textContextPolicy, glideDictionaryLoader::loadWords)
+        gestureTypingEngine = GestureTypingEngine(textContextPolicy, wordsProvider = glideDictionaryLoader::loadWords)
         keyActionEngine = KeyActionEngine(this)
         speechInputEngine = SpeechInputEngine(this, textContextPolicy)
         preferenceRepository = PreferenceRepository(this)
@@ -189,9 +190,11 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun handleGlide(path: List<String>, heldModifiers: HeldModifiers) {
         if (!preferences.gestureTypingEnabled || !gestureTypingEngine.isEnabledFor(currentInputEditorInfo)) return
+        val predictionContext = glidePredictionContext()
         val candidates = gestureTypingEngine.candidates(
             pathLabels = path,
             options = preferences.glideTypingOptions(),
+            context = predictionContext,
             limit = GLIDE_SUGGESTION_LIMIT,
         )
         val word = candidates.firstOrNull()?.word ?: return
@@ -203,6 +206,7 @@ class ModernKeyboardImeService : InputMethodService() {
         val outputWord = formatGlideWord(word, heldModifiers)
         val committedText = "$outputWord "
         currentInputConnection?.commitText(committedText, 1)
+        gestureTypingEngine.recordAcceptedWord(word, predictionContext)
         scheduleGlideSuggestions(candidates.drop(1).map { candidate -> candidate.word })
         pendingGlideUndo = PendingGlideUndo(
             path = path,
@@ -265,9 +269,11 @@ class ModernKeyboardImeService : InputMethodService() {
         val undo = pendingGlideUndo ?: return
         val normalizedWord = normalizeWord(word) ?: return
         val pathSignature = gestureTypingEngine.pathSignature(undo.path) ?: return
+        val predictionContext = glidePredictionContextBeforePending(undo.committedText)
         val replacementWord = formatReplacementWord(normalizedWord, undo.committedText)
         val committedText = "$replacementWord "
         if (!replacePendingGlideCommit(undo.committedText, committedText)) return
+        gestureTypingEngine.recordAcceptedWord(normalizedWord, predictionContext)
         recordGlideCorrection(
             pathSignature = pathSignature,
             replacementWord = normalizedWord,
@@ -353,6 +359,24 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun isTermuxInput(): Boolean {
         return currentInputEditorInfo?.packageName?.startsWith(TERMUX_PACKAGE_PREFIX) == true
+    }
+
+    private fun glidePredictionContext(): GlidePredictionContext {
+        return GlidePredictionContext(
+            textBeforeCursor = currentInputConnection?.getTextBeforeCursor(GLIDE_CONTEXT_CHARS, 0),
+        )
+    }
+
+    private fun glidePredictionContextBeforePending(pendingCommittedText: String): GlidePredictionContext {
+        val textBeforeCursor = currentInputConnection
+            ?.getTextBeforeCursor(GLIDE_CONTEXT_CHARS + pendingCommittedText.length, 0)
+            ?.toString()
+        val contextText = if (textBeforeCursor?.endsWith(pendingCommittedText) == true) {
+            textBeforeCursor.dropLast(pendingCommittedText.length)
+        } else {
+            textBeforeCursor
+        }
+        return GlidePredictionContext(textBeforeCursor = contextText)
     }
 
     private fun featureActiveKeyIds(): Set<String> = buildSet {
@@ -612,6 +636,7 @@ class ModernKeyboardImeService : InputMethodService() {
     private companion object {
         const val SPEECH_STATUS_RESET_MS = 1600L
         const val AUTO_CAP_CONTEXT_CHARS = 8
+        const val GLIDE_CONTEXT_CHARS = 160
         const val GLIDE_SUGGESTION_LIMIT = 5
         const val GLIDE_SUGGESTION_DELAY_MS = 450L
         const val GLIDE_MANUAL_CORRECTION_RECORD_DELAY_MS = 700L

@@ -679,6 +679,13 @@ private fun FeatureSection(
             },
         )
         SettingSwitch(
+            label = "Predictive glide ranking",
+            checked = preferences.glidePredictiveRankingEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setGlidePredictiveRankingEnabled(checked) }
+            },
+        )
+        SettingSwitch(
             label = "Prefer shorter glide words",
             checked = preferences.glidePreferShorterWords,
             onCheckedChange = { checked ->
