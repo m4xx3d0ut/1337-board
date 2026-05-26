@@ -13,4 +13,5 @@ local.properties
 *.pem
 *.idsig
 .env.release
+.env.local
 app/build/

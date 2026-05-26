@@ -52,7 +52,7 @@ Release artifacts may include three different APK types:
 - Unsigned release APKs are produced by local builds and GitHub Actions for review/reproducibility checks, but must be signed before installation.
 - Production-signed APKs are the installable release artifacts once the project release key is established.
 
-Production signing setup is documented in [docs/release-signing.md](docs/release-signing.md). Users who installed a debug-key preview may need to uninstall it before installing the first production-signed APK.
+Production signing setup is documented in [docs/release-signing.md](docs/release-signing.md). The current production signing certificate SHA-256 fingerprint is `A5:18:84:47:1E:D8:40:B1:AE:48:76:12:09:F7:C2:7B:0A:5A:15:1A:67:9F:57:BE:13:A7:7E:C2:21:71:1B:F6`. Users who installed a debug-key preview may need to uninstall it before installing the first production-signed APK.
 
 ## Licensing
 

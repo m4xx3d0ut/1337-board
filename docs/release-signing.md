@@ -12,9 +12,11 @@ Recommended local path and alias:
 keytool -genkeypair \
   -keystore ~/.android/1337-board-release.jks \
   -alias leetboard-release \
+  -storetype JKS \
   -keyalg RSA \
   -keysize 4096 \
-  -validity 10000
+  -validity 10000 \
+  -dname "CN=1337 Board, OU=Release, O=1337 Board, C=US"
 ```
 
 Record the certificate fingerprint after generating the key:
@@ -25,17 +27,22 @@ keytool -list -v \
   -alias leetboard-release
 ```
 
-Publish the SHA-256 certificate fingerprint in the README once production signing begins.
+Current production signing certificate SHA-256 fingerprint:
+
+```text
+A5:18:84:47:1E:D8:40:B1:AE:48:76:12:09:F7:C2:7B:0A:5A:15:1A:67:9F:57:BE:13:A7:7E:C2:21:71:1B:F6
+```
 
 ## Local Signing Environment
 
-Set these variables only in a local shell or local-only env file:
+Set these variables only in a local shell or local-only env file. Start from the checked-in template, then fill in the ignored local copy:
 
 ```sh
-export LEETBOARD_RELEASE_STORE_FILE="$HOME/.android/1337-board-release.jks"
-export LEETBOARD_RELEASE_STORE_PASSWORD="..."
-export LEETBOARD_RELEASE_KEY_ALIAS="leetboard-release"
-export LEETBOARD_RELEASE_KEY_PASSWORD="..."
+cp .env.release.example .env.release
+$EDITOR .env.release
+set -a
+source .env.release
+set +a
 ```
 
 When all four variables are set, `assembleRelease` signs the release APK. When any variable is missing, the release build remains unsigned for CI and F-Droid review.

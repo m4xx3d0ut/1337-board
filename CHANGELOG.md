@@ -10,6 +10,7 @@ All notable changes to 1337 Board are documented here.
 
 - Added local release build and GitHub release publishing scripts.
 - Added a GitHub Actions workflow that validates tagged release builds and uploads unsigned review artifacts.
+- Added a local release signing environment template.
 - Added an adjustable glide dwell key threshold setting, with the current tuned value as the default.
 
 ### Changed
