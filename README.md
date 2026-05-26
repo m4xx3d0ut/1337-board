@@ -9,7 +9,7 @@
 - Five-row PC-style QWERTY layout with number row, Esc, Tab, Ctrl, Alt, Shift, Enter, Backspace, Delete, and arrow keys.
 - Phone, compact, landscape, Fn, symbol, and numpad-oriented layouts.
 - Configurable optional keys, preset action slots, key labels/icons, sticky modifiers, and key preview behavior.
-- Local glide typing with bundled word list, ranked suggestions, optional imported word lists, and an opt-in local correction map.
+- Local glide typing with bundled word list, ranked suggestions, optional imported word lists, and private on-device prediction.
 - Mic input through Android speech recognition, with offline preference requested when supported by the device recognizer.
 - Theme presets and a custom theme slot including light, dark, alternate dark, cyberpunk, terminal, high contrast, and 1337 green-on-black.
 - Separate portrait and landscape controls for keyboard height, margins, gaps, borders, radius, and label styling.
@@ -18,7 +18,13 @@
 
 ## Privacy
 
-1337 Board is designed to avoid broad data access. The base app does not request network or contacts permissions. Preferences, customizations, imported glide words, and learned glide corrections stay local to the device. Microphone permission is requested only when mic input is enabled.
+1337 Board is designed to avoid broad data access. The base app does not request network or contacts permissions. Preferences, customizations, imported glide words, local prediction data, and learned glide corrections stay local to the device. Microphone permission is requested only when mic input is enabled.
+
+Glide prediction is offline. The app stores accepted words, local word pairs, and optional correction learning in app-private storage, and settings include controls to review corrections and reset glide learning.
+
+## Licensing
+
+1337 Board is distributed under the Apache License 2.0. Bundled third-party assets and reference projects are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Status
 
