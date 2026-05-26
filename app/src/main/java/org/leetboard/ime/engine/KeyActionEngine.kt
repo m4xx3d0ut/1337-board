@@ -37,10 +37,7 @@ class KeyActionEngine(
                         suppressShift = true,
                     )
                     modifiers.ctrl || modifiers.alt -> sendKey(KeyEvent.KEYCODE_DEL, state, heldModifiers)
-                    else -> {
-                        service.currentInputConnection?.deleteSurroundingText(1, 0)
-                        state.clearTransientModifiers()
-                    }
+                    else -> deleteBackwards(state)
                 }
             }
             KeyActionType.ENTER -> {
@@ -119,6 +116,17 @@ class KeyActionEngine(
         if (!consumed) {
             service.currentInputConnection?.commitText("\n", 1)
         }
+    }
+
+    private fun deleteBackwards(state: KeyboardState): KeyboardState {
+        val inputConnection = service.currentInputConnection
+        val selectedText = inputConnection?.getSelectedText(0)
+        if (!selectedText.isNullOrEmpty()) {
+            inputConnection.commitText("", 1)
+        } else {
+            inputConnection?.deleteSurroundingText(1, 0)
+        }
+        return state.clearTransientModifiers()
     }
 
     private fun sendKey(
