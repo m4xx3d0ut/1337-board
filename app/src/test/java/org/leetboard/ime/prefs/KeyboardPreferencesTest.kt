@@ -1,5 +1,6 @@
 package org.leetboard.ime.prefs
 
+import android.content.res.Configuration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -51,10 +52,13 @@ class KeyboardPreferencesTest {
         val preferences = KeyboardPreferences.defaults()
 
         assertEquals("qwerty5", preferences.layoutId)
+        assertEquals("qwerty5", preferences.portraitLayoutId)
+        assertEquals("qwerty5", preferences.landscapeLayoutId)
         assertTrue(preferences.keyPreviewEnabled)
         assertTrue(preferences.stickyModifiersEnabled)
         assertTrue(preferences.shiftCapsLockEnabled)
-        assertEquals(DEFAULT_FN_LONG_PRESS_DELAY_MS, preferences.fnLongPressDelayMs)
+        assertEquals(DEFAULT_KEY_LONG_PRESS_DELAY_MS, preferences.keyLongPressDelayMs)
+        assertEquals(DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS, preferences.specialLongPressDelayMs)
         assertTrue(preferences.swipeUpActionsEnabled)
         assertTrue(preferences.typedSuggestionsEnabled)
         assertFalse(preferences.typedAutocorrectEnabled)
@@ -80,6 +84,18 @@ class KeyboardPreferencesTest {
         assertEquals(48f, preferences.landscapeGeometry.keyboardHeightPercent, 0.001f)
         assertEquals(24f, preferences.landscapeGeometry.horizontalMarginDp, 0.001f)
         assertEquals(12f, preferences.landscapeGeometry.bottomMarginDp, 0.001f)
+    }
+
+    @Test
+    fun layoutIdForOrientationUsesPerOrientationSettings() {
+        val preferences = KeyboardPreferences(
+            layoutId = "qwerty5",
+            portraitLayoutId = "qwerty4",
+            landscapeLayoutId = "compact5",
+        )
+
+        assertEquals("qwerty4", preferences.layoutIdForOrientation(Configuration.ORIENTATION_PORTRAIT))
+        assertEquals("compact5", preferences.layoutIdForOrientation(Configuration.ORIENTATION_LANDSCAPE))
     }
 
     @Test

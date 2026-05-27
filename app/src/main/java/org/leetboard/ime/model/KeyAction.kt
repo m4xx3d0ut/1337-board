@@ -9,6 +9,7 @@ enum class KeyActionType {
     SHIFT,
     CTRL,
     ALT,
+    FN_MODIFIER,
     TAB,
     ESCAPE,
     ARROW_LEFT,
@@ -53,6 +54,7 @@ fun KeyAction.displayLabel(): String {
         KeyActionType.SHIFT -> "Shift"
         KeyActionType.CTRL -> "Ctrl"
         KeyActionType.ALT -> "Alt"
+        KeyActionType.FN_MODIFIER -> "Fn"
         KeyActionType.TAB -> "Tab"
         KeyActionType.ESCAPE -> "Esc"
         KeyActionType.ARROW_LEFT -> "Left"

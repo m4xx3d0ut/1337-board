@@ -44,8 +44,11 @@ class PreferenceRepository(context: Context) {
 
     val preferences: Flow<KeyboardPreferences> = dataStore.data.map { values ->
         val glideCorrections = glideCorrectionsFromPreferenceValue(values[Keys.glideCorrections])
+        val legacyLayoutId = values[Keys.layoutId] ?: KeyboardPreferences.defaults().layoutId
         KeyboardPreferences(
-            layoutId = values[Keys.layoutId] ?: KeyboardPreferences.defaults().layoutId,
+            layoutId = legacyLayoutId,
+            portraitLayoutId = values[Keys.portraitLayoutId] ?: legacyLayoutId,
+            landscapeLayoutId = values[Keys.landscapeLayoutId] ?: legacyLayoutId,
             themePreset = values[Keys.themePreset]?.let(::themePresetFromName) ?: ThemePreset.LEET_GREEN,
             portraitGeometry = geometry(values, "portrait", KeyboardGeometry()),
             landscapeGeometry = geometry(values, "landscape", KeyboardPreferences.defaults().landscapeGeometry),
@@ -66,8 +69,11 @@ class PreferenceRepository(context: Context) {
             keyPreviewEnabled = values[Keys.keyPreviewEnabled] ?: true,
             stickyModifiersEnabled = values[Keys.stickyModifiersEnabled] ?: true,
             shiftCapsLockEnabled = values[Keys.shiftCapsLockEnabled] ?: true,
-            fnLongPressDelayMs = values[Keys.fnLongPressDelayMs]
-                ?: KeyboardPreferences.defaults().fnLongPressDelayMs,
+            keyLongPressDelayMs = values[Keys.keyLongPressDelayMs]
+                ?: KeyboardPreferences.defaults().keyLongPressDelayMs,
+            specialLongPressDelayMs = values[Keys.specialLongPressDelayMs]
+                ?: values[Keys.fnLongPressDelayMs]
+                ?: KeyboardPreferences.defaults().specialLongPressDelayMs,
             edgeKeyWidthScale = values[Keys.edgeKeyWidthScale] ?: KeyboardPreferences.defaults().edgeKeyWidthScale,
             gestureTypingEnabled = values[Keys.gestureTypingEnabled] ?: false,
             typedSuggestionsEnabled = values[Keys.typedSuggestionsEnabled]
@@ -162,6 +168,12 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.layoutId] = layoutId }
     }
 
+    suspend fun setLayoutId(orientation: GeometryOrientation, layoutId: String) {
+        dataStore.edit { values ->
+            values[Keys.layoutIdKey(orientation)] = layoutId
+        }
+    }
+
     suspend fun setOptionalKeyHidden(keyId: String, hidden: Boolean) {
         dataStore.edit { values ->
             val next = values[Keys.hiddenOptionalKeys].orEmpty().toMutableSet()
@@ -225,13 +237,26 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.shiftCapsLockEnabled] = enabled }
     }
 
-    suspend fun setFnLongPressDelayMs(delayMs: Int) {
+    suspend fun setKeyLongPressDelayMs(delayMs: Int) {
         dataStore.edit { values ->
-            values[Keys.fnLongPressDelayMs] = delayMs.coerceIn(
-                MIN_FN_LONG_PRESS_DELAY_MS,
-                MAX_FN_LONG_PRESS_DELAY_MS,
+            values[Keys.keyLongPressDelayMs] = delayMs.coerceIn(
+                MIN_LONG_PRESS_DELAY_MS,
+                MAX_LONG_PRESS_DELAY_MS,
             )
         }
+    }
+
+    suspend fun setSpecialLongPressDelayMs(delayMs: Int) {
+        dataStore.edit { values ->
+            values[Keys.specialLongPressDelayMs] = delayMs.coerceIn(
+                MIN_LONG_PRESS_DELAY_MS,
+                MAX_LONG_PRESS_DELAY_MS,
+            )
+        }
+    }
+
+    suspend fun setFnLongPressDelayMs(delayMs: Int) {
+        setSpecialLongPressDelayMs(delayMs)
     }
 
     suspend fun setEdgeKeyWidthScale(value: Float) {
@@ -539,6 +564,8 @@ class PreferenceRepository(context: Context) {
 
     private object Keys {
         val layoutId = stringPreferencesKey("layout_id")
+        val portraitLayoutId = stringPreferencesKey("portrait_layout_id")
+        val landscapeLayoutId = stringPreferencesKey("landscape_layout_id")
         val themePreset = stringPreferencesKey("theme_preset")
         val hiddenOptionalKeys = stringSetPreferencesKey("hidden_optional_keys")
         val keyDisplayOverrides = stringSetPreferencesKey("key_display_overrides")
@@ -552,6 +579,8 @@ class PreferenceRepository(context: Context) {
         val keyPreviewEnabled = booleanPreferencesKey("key_preview_enabled")
         val stickyModifiersEnabled = booleanPreferencesKey("sticky_modifiers_enabled")
         val shiftCapsLockEnabled = booleanPreferencesKey("shift_caps_lock_enabled")
+        val keyLongPressDelayMs = intPreferencesKey("key_long_press_delay_ms")
+        val specialLongPressDelayMs = intPreferencesKey("special_long_press_delay_ms")
         val fnLongPressDelayMs = intPreferencesKey("fn_long_press_delay_ms")
         val edgeKeyWidthScale = floatPreferencesKey("edge_key_width_scale")
         val gestureTypingEnabled = booleanPreferencesKey("gesture_typing_enabled")
@@ -608,6 +637,13 @@ class PreferenceRepository(context: Context) {
             return floatPreferencesKey("${prefix}_${field.name.lowercase()}")
         }
 
+        fun layoutIdKey(orientation: GeometryOrientation): Preferences.Key<String> {
+            return when (orientation) {
+                GeometryOrientation.PORTRAIT -> portraitLayoutId
+                GeometryOrientation.LANDSCAPE -> landscapeLayoutId
+            }
+        }
+
         fun legacyOuterMarginKey(prefix: String): Preferences.Key<Float> {
             return floatPreferencesKey("${prefix}_outer_margin")
         }
@@ -626,8 +662,10 @@ class PreferenceRepository(context: Context) {
 
 const val MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.2f
 const val MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.85f
-const val MIN_FN_LONG_PRESS_DELAY_MS = 300
-const val MAX_FN_LONG_PRESS_DELAY_MS = 800
+const val MIN_LONG_PRESS_DELAY_MS = 300
+const val MAX_LONG_PRESS_DELAY_MS = 900
+const val MIN_FN_LONG_PRESS_DELAY_MS = MIN_LONG_PRESS_DELAY_MS
+const val MAX_FN_LONG_PRESS_DELAY_MS = MAX_LONG_PRESS_DELAY_MS
 
 fun glideCorrectionsFromPreferenceValue(value: String?): Map<String, GlideCorrectionEntry> {
     if (value.isNullOrBlank()) return emptyMap()

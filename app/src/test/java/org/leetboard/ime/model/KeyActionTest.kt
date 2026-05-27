@@ -20,6 +20,7 @@ class KeyActionTest {
             KeyAction(KeyActionType.TOGGLE_SPEECH_INPUT),
             KeyAction(KeyActionType.TOGGLE_GESTURE_TYPING),
             KeyAction(KeyActionType.SWITCH_EMOJI),
+            KeyAction(KeyActionType.FN_MODIFIER),
         ).forEach { action ->
             assertEquals(action, keyActionFromPreferenceValue(action.toPreferenceValue()))
         }
@@ -38,6 +39,7 @@ class KeyActionTest {
 
         assertEquals(action, keyActionFromPreferenceValue(action.toPreferenceValue()))
         assertEquals("F5", action.displayLabel())
+        assertEquals("Fn", KeyAction(KeyActionType.FN_MODIFIER).displayLabel())
     }
 
     @Test

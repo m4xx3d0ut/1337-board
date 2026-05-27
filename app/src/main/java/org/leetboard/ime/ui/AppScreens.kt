@@ -47,6 +47,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -84,17 +85,19 @@ import org.leetboard.ime.model.opaque
 import org.leetboard.ime.model.resolvedDisplay
 import org.leetboard.ime.prefs.CustomThemeColorField
 import org.leetboard.ime.prefs.CustomThemeOpacityField
-import org.leetboard.ime.prefs.DEFAULT_FN_LONG_PRESS_DELAY_MS
+import org.leetboard.ime.prefs.DEFAULT_KEY_LONG_PRESS_DELAY_MS
+import org.leetboard.ime.prefs.DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
 import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
-import org.leetboard.ime.prefs.MAX_FN_LONG_PRESS_DELAY_MS
+import org.leetboard.ime.prefs.MAX_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
-import org.leetboard.ime.prefs.MIN_FN_LONG_PRESS_DELAY_MS
+import org.leetboard.ime.prefs.MIN_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.defaultLayoutOptions
+import org.leetboard.ime.prefs.layoutIdForOrientation
 
 @Composable
 fun InfoScreen(
@@ -252,17 +255,18 @@ private fun LayoutThemeSection(
     val scope = rememberCoroutineScope()
     SettingsGroup(
         title = "Layout and Theme",
-        body = "Choose the base layout and color preset.",
+        body = "Choose portrait and landscape layouts plus the color preset.",
     ) {
-        defaultLayoutOptions.forEach { option ->
-            SelectButton(
-                label = option.label,
-                selected = preferences.layoutId == option.id,
-                onClick = {
-                    scope.launch { repository.setLayoutId(option.id) }
-                },
-            )
-        }
+        LayoutOrientationSelector(
+            title = "Portrait layout",
+            selectedLayoutId = preferences.portraitLayoutId,
+            onSelect = { layoutId -> scope.launch { repository.setLayoutId(GeometryOrientation.PORTRAIT, layoutId) } },
+        )
+        LayoutOrientationSelector(
+            title = "Landscape layout",
+            selectedLayoutId = preferences.landscapeLayoutId,
+            onSelect = { layoutId -> scope.launch { repository.setLayoutId(GeometryOrientation.LANDSCAPE, layoutId) } },
+        )
         ThemePreset.entries.forEach { preset ->
             SelectButton(
                 label = preset.label,
@@ -272,6 +276,22 @@ private fun LayoutThemeSection(
                 },
             )
         }
+    }
+}
+
+@Composable
+private fun LayoutOrientationSelector(
+    title: String,
+    selectedLayoutId: String,
+    onSelect: (String) -> Unit,
+) {
+    Text(title, style = MaterialTheme.typography.labelLarge)
+    defaultLayoutOptions.forEach { option ->
+        SelectButton(
+            label = option.label,
+            selected = selectedLayoutId == option.id,
+            onClick = { onSelect(option.id) },
+        )
     }
 }
 
@@ -458,7 +478,7 @@ private fun InteractionSection(
     val scope = rememberCoroutineScope()
     SettingsGroup(
         title = "Touch Behavior",
-        body = "Tune Esc handling and modifier stickiness for terminal-style shortcuts.",
+        body = "Tune Esc handling, modifier stickiness, and long-press timing.",
     ) {
         EscTouchMode.entries.forEach { mode ->
             SelectButton(
@@ -484,8 +504,23 @@ private fun InteractionSection(
                 scope.launch { repository.setShiftCapsLockEnabled(checked) }
             },
         )
-        FnLongPressDelaySlider(preferences.fnLongPressDelayMs) { delayMs ->
-            scope.launch { repository.setFnLongPressDelayMs(delayMs) }
+        LongPressDelaySlider(
+            label = "Regular key long press",
+            detail = "Letter, number, and punctuation alternates.",
+            value = preferences.keyLongPressDelayMs,
+            resetValue = DEFAULT_KEY_LONG_PRESS_DELAY_MS,
+            resetLabel = "Reset regular timing",
+        ) { delayMs ->
+            scope.launch { repository.setKeyLongPressDelayMs(delayMs) }
+        }
+        LongPressDelaySlider(
+            label = "Special action long press",
+            detail = "Fn hold, numpad overlay, emoji, and glide toggle.",
+            value = preferences.specialLongPressDelayMs,
+            resetValue = DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS,
+            resetLabel = "Reset special timing",
+        ) { delayMs ->
+            scope.launch { repository.setSpecialLongPressDelayMs(delayMs) }
         }
     }
 }
@@ -986,7 +1021,7 @@ private fun KeymapPreview(
     val layout = customizationEngine.apply(
         layout = layoutEngine.layoutFor(
             KeyboardState(
-                activeLayoutId = preferences.layoutId,
+                activeLayoutId = preferences.layoutIdForOrientation(orientation),
                 edgeKeyWidthScale = preferences.edgeKeyWidthScale,
             ),
             orientation,
@@ -1021,6 +1056,7 @@ private fun KeyboardLayoutCanvas(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    val smallestScreenWidthDp = LocalConfiguration.current.smallestScreenWidthDp
     val labelPaint = remember {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
@@ -1057,7 +1093,19 @@ private fun KeyboardLayoutCanvas(
             row.keys.forEach { key ->
                 val keyWidth = widthUnit * key.weight
                 if (!key.isSpacer) {
-                    drawPreviewKey(key, theme, geometry, labelStyle, left, top, keyWidth, rowHeight, density.density, labelPaint)
+                    drawPreviewKey(
+                        key = key,
+                        theme = theme,
+                        geometry = geometry,
+                        labelStyle = labelStyle,
+                        left = left,
+                        top = top,
+                        keyWidth = keyWidth,
+                        rowHeight = rowHeight,
+                        density = density.density,
+                        smallestScreenWidthDp = smallestScreenWidthDp,
+                        labelPaint = labelPaint,
+                    )
                 }
                 left += keyWidth + keyGap
             }
@@ -1076,6 +1124,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPreviewKey(
     keyWidth: Float,
     rowHeight: Float,
     density: Float,
+    smallestScreenWidthDp: Int,
     labelPaint: Paint,
 ) {
     val radius = geometry.keyRadiusDp * density
@@ -1100,16 +1149,60 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPreviewKey(
     labelPaint.color = theme.colors.keyText.withCombinedAlpha((labelStyle.labelOpacity * 255).toInt())
     labelPaint.isFakeBoldText = labelStyle.fontWeight >= 600f
     val label = display.icon?.fallbackLabel() ?: display.label
-    labelPaint.textSize = density * if (label.length > 4) labelStyle.primaryTextSizeSp - 4f else labelStyle.primaryTextSizeSp - 2f
+    labelPaint.textSize = fittedPreviewTextSizePx(
+        label = label,
+        baseSp = if (label.length > 4) labelStyle.primaryTextSizeSp - 4f else labelStyle.primaryTextSizeSp - 2f,
+        density = density,
+        smallestScreenWidthDp = smallestScreenWidthDp,
+        maxWidthPx = keyWidth * 0.82f,
+        maxHeightPx = rowHeight * 0.62f,
+        minSp = PREVIEW_MIN_PRIMARY_TEXT_SIZE_SP,
+        labelPaint = labelPaint,
+    )
     val baseline = top + rowHeight / 2f - (labelPaint.descent() + labelPaint.ascent()) / 2f
     drawContext.canvas.nativeCanvas.drawText(label, left + keyWidth / 2f, baseline, labelPaint)
 
     val secondary = display.secondaryIcon?.fallbackLabel() ?: display.secondaryLabel
     if (!secondary.isNullOrBlank()) {
-        labelPaint.textSize = density * labelStyle.secondaryTextSizeSp
+        labelPaint.textSize = fittedPreviewTextSizePx(
+            label = secondary,
+            baseSp = labelStyle.secondaryTextSizeSp,
+            density = density,
+            smallestScreenWidthDp = smallestScreenWidthDp,
+            maxWidthPx = keyWidth * 0.38f,
+            maxHeightPx = rowHeight * 0.28f,
+            minSp = PREVIEW_MIN_SECONDARY_TEXT_SIZE_SP,
+            labelPaint = labelPaint,
+        )
         val secondaryBaseline = top + rowHeight * 0.28f - (labelPaint.descent() + labelPaint.ascent()) / 2f
         drawContext.canvas.nativeCanvas.drawText(secondary, left + keyWidth * 0.78f, secondaryBaseline, labelPaint)
     }
+}
+
+private fun fittedPreviewTextSizePx(
+    label: String,
+    baseSp: Float,
+    density: Float,
+    smallestScreenWidthDp: Int,
+    maxWidthPx: Float,
+    maxHeightPx: Float,
+    minSp: Float,
+    labelPaint: Paint,
+): Float {
+    val scale = if (smallestScreenWidthDp in 1 until PREVIEW_TABLET_SMALLEST_WIDTH_DP) PREVIEW_PHONE_LABEL_SCALE else 1f
+    var low = minSp * density
+    var high = (baseSp * scale * density).coerceAtLeast(low)
+    repeat(PREVIEW_TEXT_FIT_ITERATIONS) {
+        val mid = (low + high) / 2f
+        labelPaint.textSize = mid
+        val height = labelPaint.fontMetrics.run { descent - ascent }
+        if (labelPaint.measureText(label) <= maxWidthPx && height <= maxHeightPx) {
+            low = mid
+        } else {
+            high = mid
+        }
+    }
+    return low
 }
 
 @Composable
@@ -1336,26 +1429,29 @@ private fun EdgeKeyWidthSlider(
 }
 
 @Composable
-private fun FnLongPressDelaySlider(
+private fun LongPressDelaySlider(
+    label: String,
+    detail: String,
     value: Int,
+    resetValue: Int,
+    resetLabel: String,
     onChange: (Int) -> Unit,
 ) {
+    val boundedValue = value.coerceIn(MIN_LONG_PRESS_DELAY_MS, MAX_LONG_PRESS_DELAY_MS)
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("Fn long press timing: ${value.coerceIn(MIN_FN_LONG_PRESS_DELAY_MS, MAX_FN_LONG_PRESS_DELAY_MS)}ms")
+        Text("$label: ${boundedValue}ms")
+        Text(detail, style = MaterialTheme.typography.bodySmall)
         Slider(
-            value = value.toFloat().coerceIn(
-                MIN_FN_LONG_PRESS_DELAY_MS.toFloat(),
-                MAX_FN_LONG_PRESS_DELAY_MS.toFloat(),
-            ),
+            value = boundedValue.toFloat(),
             onValueChange = { next -> onChange(next.toInt()) },
-            valueRange = MIN_FN_LONG_PRESS_DELAY_MS.toFloat()..MAX_FN_LONG_PRESS_DELAY_MS.toFloat(),
-            steps = ((MAX_FN_LONG_PRESS_DELAY_MS - MIN_FN_LONG_PRESS_DELAY_MS) / 50) - 1,
+            valueRange = MIN_LONG_PRESS_DELAY_MS.toFloat()..MAX_LONG_PRESS_DELAY_MS.toFloat(),
+            steps = ((MAX_LONG_PRESS_DELAY_MS - MIN_LONG_PRESS_DELAY_MS) / 50) - 1,
         )
         OutlinedButton(
-            onClick = { onChange(DEFAULT_FN_LONG_PRESS_DELAY_MS) },
+            onClick = { onChange(resetValue) },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Reset Fn timing")
+            Text(resetLabel)
         }
     }
 }
@@ -1552,7 +1648,7 @@ private val keyDisplayControls = listOf(
     KeyDisplayControl("delete", "Backspace", listOf(KeyIcon.BACKSPACE)),
     KeyDisplayControl("enter", "Enter", listOf(KeyIcon.ENTER)),
     KeyDisplayControl("mic", "Mic", listOf(KeyIcon.MIC)),
-    KeyDisplayControl("num_toggle", "Numpad", listOf(KeyIcon.NUMPAD)),
+    KeyDisplayControl("num_toggle", "Numpad", listOf(KeyIcon.NUMPAD, KeyIcon.QUICK_NAV)),
     KeyDisplayControl("left", "Left arrow", listOf(KeyIcon.ARROW_LEFT)),
     KeyDisplayControl("up", "Up arrow", listOf(KeyIcon.ARROW_UP)),
     KeyDisplayControl("down", "Down arrow", listOf(KeyIcon.ARROW_DOWN)),
@@ -1560,6 +1656,11 @@ private val keyDisplayControls = listOf(
 )
 
 private const val PREVIEW_TOP_MARGIN_DP = 4f
+private const val PREVIEW_PHONE_LABEL_SCALE = 0.86f
+private const val PREVIEW_TABLET_SMALLEST_WIDTH_DP = 600
+private const val PREVIEW_TEXT_FIT_ITERATIONS = 7
+private const val PREVIEW_MIN_PRIMARY_TEXT_SIZE_SP = 7f
+private const val PREVIEW_MIN_SECONDARY_TEXT_SIZE_SP = 5f
 
 private fun nextAction(current: KeyAction): KeyAction {
     val index = actionCycle.indexOfFirst { action ->

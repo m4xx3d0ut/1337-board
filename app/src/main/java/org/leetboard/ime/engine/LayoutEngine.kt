@@ -17,19 +17,19 @@ class LayoutEngine {
             state.fn -> functionLayer()
             state.emoji -> emoji()
             state.symbols -> symbols()
-            state.activeLayoutId == "qwerty4" -> qwertyFourRow()
-            state.activeLayoutId == "compact5" -> compactFiveRow(state.fnHold)
-            else -> qwertyFiveRow(state.edgeKeyWidthScale, state.fnHold)
+            state.activeLayoutId == "qwerty4" -> qwertyFourRow(state.quickNavHold)
+            state.activeLayoutId == "compact5" -> compactFiveRow(state.fnHold, state.quickNavHold)
+            else -> qwertyFiveRow(state.edgeKeyWidthScale, state.fnHold, state.quickNavHold)
         }
     }
 
-    private fun qwertyFiveRow(edgeKeyWidthScale: Float, fnHold: Boolean): KeyboardLayout {
+    private fun qwertyFiveRow(edgeKeyWidthScale: Float, fnHold: Boolean, quickNavHold: Boolean): KeyboardLayout {
         val edgeScale = edgeKeyWidthScale.coerceIn(MIN_EDGE_KEY_SCALE, MAX_EDGE_KEY_SCALE)
         return KeyboardLayout(
             id = "qwerty5",
             name = "HK-style QWERTY five-row",
             rows = listOf(
-                qwertyFiveTopRow(fnHold),
+                qwertyFiveTopRow(fnHold, quickNavHold),
                 KeyRow(
                     balancedEdgeRow(
                         action("tab", "Tab", KeyActionType.TAB, 1.5f, optional = true, preserveSpaceWhenHidden = true),
@@ -98,7 +98,7 @@ class LayoutEngine {
                         action("space", "Space", KeyActionType.SPACE, 5f),
                         settingsKey(),
                         micKey(),
-                        action("num_toggle", "Num", KeyActionType.NUMPAD_TOGGLE, optional = true),
+                        quickNavNumToggle(),
                         action("left", "◀", KeyActionType.ARROW_LEFT, optional = true, repeatable = true),
                         action("down", "▼", KeyActionType.ARROW_DOWN, optional = true, repeatable = true),
                         action("right", "▶", KeyActionType.ARROW_RIGHT, optional = true, repeatable = true),
@@ -109,16 +109,13 @@ class LayoutEngine {
         )
     }
 
-    private fun qwertyFiveTopRow(fnHold: Boolean): KeyRow {
-        return if (fnHold) {
-            KeyRow(
-                (1..12).map { index ->
-                    keyEvent("f$index", "F$index", KeyEvent.KEYCODE_F1 + index - 1)
-                } + action("delete", "Backspace", KeyActionType.DELETE, 3f, repeatable = true),
+    private fun qwertyFiveTopRow(fnHold: Boolean, quickNavHold: Boolean): KeyRow {
+        return when {
+            quickNavHold || fnHold -> KeyRow(
+                fullFiveRowFunctionTopKeys(),
                 layoutWeight = FULL_GRID_WEIGHT,
             )
-        } else {
-            KeyRow(
+            else -> KeyRow(
                 listOf(
                     text("`", weight = 0.8f, swipe = "~"),
                     text("1", swipe = "!"),
@@ -138,6 +135,13 @@ class LayoutEngine {
                 layoutWeight = FULL_GRID_WEIGHT,
             )
         }
+    }
+
+    private fun fullFiveRowFunctionTopKeys(): List<KeySpec> {
+        return functionKeys(count = 12) +
+            keyEvent("insert", "Ins", KeyEvent.KEYCODE_INSERT) +
+            keyEvent("forward_delete", "Del", KeyEvent.KEYCODE_FORWARD_DEL, repeatable = true) +
+            normalBackspace()
     }
 
     private fun functionLayer(): KeyboardLayout {
@@ -232,23 +236,33 @@ class LayoutEngine {
         )
     }
 
-    private fun qwertyFourRow(): KeyboardLayout {
+    private fun qwertyFourRow(quickNavHold: Boolean): KeyboardLayout {
         return KeyboardLayout(
             id = "qwerty4",
             name = "HK-style QWERTY four-row",
             rows = listOf(
-                row("q", "w", "e", "r", "t", "y", "u", "i", "o", "p", layoutWeight = PHONE_GRID_WEIGHT),
-                row("a", "s", "d", "f", "g", "h", "j", "k", "l", startInsetWeight = 0.5f, endInsetWeight = 0.5f, layoutWeight = PHONE_GRID_WEIGHT),
+                KeyRow(
+                    listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
+                        .map { label -> quickNavText(label, quickNavHold, swipe = qwertyFourTopAlternates[label]) },
+                    layoutWeight = PHONE_GRID_WEIGHT,
+                ),
+                KeyRow(
+                    listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
+                        .map { label -> quickNavText(label, quickNavHold) },
+                    startInsetWeight = 0.5f,
+                    endInsetWeight = 0.5f,
+                    layoutWeight = PHONE_GRID_WEIGHT,
+                ),
                 KeyRow(
                     listOf(
                         action("shift", "Shift", KeyActionType.SHIFT, 1.4f, preserveSpaceWhenHidden = true),
-                        text("z", swipe = "~"),
-                        text("x", swipe = "`"),
-                        text("c", swipe = "|"),
-                        text("v", swipe = "\\"),
-                        text("b", swipe = "{"),
-                        text("n", swipe = "}"),
-                        text("m", swipe = "$"),
+                        quickNavText("z", quickNavHold, swipe = "~"),
+                        quickNavText("x", quickNavHold, swipe = "`"),
+                        quickNavText("c", quickNavHold, swipe = "|"),
+                        quickNavText("v", quickNavHold, swipe = "\\"),
+                        quickNavText("b", quickNavHold, swipe = "{"),
+                        quickNavText("n", quickNavHold, swipe = "}"),
+                        quickNavText("m", quickNavHold, swipe = "$"),
                         action("delete", "Backspace", KeyActionType.DELETE, 1.4f, repeatable = true),
                     ),
                     layoutWeight = PHONE_GRID_WEIGHT,
@@ -261,9 +275,9 @@ class LayoutEngine {
                         settingsKey(),
                         action("space", "Space", KeyActionType.SPACE, 2.2f),
                         micKey(),
-                        action("num_toggle", "Num", KeyActionType.NUMPAD_TOGGLE, optional = true),
-                        action("left", "◀", KeyActionType.ARROW_LEFT, optional = true, repeatable = true),
-                        action("right", "▶", KeyActionType.ARROW_RIGHT, optional = true, repeatable = true),
+                        quickNavNumToggle(),
+                        quickNavLeftRight("left", "◀", KeyActionType.ARROW_LEFT, quickNavHold),
+                        quickNavLeftRight("right", "▶", KeyActionType.ARROW_RIGHT, quickNavHold),
                         action("enter", "Enter", KeyActionType.ENTER, 1.4f),
                     ),
                     layoutWeight = PHONE_GRID_WEIGHT,
@@ -272,33 +286,33 @@ class LayoutEngine {
         )
     }
 
-    private fun compactFiveRow(fnHold: Boolean): KeyboardLayout {
+    private fun compactFiveRow(fnHold: Boolean, quickNavHold: Boolean): KeyboardLayout {
         return KeyboardLayout(
             id = "compact5",
             name = "HK-style compact five-row",
             rows = listOf(
-                compactFiveTopRow(fnHold),
+                compactFiveTopRow(fnHold || quickNavHold),
                 KeyRow(
                     listOf(
-                        text("q"),
-                        text("w"),
-                        text("e"),
-                        text("r"),
-                        text("t"),
-                        text("y"),
-                        text("u"),
-                        text("i"),
-                        text("o"),
-                        text("p"),
+                        quickNavText("q", quickNavHold),
+                        quickNavText("w", quickNavHold),
+                        quickNavText("e", quickNavHold),
+                        quickNavText("r", quickNavHold),
+                        quickNavText("t", quickNavHold),
+                        quickNavText("y", quickNavHold),
+                        quickNavText("u", quickNavHold),
+                        quickNavText("i", quickNavHold),
+                        quickNavText("o", quickNavHold),
+                        quickNavText("p", quickNavHold),
                         text("'", swipe = "\""),
                     ),
                     layoutWeight = COMPACT_GRID_WEIGHT,
                 ),
                 KeyRow(
                     listOf(
-                        text("a"),
-                        text("s"),
-                        text("d"),
+                        quickNavText("a", quickNavHold),
+                        quickNavText("s", quickNavHold),
+                        quickNavText("d", quickNavHold),
                         text("f"),
                         text("g"),
                         text("h"),
@@ -333,9 +347,9 @@ class LayoutEngine {
                         action("space", "Space", KeyActionType.SPACE, 3f),
                         settingsKey(),
                         micKey(),
-                        action("left", "◀", KeyActionType.ARROW_LEFT, optional = true, repeatable = true),
-                        action("right", "▶", KeyActionType.ARROW_RIGHT, optional = true, repeatable = true),
-                        action("num_toggle", "Num", KeyActionType.NUMPAD_TOGGLE, optional = true),
+                        quickNavLeftRight("left", "◀", KeyActionType.ARROW_LEFT, quickNavHold),
+                        quickNavLeftRight("right", "▶", KeyActionType.ARROW_RIGHT, quickNavHold),
+                        quickNavNumToggle(),
                     ),
                     layoutWeight = COMPACT_GRID_WEIGHT,
                 ),
@@ -511,6 +525,70 @@ class LayoutEngine {
         )
     }
 
+    private fun quickNavText(
+        label: String,
+        quickNavHold: Boolean,
+        weight: Float = 1f,
+        swipe: String? = defaultSwipeAlternates[label],
+    ): KeySpec {
+        val overlay = if (quickNavHold) quickNavOverlay(label) else null
+        return if (overlay == null) {
+            text(label, weight, swipe)
+        } else {
+            KeySpec(
+                id = "key_$label",
+                label = label,
+                action = overlay.action,
+                weight = weight,
+                secondaryLabel = overlay.secondaryLabel,
+                secondaryIcon = overlay.secondaryIcon,
+                repeatable = true,
+            )
+        }
+    }
+
+    private fun quickNavOverlay(label: String): QuickNavOverlay? {
+        return when (label) {
+            "q" -> QuickNavOverlay("PgUp", null, KeyAction.keyEvent(KeyEvent.KEYCODE_PAGE_UP, "PgUp"))
+            "e" -> QuickNavOverlay("PgDn", null, KeyAction.keyEvent(KeyEvent.KEYCODE_PAGE_DOWN, "PgDn"))
+            "w" -> QuickNavOverlay(null, KeyIcon.ARROW_UP, KeyAction.keyEvent(KeyEvent.KEYCODE_DPAD_UP, "Up"))
+            "a" -> QuickNavOverlay(null, KeyIcon.ARROW_LEFT, KeyAction.keyEvent(KeyEvent.KEYCODE_DPAD_LEFT, "Left"))
+            "s" -> QuickNavOverlay(null, KeyIcon.ARROW_DOWN, KeyAction.keyEvent(KeyEvent.KEYCODE_DPAD_DOWN, "Down"))
+            "d" -> QuickNavOverlay(null, KeyIcon.ARROW_RIGHT, KeyAction.keyEvent(KeyEvent.KEYCODE_DPAD_RIGHT, "Right"))
+            else -> null
+        }
+    }
+
+    private fun quickNavLeftRight(
+        id: String,
+        label: String,
+        type: KeyActionType,
+        quickNavHold: Boolean,
+    ): KeySpec {
+        if (!quickNavHold) return action(id, label, type, optional = true, repeatable = true)
+        val keyCode = if (type == KeyActionType.ARROW_LEFT) {
+            KeyEvent.KEYCODE_MOVE_HOME
+        } else {
+            KeyEvent.KEYCODE_MOVE_END
+        }
+        val secondaryLabel = if (type == KeyActionType.ARROW_LEFT) "Home" else "End"
+        return KeySpec(
+            id = id,
+            label = label,
+            action = KeyAction.keyEvent(keyCode, secondaryLabel),
+            icon = defaultIcon(type, id),
+            secondaryLabel = secondaryLabel,
+            optional = true,
+            repeatable = true,
+        )
+    }
+
+    private fun quickNavNumToggle(): KeySpec {
+        return action("num_toggle", "Num", KeyActionType.NUMPAD_TOGGLE, optional = true).copy(
+            secondaryIcon = KeyIcon.QUICK_NAV,
+        )
+    }
+
     private fun action(
         id: String,
         label: String,
@@ -612,6 +690,18 @@ class LayoutEngine {
         )
     }
 
+    private fun functionKeys(count: Int): List<KeySpec> {
+        return (1..count).map { index ->
+            keyEvent("f$index", "F$index", KeyEvent.KEYCODE_F1 + index - 1)
+        }
+    }
+
+    private fun normalBackspace(weight: Float = 1f): KeySpec {
+        return action("delete", "Backspace", KeyActionType.DELETE, weight, repeatable = true).copy(
+            secondaryIcon = null,
+        )
+    }
+
     private fun defaultIcon(type: KeyActionType, id: String): KeyIcon? {
         return when (type) {
             KeyActionType.SPACE -> KeyIcon.SPACE_BAR
@@ -629,6 +719,7 @@ class LayoutEngine {
             KeyActionType.ESCAPE -> KeyIcon.ESC
             KeyActionType.CTRL -> KeyIcon.CTRL
             KeyActionType.ALT -> KeyIcon.ALT
+            KeyActionType.FN_MODIFIER -> KeyIcon.FN
             KeyActionType.SWITCH_FN -> if (id == "fn") KeyIcon.FN else null
             KeyActionType.ARROW_LEFT -> KeyIcon.ARROW_LEFT
             KeyActionType.ARROW_RIGHT -> KeyIcon.ARROW_RIGHT
@@ -660,6 +751,12 @@ class LayoutEngine {
         val action: KeyAction,
     )
 
+    private data class QuickNavOverlay(
+        val secondaryLabel: String?,
+        val secondaryIcon: KeyIcon?,
+        val action: KeyAction,
+    )
+
     private fun spacer(weight: Float): KeySpec {
         return KeySpec(
             id = "spacer_$weight",
@@ -680,6 +777,19 @@ class LayoutEngine {
         private const val MIN_EDGE_KEY_SCALE = 0.6f
         private const val MAX_EDGE_KEY_SCALE = 1.1f
         private const val UP_ARROW_RIGHT_EDGE_SCALE = 0.56f
+
+        private val qwertyFourTopAlternates = mapOf(
+            "q" to "1",
+            "w" to "2",
+            "e" to "3",
+            "r" to "4",
+            "t" to "5",
+            "y" to "6",
+            "u" to "7",
+            "i" to "8",
+            "o" to "9",
+            "p" to "0",
+        )
 
         private val defaultSwipeAlternates = mapOf(
             "1" to "!",

@@ -40,6 +40,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     var onKey: ((KeyAction, HeldModifiers) -> Unit)? = null
     var onGlide: ((List<String>, GlideTouchTrace?, HeldModifiers) -> Unit)? = null
     var onFnHoldChanged: ((Boolean) -> Unit)? = null
+    var onQuickNavHoldChanged: ((Boolean) -> Unit)? = null
 
     private var layout: KeyboardLayout? = null
     private var theme: KeyboardTheme = KeyboardTheme.leetGreen
@@ -49,7 +50,8 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private var keyLabelStyle: KeyLabelStyle = KeyLabelStyle()
     private var glideTypingEnabled: Boolean = false
     private var swipeUpActionsEnabled: Boolean = true
-    private var fnLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt()
+    private var keyLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt()
+    private var specialLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt()
     private var backgroundImageUri: String? = null
     private var backgroundImageBitmap: Bitmap? = null
     private var pressedKeyIds: Set<String> = emptySet()
@@ -58,6 +60,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private var repeatPointerId: Int? = null
     private var longPressPointerId: Int? = null
     private var fnHoldPointerId: Int? = null
+    private var quickNavHoldPointerId: Int? = null
     private var nextDownOrder: Long = 0L
     private val hitKeys = mutableListOf<HitKey>()
     private val handler = Handler(Looper.getMainLooper())
@@ -95,6 +98,18 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         onFnHoldChanged?.invoke(true)
         invalidate()
     }
+    private val quickNavHoldRunnable = Runnable {
+        val pointerId = quickNavHoldPointerId ?: return@Runnable
+        val key = pressedKey(pointerId) ?: return@Runnable
+        if (!supportsQuickNavHold(key)) return@Runnable
+        pointerPresses[pointerId] = pointerPresses.getValue(pointerId).copy(
+            longPressConsumed = true,
+            quickNavHoldActive = true,
+        )
+        previewKey = key.copy(label = "Fn")
+        onQuickNavHoldChanged?.invoke(true)
+        invalidate()
+    }
     private val tapDispatchRunnable = Runnable {
         flushQueuedTaps()
     }
@@ -119,7 +134,8 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         keyLabelStyle: KeyLabelStyle = KeyLabelStyle(),
         glideTypingEnabled: Boolean = false,
         swipeUpActionsEnabled: Boolean = true,
-        fnLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt(),
+        keyLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt(),
+        specialLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt(),
     ) {
         this.layout = layout
         this.theme = theme
@@ -129,7 +145,8 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         this.keyLabelStyle = keyLabelStyle
         this.glideTypingEnabled = glideTypingEnabled
         this.swipeUpActionsEnabled = swipeUpActionsEnabled
-        this.fnLongPressDelayMs = fnLongPressDelayMs
+        this.keyLongPressDelayMs = keyLongPressDelayMs
+        this.specialLongPressDelayMs = specialLongPressDelayMs
         loadBackgroundImageIfNeeded(theme.backgroundImageUri)
         invalidate()
     }
@@ -194,7 +211,9 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         handler.removeCallbacks(repeatRunnable)
         handler.removeCallbacks(longPressRunnable)
         handler.removeCallbacks(fnHoldRunnable)
+        handler.removeCallbacks(quickNavHoldRunnable)
         handler.removeCallbacks(tapDispatchRunnable)
+        clearQuickNavHoldIfActive()
         backgroundImageBitmap?.recycle()
         backgroundImageBitmap = null
         super.onDetachedFromWindow()
@@ -223,9 +242,11 @@ class KeyboardSurfaceView(context: Context) : View(context) {
                 handler.removeCallbacks(repeatRunnable)
                 handler.removeCallbacks(longPressRunnable)
                 handler.removeCallbacks(fnHoldRunnable)
+                handler.removeCallbacks(quickNavHoldRunnable)
                 handler.removeCallbacks(tapDispatchRunnable)
                 rolloverCoordinator.clear()
                 clearFnHoldIfActive()
+                clearQuickNavHoldIfActive()
                 pointerPresses.clear()
                 pressedKeyIds = emptySet()
                 previewKey = null
@@ -267,12 +288,17 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         if (hitKey.key.longPressAction != null) {
             longPressPointerId = pointerId
             handler.removeCallbacks(longPressRunnable)
-            handler.postDelayed(longPressRunnable, LONG_PRESS_DELAY_MS)
+            handler.postDelayed(longPressRunnable, longPressDelayMsFor(hitKey.key).toLong())
         }
         if (hitKey.key.action.type == KeyActionType.SWITCH_FN) {
             fnHoldPointerId = pointerId
             handler.removeCallbacks(fnHoldRunnable)
-            handler.postDelayed(fnHoldRunnable, fnLongPressDelayMs.toLong())
+            handler.postDelayed(fnHoldRunnable, specialLongPressDelayMs.toLong())
+        }
+        if (supportsQuickNavHold(hitKey.key)) {
+            quickNavHoldPointerId = pointerId
+            handler.removeCallbacks(quickNavHoldRunnable)
+            handler.postDelayed(quickNavHoldRunnable, specialLongPressDelayMs.toLong())
         }
     }
 
@@ -321,6 +347,10 @@ class KeyboardSurfaceView(context: Context) : View(context) {
                     handler.removeCallbacks(fnHoldRunnable)
                     fnHoldPointerId = null
                 }
+                if (quickNavHoldPointerId == pointerId) {
+                    handler.removeCallbacks(quickNavHoldRunnable)
+                    quickNavHoldPointerId = null
+                }
                 previewKey = null
             }
             pointerPresses[pointerId] = press.copy(
@@ -363,12 +393,21 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             handler.removeCallbacks(fnHoldRunnable)
             fnHoldPointerId = null
         }
+        if (quickNavHoldPointerId == pointerId) {
+            handler.removeCallbacks(quickNavHoldRunnable)
+            quickNavHoldPointerId = null
+        }
         val heldModifiers = activeHeldModifiers(excludingPointerId = pointerId)
         pointerPresses.remove(pointerId)
         updatePressedKeyIds()
         previewKey = null
         if (press.fnHoldActive) {
             onFnHoldChanged?.invoke(false)
+            flushQueuedTaps()
+            return
+        }
+        if (press.quickNavHoldActive) {
+            onQuickNavHoldChanged?.invoke(false)
             flushQueuedTaps()
             return
         }
@@ -477,6 +516,25 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         if (wasActive) onFnHoldChanged?.invoke(false)
     }
 
+    private fun clearQuickNavHoldIfActive() {
+        val wasActive = pointerPresses.values.any { press -> press.quickNavHoldActive }
+        if (wasActive) onQuickNavHoldChanged?.invoke(false)
+    }
+
+    private fun supportsQuickNavHold(key: KeySpec): Boolean {
+        val layoutId = layout?.id ?: return false
+        return key.id == "num_toggle" && layoutId in QUICK_NAV_HOLD_LAYOUTS
+    }
+
+    private fun longPressDelayMsFor(key: KeySpec): Int {
+        return if (key.isSpecialLongPressKey()) specialLongPressDelayMs else keyLongPressDelayMs
+    }
+
+    private fun KeySpec.isSpecialLongPressKey(): Boolean {
+        return action.type in SPECIAL_LONG_PRESS_ACTION_TYPES ||
+            longPressAction?.type in SPECIAL_LONG_PRESS_ACTION_TYPES
+    }
+
     private fun drawKey(canvas: Canvas, rect: RectF, key: KeySpec, geometry: KeyboardGeometryPx) {
         val isPressed = key.id in pressedKeyIds
         val isActive = key.id in activeKeyIds
@@ -494,10 +552,12 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             shiftActive = "shift" in activeKeyIds || "shift_right" in activeKeyIds,
             labelStyle = keyLabelStyle,
         )
-        textPaint.textSize = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            if (display.label.length > 4) keyLabelStyle.primaryTextSizeSp - 2f else keyLabelStyle.primaryTextSizeSp,
-            resources.displayMetrics,
+        textPaint.textSize = fittedTextSizePx(
+            label = display.label,
+            baseSp = if (display.label.length > 4) keyLabelStyle.primaryTextSizeSp - 2f else keyLabelStyle.primaryTextSizeSp,
+            maxWidthPx = rect.width() * 0.82f,
+            maxHeightPx = rect.height() * 0.62f,
+            minSp = MIN_PRIMARY_TEXT_SIZE_SP,
         )
 
         canvas.drawRoundRect(rect, geometry.keyRadius, geometry.keyRadius, fillPaint)
@@ -560,21 +620,28 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         if (label.isNullOrBlank() && icon == null) return
         val inset = resources.displayMetrics.density * 5f
         val size = (rect.height() * 0.26f).coerceAtMost(rect.width() * 0.24f)
+        val secondaryWidth = if (!label.isNullOrBlank() && icon == null) {
+            (rect.width() * 0.42f).coerceAtLeast(size)
+        } else {
+            size
+        }
         val secondaryRect = RectF(
-            rect.right - inset - size,
+            rect.right - inset - secondaryWidth,
             rect.top + inset,
             rect.right - inset,
             rect.top + inset + size,
-        )
-        textPaint.textSize = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            keyLabelStyle.secondaryTextSizeSp,
-            resources.displayMetrics,
         )
         textPaint.isFakeBoldText = keyLabelStyle.fontWeight >= BOLD_WEIGHT
         if (icon != null) {
             drawIcon(canvas, secondaryRect, icon, primary = false)
         } else if (label != null) {
+            textPaint.textSize = fittedTextSizePx(
+                label = label,
+                baseSp = keyLabelStyle.secondaryTextSizeSp,
+                maxWidthPx = secondaryRect.width() * 0.92f,
+                maxHeightPx = secondaryRect.height() * 0.82f,
+                minSp = MIN_SECONDARY_TEXT_SIZE_SP,
+            )
             val baseline = secondaryRect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2
             canvas.drawText(label, secondaryRect.centerX(), baseline, textPaint)
         }
@@ -616,6 +683,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             KeyIcon.SWIPE -> drawSwipeIcon(canvas, iconRect)
             KeyIcon.SWIPE_OFF -> drawSwipeOffIcon(canvas, iconRect)
             KeyIcon.NUMPAD -> drawNumpadIcon(canvas, iconRect)
+            KeyIcon.QUICK_NAV -> drawQuickNavIcon(canvas, iconRect)
             KeyIcon.EMOJI -> drawEmojiIcon(canvas, iconRect)
             KeyIcon.ENTER -> drawEnterIcon(canvas, iconRect)
             KeyIcon.TAB -> drawTextIcon(canvas, iconRect, "⇥", primary)
@@ -703,6 +771,26 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         }
     }
 
+    private fun drawQuickNavIcon(canvas: Canvas, rect: RectF) {
+        val centerX = rect.centerX()
+        val centerY = rect.centerY()
+        val arm = rect.width().coerceAtMost(rect.height()) * 0.34f
+        canvas.drawLine(centerX - arm, centerY, centerX + arm, centerY, strokePaint)
+        canvas.drawLine(centerX, centerY - arm, centerX, centerY + arm, strokePaint)
+        drawChevron(canvas, centerX, centerY - arm, 0f, -1f, rect)
+        drawChevron(canvas, centerX + arm, centerY, 1f, 0f, rect)
+        drawChevron(canvas, centerX, centerY + arm, 0f, 1f, rect)
+        drawChevron(canvas, centerX - arm, centerY, -1f, 0f, rect)
+    }
+
+    private fun drawChevron(canvas: Canvas, x: Float, y: Float, dx: Float, dy: Float, rect: RectF) {
+        val size = rect.width().coerceAtMost(rect.height()) * 0.12f
+        val sideX = if (dx == 0f) 1f else 0f
+        val sideY = if (dy == 0f) 1f else 0f
+        canvas.drawLine(x, y, x - dx * size - sideX * size, y - dy * size - sideY * size, strokePaint)
+        canvas.drawLine(x, y, x - dx * size + sideX * size, y - dy * size + sideY * size, strokePaint)
+    }
+
     private fun drawEmojiIcon(canvas: Canvas, rect: RectF) {
         val size = rect.width().coerceAtMost(rect.height())
         val centerX = rect.centerX()
@@ -737,13 +825,53 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     }
 
     private fun drawTextIcon(canvas: Canvas, rect: RectF, label: String, primary: Boolean) {
-        textPaint.textSize = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            if (primary && label.length > 2) keyLabelStyle.primaryTextSizeSp - 3f else keyLabelStyle.primaryTextSizeSp,
-            resources.displayMetrics,
+        textPaint.textSize = fittedTextSizePx(
+            label = label,
+            baseSp = if (primary && label.length > 2) keyLabelStyle.primaryTextSizeSp - 3f else keyLabelStyle.primaryTextSizeSp,
+            maxWidthPx = rect.width() * 0.9f,
+            maxHeightPx = rect.height() * 0.84f,
+            minSp = if (primary) MIN_PRIMARY_TEXT_SIZE_SP else MIN_SECONDARY_TEXT_SIZE_SP,
         )
         val baseline = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2
         canvas.drawText(label, rect.centerX(), baseline, textPaint)
+    }
+
+    private fun fittedTextSizePx(
+        label: String,
+        baseSp: Float,
+        maxWidthPx: Float,
+        maxHeightPx: Float,
+        minSp: Float,
+    ): Float {
+        val density = resources.displayMetrics.density
+        val scale = deviceLabelScale()
+        var low = minSp * density
+        var high = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            baseSp * scale,
+            resources.displayMetrics,
+        ).coerceAtLeast(low)
+        repeat(TEXT_FIT_ITERATIONS) {
+            val mid = (low + high) / 2f
+            if (textFits(label, mid, maxWidthPx, maxHeightPx)) {
+                low = mid
+            } else {
+                high = mid
+            }
+        }
+        return low
+    }
+
+    private fun textFits(label: String, textSizePx: Float, maxWidthPx: Float, maxHeightPx: Float): Boolean {
+        textPaint.textSize = textSizePx
+        val metrics = textPaint.fontMetrics
+        val textHeight = metrics.descent - metrics.ascent
+        return textPaint.measureText(label) <= maxWidthPx && textHeight <= maxHeightPx
+    }
+
+    private fun deviceLabelScale(): Float {
+        val smallestWidthDp = resources.configuration.smallestScreenWidthDp
+        return if (smallestWidthDp in 1 until TABLET_SMALLEST_WIDTH_DP) PHONE_LABEL_SCALE else 1f
     }
 
     private fun loadBackgroundImageIfNeeded(uriString: String?) {
@@ -868,7 +996,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             shift = activeKeys.any { it.action.type == KeyActionType.SHIFT },
             ctrl = activeKeys.any { it.action.type == KeyActionType.CTRL },
             alt = activeKeys.any { it.action.type == KeyActionType.ALT },
-            fn = activeKeys.any { it.action.type == KeyActionType.SWITCH_FN },
+            fn = activeKeys.any { it.action.type == KeyActionType.SWITCH_FN || it.action.type == KeyActionType.FN_MODIFIER },
         )
     }
 
@@ -912,6 +1040,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val usedInCombo: Boolean = false,
         val longPressConsumed: Boolean = false,
         val fnHoldActive: Boolean = false,
+        val quickNavHoldActive: Boolean = false,
         val gliding: Boolean = false,
         val glidePath: List<String> = emptyList(),
         val glidePoints: List<PointF> = emptyList(),
@@ -942,6 +1071,18 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         const val TOP_MARGIN_DP = 4f
         const val BOLD_WEIGHT = 600f
         const val MAX_ROLLOVER_POINTERS = 10
+        const val MIN_PRIMARY_TEXT_SIZE_SP = 7f
+        const val MIN_SECONDARY_TEXT_SIZE_SP = 5f
+        const val TABLET_SMALLEST_WIDTH_DP = 600
+        const val PHONE_LABEL_SCALE = 0.86f
+        const val TEXT_FIT_ITERATIONS = 7
+        private val QUICK_NAV_HOLD_LAYOUTS = setOf("qwerty4", "compact5", "qwerty5")
+        private val SPECIAL_LONG_PRESS_ACTION_TYPES = setOf(
+            KeyActionType.SWITCH_FN,
+            KeyActionType.NUMPAD_TOGGLE,
+            KeyActionType.SWITCH_EMOJI,
+            KeyActionType.TOGGLE_GESTURE_TYPING,
+        )
     }
 }
 

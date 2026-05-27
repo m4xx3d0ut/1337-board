@@ -11,6 +11,8 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import org.leetboard.ime.model.KeyAction
+import org.leetboard.ime.model.KeyActionType
 import org.leetboard.ime.model.KeyLabelStyle
 import org.leetboard.ime.model.KeyboardGeometry
 import org.leetboard.ime.model.KeyboardLayout
@@ -19,10 +21,12 @@ import org.leetboard.ime.model.KeyboardTheme
 class KeyboardInputView(context: Context) : ViewGroup(context) {
     val keyboardView = KeyboardSurfaceView(context)
     var onSuggestion: ((String) -> Unit)? = null
+    var onQuickModifier: ((KeyAction) -> Unit)? = null
 
     private val suggestionBar = GlideSuggestionBar(context)
     private var theme: KeyboardTheme = KeyboardTheme.leetGreen
     private var suggestionBarEnabled: Boolean = false
+    private var quickModifierBarEnabled: Boolean = false
 
     init {
         addView(suggestionBar)
@@ -38,17 +42,26 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         keyLabelStyle: KeyLabelStyle = KeyLabelStyle(),
         glideTypingEnabled: Boolean = false,
         swipeUpActionsEnabled: Boolean = true,
-        fnLongPressDelayMs: Int = KeyboardSurfaceView.LONG_PRESS_DELAY_MS.toInt(),
+        keyLongPressDelayMs: Int = KeyboardSurfaceView.LONG_PRESS_DELAY_MS.toInt(),
+        specialLongPressDelayMs: Int = KeyboardSurfaceView.LONG_PRESS_DELAY_MS.toInt(),
         suggestionBarEnabled: Boolean = glideTypingEnabled,
         suggestions: List<String> = emptyList(),
+        quickModifierBarEnabled: Boolean = false,
+        activeQuickModifierIds: Set<String> = emptySet(),
+        quickFunctionRowEnabled: Boolean = false,
     ) {
         this.theme = theme
         this.suggestionBarEnabled = suggestionBarEnabled
+        this.quickModifierBarEnabled = quickModifierBarEnabled
         suggestionBar.render(
             theme = theme,
-            enabled = suggestionBarEnabled,
+            enabled = suggestionBarEnabled || quickModifierBarEnabled,
             suggestions = suggestions.take(MAX_SUGGESTIONS),
+            quickModifierBarEnabled = quickModifierBarEnabled,
+            activeQuickModifierIds = activeQuickModifierIds,
+            quickFunctionRowEnabled = quickFunctionRowEnabled,
             onSuggestion = { word -> onSuggestion?.invoke(word) },
+            onQuickModifier = { action -> onQuickModifier?.invoke(action) },
         )
         keyboardView.render(
             layout = layout,
@@ -59,7 +72,8 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             keyLabelStyle = keyLabelStyle,
             glideTypingEnabled = glideTypingEnabled,
             swipeUpActionsEnabled = swipeUpActionsEnabled,
-            fnLongPressDelayMs = fnLongPressDelayMs,
+            keyLongPressDelayMs = keyLongPressDelayMs,
+            specialLongPressDelayMs = specialLongPressDelayMs,
         )
         requestLayout()
     }
@@ -102,7 +116,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
     }
 
     private fun suggestionHeightPx(): Int {
-        return if (suggestionBarEnabled) {
+        return if (suggestionBarEnabled || quickModifierBarEnabled) {
             (resources.displayMetrics.density * SUGGESTION_STRIP_HEIGHT_DP).toInt()
         } else {
             0
@@ -113,7 +127,9 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         private val cells: List<TextView>
         private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
         private var currentSuggestions: List<String> = emptyList()
+        private var currentQuickModifiers: List<QuickModifierCell> = emptyList()
         private var onSuggestion: ((String) -> Unit)? = null
+        private var onQuickModifier: ((KeyAction) -> Unit)? = null
         private var downX = 0f
         private var downY = 0f
 
@@ -121,7 +137,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER
             isClickable = true
-            cells = List(MAX_SUGGESTIONS) {
+            cells = List(MAX_BAR_CELLS) {
                 TextView(context).apply {
                     gravity = Gravity.CENTER
                     isClickable = false
@@ -141,14 +157,25 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             theme: KeyboardTheme,
             enabled: Boolean,
             suggestions: List<String>,
+            quickModifierBarEnabled: Boolean,
+            activeQuickModifierIds: Set<String>,
+            quickFunctionRowEnabled: Boolean,
             onSuggestion: (String) -> Unit,
+            onQuickModifier: (KeyAction) -> Unit,
         ) {
-            currentSuggestions = suggestions
+            currentQuickModifiers = when {
+                !quickModifierBarEnabled -> emptyList()
+                quickFunctionRowEnabled -> fourRowQuickActionCells
+                else -> compactQuickActionCells
+            }
+            currentSuggestions = if (quickModifierBarEnabled) emptyList() else suggestions
             this.onSuggestion = onSuggestion
+            this.onQuickModifier = onQuickModifier
             visibility = if (enabled) VISIBLE else GONE
             setBackgroundColor(theme.colors.background)
             cells.forEachIndexed { index, cell ->
-                val word = suggestions.getOrNull(index)
+                val quickModifier = currentQuickModifiers.getOrNull(index)
+                val word = currentSuggestions.getOrNull(index)
                 val margin = (resources.displayMetrics.density * SUGGESTION_GAP_DP / 2f).toInt()
                 (cell.layoutParams as MarginLayoutParams).setMargins(
                     if (index == 0) margin * 2 else margin,
@@ -156,31 +183,41 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
                     if (index == cells.lastIndex) margin * 2 else margin,
                     (resources.displayMetrics.density * SUGGESTION_VERTICAL_PADDING_DP).toInt(),
                 )
-                if (word == null) {
+                if (quickModifier == null && word == null) {
                     cell.text = ""
-                    cell.visibility = INVISIBLE
+                    cell.visibility = GONE
                     cell.isEnabled = false
                     return@forEachIndexed
                 }
 
                 cell.visibility = VISIBLE
                 cell.isEnabled = true
-                cell.text = word
+                cell.text = quickModifier?.label ?: word
+                cell.setTextSize(
+                    TypedValue.COMPLEX_UNIT_SP,
+                    if (currentQuickModifiers.size > MAX_SUGGESTIONS) QUICK_ACTION_TEXT_SP else SUGGESTION_TEXT_SP,
+                )
                 cell.setTextColor(theme.colors.keyText)
-                cell.typeface = if (index == 0) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                val active = quickModifier?.id?.let { id -> id in activeQuickModifierIds } == true
+                val emphasized = (quickModifier == null && index == 0) || active
+                cell.typeface = if (emphasized) {
+                    Typeface.DEFAULT_BOLD
+                } else {
+                    Typeface.DEFAULT
+                }
                 cell.background = suggestionBackground(
-                    fillColor = if (index == 0) theme.colors.activeModifierFill else theme.colors.keyFill,
+                    fillColor = if (emphasized) theme.colors.activeModifierFill else theme.colors.keyFill,
                     strokeColor = theme.colors.keyStroke,
                 )
             }
         }
 
         override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
-            return currentSuggestions.isNotEmpty()
+            return currentSuggestions.isNotEmpty() || currentQuickModifiers.isNotEmpty()
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
-            if (currentSuggestions.isEmpty()) return false
+            if (currentSuggestions.isEmpty() && currentQuickModifiers.isEmpty()) return false
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = event.x
@@ -193,10 +230,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
                     val movedX = kotlin.math.abs(event.x - downX)
                     val movedY = kotlin.math.abs(event.y - downY)
                     if (movedX <= touchSlop && movedY <= touchSlop) {
-                        suggestionAt(event.x, event.y)?.let { word ->
-                            performClick()
-                            onSuggestion?.invoke(word)
-                        }
+                        performCellClick(event.x, event.y)
                     }
                     return true
                 }
@@ -213,16 +247,24 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             return true
         }
 
-        private fun suggestionAt(x: Float, y: Float): String? {
-            return cells.firstOrNull { cell ->
+        private fun performCellClick(x: Float, y: Float) {
+            val index = cells.indexOfFirst { cell ->
                 cell.visibility == VISIBLE &&
                     x >= cell.left &&
                     x <= cell.right &&
                     y >= cell.top &&
                     y <= cell.bottom
-            }?.let { cell ->
-                currentSuggestions.getOrNull(cells.indexOf(cell))
             }
+            if (index < 0) return
+            val quickModifier = currentQuickModifiers.getOrNull(index)
+            if (quickModifier != null) {
+                performClick()
+                onQuickModifier?.invoke(quickModifier.action)
+                return
+            }
+            val word = currentSuggestions.getOrNull(index) ?: return
+            performClick()
+            onSuggestion?.invoke(word)
         }
 
         private fun suggestionBackground(fillColor: Int, strokeColor: Int): GradientDrawable {
@@ -234,6 +276,26 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
                 setStroke(density.toInt().coerceAtLeast(1), strokeColor)
             }
         }
+
+        private data class QuickModifierCell(
+            val id: String,
+            val label: String,
+            val action: KeyAction,
+        )
+
+        companion object {
+            private val compactQuickActionCells = listOf(
+                QuickModifierCell("ctrl", "Ctrl", KeyAction(KeyActionType.CTRL)),
+                QuickModifierCell("alt", "Alt", KeyAction(KeyActionType.ALT)),
+            )
+            private val fourRowQuickActionCells = compactQuickActionCells + (1..12).map { index ->
+                QuickModifierCell(
+                    id = "f$index",
+                    label = "F$index",
+                    action = KeyAction.keyEvent(android.view.KeyEvent.KEYCODE_F1 + index - 1, "F$index"),
+                )
+            }
+        }
     }
 
     companion object {
@@ -241,7 +303,9 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         const val SUGGESTION_VERTICAL_PADDING_DP = 5f
         const val SUGGESTION_GAP_DP = 6f
         const val SUGGESTION_TEXT_SP = 15f
+        const val QUICK_ACTION_TEXT_SP = 11.5f
         const val MAX_SUGGESTIONS = 5
+        const val MAX_BAR_CELLS = 14
         const val MIN_HEIGHT_DP = 160f
     }
 }

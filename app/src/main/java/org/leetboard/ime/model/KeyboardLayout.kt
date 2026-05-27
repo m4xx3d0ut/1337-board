@@ -27,6 +27,7 @@ enum class KeyIcon {
     SWIPE,
     SWIPE_OFF,
     NUMPAD,
+    QUICK_NAV,
     EMOJI,
     ENTER,
     TAB,
@@ -84,6 +85,7 @@ data class ModifierState(
     val shift: Boolean = false,
     val ctrl: Boolean = false,
     val alt: Boolean = false,
+    val fn: Boolean = false,
     val shiftLocked: Boolean = false,
 )
 
@@ -92,6 +94,7 @@ data class KeyboardState(
     val symbols: Boolean = false,
     val fn: Boolean = false,
     val fnHold: Boolean = false,
+    val quickNavHold: Boolean = false,
     val emoji: Boolean = false,
     val numpad: Boolean = false,
     val modifiers: ModifierState = ModifierState(),
@@ -115,8 +118,10 @@ fun KeyboardState.activeKeyIds(): Set<String> = buildSet {
     if (modifiers.shift || modifiers.shiftLocked) add("shift_right")
     if (modifiers.ctrl) add("ctrl")
     if (modifiers.alt) add("alt")
+    if (modifiers.fn) add("quick_fn")
     if (symbols) add("symbols")
     if (fn || fnHold) add("fn")
+    if (quickNavHold) add("num_toggle")
     if (emoji) add("emoji")
     if (numpad) add("num_toggle")
 }
@@ -133,7 +138,7 @@ fun KeyboardState.toggleShift(): KeyboardState {
 }
 
 fun KeyboardState.clearTransientModifiers(): KeyboardState {
-    return copy(modifiers = modifiers.copy(shift = modifiers.shiftLocked, ctrl = false, alt = false))
+    return copy(modifiers = modifiers.copy(shift = modifiers.shiftLocked, ctrl = false, alt = false, fn = false))
 }
 
 data class CustomizationState(

@@ -49,6 +49,7 @@ import org.leetboard.ime.model.activeKeyIds
 import org.leetboard.ime.model.clearTransientModifiers
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.PreferenceRepository
+import org.leetboard.ime.prefs.layoutIdForOrientation
 import org.leetboard.ime.ui.KeyboardInputView
 
 class ModernKeyboardImeService : InputMethodService() {
@@ -73,6 +74,7 @@ class ModernKeyboardImeService : InputMethodService() {
     private var glideSuggestionsJob: Job? = null
     private var glideCorrectionRecordJob: Job? = null
     private var pendingGlideUndo: PendingGlideUndo? = null
+    private var pendingSuggestionCommit: PendingSuggestionCommit? = null
     private var pendingGlideCorrection: PendingGlideCorrection? = null
     private var glideLearningResetRevision: Int? = null
     private var glideSuggestions: List<String> = emptyList()
@@ -146,8 +148,19 @@ class ModernKeyboardImeService : InputMethodService() {
                 keyboardState = keyboardState.copy(fnHold = active, fn = if (active) false else keyboardState.fn)
                 renderKeyboard()
             }
+            view.keyboardView.onQuickNavHoldChanged = { active ->
+                keyboardState = keyboardState.copy(
+                    quickNavHold = active,
+                    numpad = if (active) false else keyboardState.numpad,
+                )
+                renderKeyboard()
+            }
             view.onSuggestion = { word ->
                 handleSuggestion(word)
+                renderKeyboard()
+            }
+            view.onQuickModifier = { action ->
+                handleKeyAction(action, HeldModifiers())
                 renderKeyboard()
             }
             renderKeyboard()
@@ -173,6 +186,7 @@ class ModernKeyboardImeService : InputMethodService() {
         speechInputEngine.cancel()
         speechUiState = SpeechUiState.IDLE
         pendingGlideUndo = null
+        pendingSuggestionCommit = null
         clearPendingGlideCorrection()
         clearGlideSuggestions()
         keyboardState = KeyboardState()
@@ -184,12 +198,14 @@ class ModernKeyboardImeService : InputMethodService() {
         val gestureTypingAllowed = preferences.gestureTypingEnabled && gestureTypingEngine.isEnabledFor(currentInputEditorInfo)
         val suggestionBarEnabled = gestureTypingAllowed || typedSuggestionsAllowed()
         val layoutState = keyboardState.copy(
-            activeLayoutId = preferences.layoutId,
+            activeLayoutId = preferences.layoutIdForOrientation(orientation),
             keyPreviewEnabled = preferences.keyPreviewEnabled,
             stickyModifiersEnabled = preferences.stickyModifiersEnabled,
             shiftCapsLockEnabled = preferences.shiftCapsLockEnabled,
             edgeKeyWidthScale = preferences.edgeKeyWidthScale,
         )
+        val quickModifierBarEnabled = keyboardState.quickNavHold &&
+            layoutState.activeLayoutId in QUICK_MODIFIER_BAR_LAYOUTS
         val layout = customizationEngine.apply(
             layout = layoutEngine.layoutFor(layoutState, orientation),
             customization = preferences.customizationState().let { customization ->
@@ -206,15 +222,19 @@ class ModernKeyboardImeService : InputMethodService() {
                 landscape = preferences.landscapeGeometry,
                 customTheme = preferences.customTheme,
             ),
-            layoutState.activeKeyIds() + featureActiveKeyIds(),
+            layoutState.activeKeyIds() + featureActiveKeyIds(layoutState),
             preferences.keyPreviewEnabled,
             preferences.stickyModifiersEnabled,
             preferences.keyLabelStyle,
             gestureTypingAllowed,
             preferences.swipeUpActionsEnabled,
-            preferences.fnLongPressDelayMs,
+            preferences.keyLongPressDelayMs,
+            preferences.specialLongPressDelayMs,
             suggestionBarEnabled,
             glideSuggestions,
+            quickModifierBarEnabled,
+            activeQuickModifierIds = activeQuickModifierIds(),
+            quickFunctionRowEnabled = layoutState.activeLayoutId == "qwerty4",
         )
         hideSystemImeSwitcher()
     }
@@ -269,6 +289,7 @@ class ModernKeyboardImeService : InputMethodService() {
             committedText = committedText,
             predictionContext = predictionContext,
         )
+        pendingSuggestionCommit = null
         keyboardState = keyboardState.clearTransientModifiers()
     }
 
@@ -291,8 +312,9 @@ class ModernKeyboardImeService : InputMethodService() {
     }
 
     private fun handleKeyAction(action: KeyAction, heldModifiers: HeldModifiers) {
+        if (action.type == KeyActionType.TAB && tryAcceptFirstSuggestionWithTab(heldModifiers)) return
         if (action.type == KeyActionType.DELETE && tryUndoLastGlide(heldModifiers)) return
-        trimPendingGlideSpaceBeforePunctuation(action, heldModifiers)
+        trimPendingSpaceBeforePunctuation(action, heldModifiers)
         val boundaryToken = typedBoundaryToken(action, heldModifiers)
         val boundaryContext = boundaryToken?.let(::typedPredictionContextBeforeToken)
         val autocorrected = if (boundaryToken != null && boundaryContext != null) {
@@ -306,6 +328,7 @@ class ModernKeyboardImeService : InputMethodService() {
         updatePendingGlideCorrection(action, heldModifiers)
         if (action.type != KeyActionType.DELETE) {
             pendingGlideUndo = null
+            pendingSuggestionCommit = null
             clearGlideSuggestions()
         }
         when (action.type) {
@@ -364,6 +387,7 @@ class ModernKeyboardImeService : InputMethodService() {
             word = normalizedWord,
             committedText = committedText,
         )
+        pendingSuggestionCommit = null
         clearGlideSuggestions()
     }
 
@@ -376,6 +400,8 @@ class ModernKeyboardImeService : InputMethodService() {
         if (!replaceTypedToken(token, replacement)) return
         typedPredictionEngine.recordAcceptedWord(normalizedWord, context)
         persistGlideUserLanguageModel()
+        pendingGlideUndo = null
+        pendingSuggestionCommit = PendingSuggestionCommit(committedText = replacement)
         clearGlideSuggestions()
     }
 
@@ -434,13 +460,37 @@ class ModernKeyboardImeService : InputMethodService() {
         return inputConnection.deleteSurroundingText(pendingCommittedText.length, 0)
     }
 
-    private fun trimPendingGlideSpaceBeforePunctuation(action: KeyAction, heldModifiers: HeldModifiers): Boolean {
+    private fun tryAcceptFirstSuggestionWithTab(heldModifiers: HeldModifiers): Boolean {
+        val word = glideSuggestions.firstOrNull() ?: return false
+        if (suggestionMode == SuggestionMode.NONE) return false
+        if (heldModifiers.isActive()) return false
+        if (keyboardState.modifiers.shift || keyboardState.modifiers.shiftLocked || keyboardState.modifiers.ctrl || keyboardState.modifiers.alt || keyboardState.modifiers.fn) {
+            return false
+        }
+        handleSuggestion(word)
+        return true
+    }
+
+    private fun trimPendingSpaceBeforePunctuation(action: KeyAction, heldModifiers: HeldModifiers): Boolean {
         if (punctuationTextOrNull(action, heldModifiers) == null) return false
-        val undo = pendingGlideUndo ?: return false
+        val undo = pendingGlideUndo
+        return (undo != null && trimPendingGlideSpace(undo)) || trimPendingSuggestionSpace()
+    }
+
+    private fun trimPendingGlideSpace(undo: PendingGlideUndo): Boolean {
         if (!undo.committedText.endsWith(" ")) return false
         val trimmedCommit = undo.committedText.dropLast(1)
         if (!replacePendingGlideCommit(undo.committedText, trimmedCommit)) return false
         pendingGlideUndo = undo.copy(committedText = trimmedCommit)
+        return true
+    }
+
+    private fun trimPendingSuggestionSpace(): Boolean {
+        val pending = pendingSuggestionCommit ?: return false
+        if (!pending.committedText.endsWith(" ")) return false
+        val trimmedCommit = pending.committedText.dropLast(1)
+        if (!replacePendingGlideCommit(pending.committedText, trimmedCommit)) return false
+        pendingSuggestionCommit = pending.copy(committedText = trimmedCommit)
         return true
     }
 
@@ -611,9 +661,21 @@ class ModernKeyboardImeService : InputMethodService() {
         return GlidePredictionContext(textBeforeCursor = contextText)
     }
 
-    private fun featureActiveKeyIds(): Set<String> = buildSet {
+    private fun featureActiveKeyIds(layoutState: KeyboardState): Set<String> = buildSet {
         if (speechUiState == SpeechUiState.LISTENING || speechUiState == SpeechUiState.PROCESSING) add("mic")
         if (preferences.gestureTypingEnabled) add("settings")
+        if (
+            layoutState.activeLayoutId in QUICK_NAV_STICKY_INDICATOR_LAYOUTS &&
+            (keyboardState.modifiers.ctrl || keyboardState.modifiers.alt || keyboardState.modifiers.fn)
+        ) {
+            add("num_toggle")
+        }
+    }
+
+    private fun activeQuickModifierIds(): Set<String> = buildSet {
+        if (keyboardState.modifiers.ctrl) add("ctrl")
+        if (keyboardState.modifiers.alt) add("alt")
+        if (keyboardState.modifiers.fn) add("quick_fn")
     }
 
     private fun handleSpeechInput() {
@@ -998,6 +1060,10 @@ class ModernKeyboardImeService : InputMethodService() {
         val predictionContext: GlidePredictionContext,
     )
 
+    private data class PendingSuggestionCommit(
+        val committedText: String,
+    )
+
     private data class PendingGlideCorrection(
         val pathSignature: String,
         val rejectedWord: String,
@@ -1019,6 +1085,8 @@ class ModernKeyboardImeService : InputMethodService() {
         const val GLIDE_DEBUG_SNAPSHOT_FILE = "glide_debug_snapshot.txt"
         const val TERMUX_PACKAGE_PREFIX = "com.termux"
         val PUNCTUATION_THAT_TRIMS_GLIDE_SPACE = setOf(".", ",", "!", "?", ";", ":")
+        val QUICK_NAV_STICKY_INDICATOR_LAYOUTS = setOf("qwerty4", "compact5")
+        val QUICK_MODIFIER_BAR_LAYOUTS = setOf("qwerty4", "compact5")
     }
 }
 

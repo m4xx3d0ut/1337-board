@@ -129,15 +129,44 @@ class LayoutEngineTest {
     }
 
     @Test
-    fun fnHoldShowsFunctionKeysOnFiveRowNumberRow() {
+    fun fnHoldShowsFunctionInsertDeleteKeysOnFiveRowTopRow() {
         val layout = engine.layoutFor(KeyboardState(fnHold = true), Configuration.ORIENTATION_PORTRAIT)
         val topRow = layout.rows.first().keys
 
         assertEquals("qwerty5", layout.id)
+        assertEquals(15, topRow.size)
         assertEquals("f1", topRow.first().id)
         assertEquals("f12", topRow[11].id)
+        assertEquals("insert", topRow[12].id)
+        assertEquals(KeyEvent.KEYCODE_INSERT, topRow[12].action.keyCode)
+        assertEquals("forward_delete", topRow[13].id)
+        assertEquals("Del", topRow[13].label)
+        assertEquals(KeyEvent.KEYCODE_FORWARD_DEL, topRow[13].action.keyCode)
         assertEquals("delete", topRow.last().id)
+        assertEquals(KeyActionType.DELETE, topRow.last().action.type)
+        assertEquals(null, topRow.last().secondaryIcon)
         assertEquals(KeyEvent.KEYCODE_F12, topRow[11].action.keyCode)
+    }
+
+    @Test
+    fun fiveRowQuickNavHoldShowsFunctionInsertDeleteTopRow() {
+        val layout = engine.layoutFor(KeyboardState(quickNavHold = true), Configuration.ORIENTATION_PORTRAIT)
+        val topRow = layout.rows.first().keys
+        val keys = layout.rows.flattenKeys()
+
+        assertEquals("qwerty5", layout.id)
+        assertEquals(15, topRow.size)
+        assertEquals("f1", topRow.first().id)
+        assertEquals("f12", topRow[11].id)
+        assertEquals("insert", topRow[12].id)
+        assertEquals(KeyEvent.KEYCODE_INSERT, topRow[12].action.keyCode)
+        assertEquals("forward_delete", topRow[13].id)
+        assertEquals("Del", topRow[13].label)
+        assertEquals(KeyEvent.KEYCODE_FORWARD_DEL, topRow[13].action.keyCode)
+        assertEquals("delete", topRow.last().id)
+        assertEquals(KeyActionType.DELETE, topRow.last().action.type)
+        assertEquals(null, topRow.last().secondaryIcon)
+        assertEquals(KeyIcon.QUICK_NAV, keys.first { it.id == "num_toggle" }.secondaryIcon)
     }
 
     @Test
@@ -205,6 +234,55 @@ class LayoutEngineTest {
 
         assertEquals("qwerty4", fourRow.id)
         assertEquals("compact5", compact.id)
+    }
+
+    @Test
+    fun fourRowQuickNavHoldOverlaysNavigationKeys() {
+        val layout = engine.layoutFor(
+            KeyboardState(activeLayoutId = "qwerty4", quickNavHold = true),
+            Configuration.ORIENTATION_PORTRAIT,
+        )
+        val keys = layout.rows.flattenKeys()
+
+        assertEquals(KeyIcon.QUICK_NAV, keys.first { it.id == "num_toggle" }.secondaryIcon)
+        assertEquals(KeyEvent.KEYCODE_PAGE_UP, keys.first { it.id == "key_q" }.action.keyCode)
+        assertEquals("PgDn", keys.first { it.id == "key_e" }.secondaryLabel)
+        assertEquals(KeyEvent.KEYCODE_DPAD_UP, keys.first { it.id == "key_w" }.action.keyCode)
+        assertEquals(KeyIcon.ARROW_LEFT, keys.first { it.id == "key_a" }.secondaryIcon)
+        assertEquals(KeyEvent.KEYCODE_DPAD_LEFT, keys.first { it.id == "key_a" }.action.keyCode)
+        assertEquals(KeyEvent.KEYCODE_DPAD_DOWN, keys.first { it.id == "key_s" }.action.keyCode)
+        assertEquals(KeyEvent.KEYCODE_DPAD_RIGHT, keys.first { it.id == "key_d" }.action.keyCode)
+        assertEquals(KeyEvent.KEYCODE_MOVE_HOME, keys.first { it.id == "left" }.action.keyCode)
+        assertEquals(KeyEvent.KEYCODE_MOVE_END, keys.first { it.id == "right" }.action.keyCode)
+    }
+
+    @Test
+    fun compactQuickNavHoldShowsFunctionRowAndNavigationOverlays() {
+        val layout = engine.layoutFor(
+            KeyboardState(activeLayoutId = "compact5", quickNavHold = true),
+            Configuration.ORIENTATION_PORTRAIT,
+        )
+        val keys = layout.rows.flattenKeys()
+
+        assertEquals("compact5", layout.id)
+        assertEquals("f1", layout.rows.first().keys.first().id)
+        assertEquals("f10", layout.rows.first().keys[9].id)
+        assertEquals(KeyEvent.KEYCODE_F10, layout.rows.first().keys[9].action.keyCode)
+        assertEquals(KeyEvent.KEYCODE_DPAD_UP, keys.first { it.id == "key_w" }.action.keyCode)
+        assertEquals(KeyEvent.KEYCODE_PAGE_UP, keys.first { it.id == "key_q" }.action.keyCode)
+        assertEquals(KeyEvent.KEYCODE_MOVE_HOME, keys.first { it.id == "left" }.action.keyCode)
+        assertEquals(KeyIcon.QUICK_NAV, keys.first { it.id == "num_toggle" }.secondaryIcon)
+    }
+
+    @Test
+    fun fourRowTopRowExposesLongPressNumbers() {
+        val layout = engine.layoutFor(KeyboardState(activeLayoutId = "qwerty4"), Configuration.ORIENTATION_PORTRAIT)
+        val topRow = layout.rows.first().keys
+
+        assertEquals("1", topRow.first { it.id == "key_q" }.secondaryLabel)
+        assertEquals("1", topRow.first { it.id == "key_q" }.longPressAction?.text)
+        assertEquals("0", topRow.first { it.id == "key_p" }.secondaryLabel)
+        assertEquals("0", topRow.first { it.id == "key_p" }.longPressAction?.text)
     }
 
     @Test

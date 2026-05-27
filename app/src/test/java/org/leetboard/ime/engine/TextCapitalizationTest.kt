@@ -53,4 +53,15 @@ class TextCapitalizationTest {
 
         assertEquals("Test", output)
     }
+
+    @Test
+    fun heldShiftUsesSymbolAlternateForNumberKeys() {
+        assertEquals("!", shiftAlternateText("1", ModifierState(), HeldModifiers(shift = true)))
+        assertEquals("?", shiftAlternateText("/", ModifierState(shift = true), HeldModifiers()))
+    }
+
+    @Test
+    fun shiftLockDoesNotUseSymbolAlternatesForNumberKeys() {
+        assertEquals(null, shiftAlternateText("1", ModifierState(shift = true, shiftLocked = true), HeldModifiers()))
+    }
 }

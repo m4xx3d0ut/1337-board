@@ -30,7 +30,8 @@ fun KeySpec.resolvedDisplay(shiftActive: Boolean, labelStyle: KeyLabelStyle): Re
 fun KeySpec.isModifierKey(): Boolean {
     return action.type == KeyActionType.SHIFT ||
         action.type == KeyActionType.CTRL ||
-        action.type == KeyActionType.ALT
+        action.type == KeyActionType.ALT ||
+        action.type == KeyActionType.FN_MODIFIER
 }
 
 fun KeyIcon.fallbackLabel(): String {
@@ -45,6 +46,7 @@ fun KeyIcon.fallbackLabel(): String {
         KeyIcon.SWIPE -> "Swipe"
         KeyIcon.SWIPE_OFF -> "Swipe off"
         KeyIcon.NUMPAD -> "Num"
+        KeyIcon.QUICK_NAV -> "Quick nav"
         KeyIcon.EMOJI -> "Emoji"
         KeyIcon.ENTER -> "Enter"
         KeyIcon.TAB -> "Tab"

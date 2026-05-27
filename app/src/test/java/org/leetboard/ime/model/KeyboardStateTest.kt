@@ -36,9 +36,10 @@ class KeyboardStateTest {
             symbols = true,
             fn = true,
             fnHold = true,
+            quickNavHold = true,
             emoji = true,
             numpad = true,
-            modifiers = ModifierState(shift = true, ctrl = true, alt = true),
+            modifiers = ModifierState(shift = true, ctrl = true, alt = true, fn = true),
         )
 
         val active = state.activeKeyIds()
@@ -47,9 +48,24 @@ class KeyboardStateTest {
         assertTrue("shift_right" in active)
         assertTrue("ctrl" in active)
         assertTrue("alt" in active)
+        assertTrue("quick_fn" in active)
         assertTrue("symbols" in active)
         assertTrue("fn" in active)
         assertTrue("emoji" in active)
         assertTrue("num_toggle" in active)
+    }
+
+    @Test
+    fun clearTransientModifiersClearsQuickFnModifier() {
+        val state = KeyboardState(
+            modifiers = ModifierState(shift = true, ctrl = true, alt = true, fn = true),
+        )
+
+        val cleared = state.clearTransientModifiers()
+
+        assertFalse(cleared.modifiers.shift)
+        assertFalse(cleared.modifiers.ctrl)
+        assertFalse(cleared.modifiers.alt)
+        assertFalse(cleared.modifiers.fn)
     }
 }

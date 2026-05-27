@@ -1,5 +1,6 @@
 package org.leetboard.ime.prefs
 
+import android.content.res.Configuration
 import org.leetboard.ime.engine.GlideImportedWordsPriority
 import org.leetboard.ime.engine.GlidePathTolerance
 import org.leetboard.ime.engine.GlideRawFallbackMode
@@ -18,10 +19,13 @@ import org.leetboard.ime.model.KeyboardGeometry
 import org.leetboard.ime.model.KeyboardTheme
 import org.leetboard.ime.model.ThemePreset
 
-const val DEFAULT_FN_LONG_PRESS_DELAY_MS = 520
+const val DEFAULT_KEY_LONG_PRESS_DELAY_MS = 520
+const val DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS = 520
 
 data class KeyboardPreferences(
     val layoutId: String = "qwerty5",
+    val portraitLayoutId: String = "qwerty5",
+    val landscapeLayoutId: String = "qwerty5",
     val themePreset: ThemePreset = ThemePreset.LEET_GREEN,
     val portraitGeometry: KeyboardGeometry = KeyboardGeometry(),
     val landscapeGeometry: KeyboardGeometry = KeyboardTheme.leetGreen.landscape,
@@ -34,7 +38,8 @@ data class KeyboardPreferences(
     val keyPreviewEnabled: Boolean = true,
     val stickyModifiersEnabled: Boolean = true,
     val shiftCapsLockEnabled: Boolean = true,
-    val fnLongPressDelayMs: Int = DEFAULT_FN_LONG_PRESS_DELAY_MS,
+    val keyLongPressDelayMs: Int = DEFAULT_KEY_LONG_PRESS_DELAY_MS,
+    val specialLongPressDelayMs: Int = DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS,
     val edgeKeyWidthScale: Float = 0.75f,
     val gestureTypingEnabled: Boolean = false,
     val typedSuggestionsEnabled: Boolean = true,
@@ -88,6 +93,14 @@ data class KeyboardPreferences(
 
     companion object {
         fun defaults() = KeyboardPreferences()
+    }
+}
+
+fun KeyboardPreferences.layoutIdForOrientation(orientation: Int): String {
+    return if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        landscapeLayoutId
+    } else {
+        portraitLayoutId
     }
 }
 

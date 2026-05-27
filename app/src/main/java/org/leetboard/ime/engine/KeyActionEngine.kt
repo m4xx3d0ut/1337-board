@@ -51,6 +51,7 @@ class KeyActionEngine(
             KeyActionType.SHIFT -> state.toggleShift()
             KeyActionType.CTRL -> state.copy(modifiers = state.modifiers.copy(ctrl = !state.modifiers.ctrl))
             KeyActionType.ALT -> state.copy(modifiers = state.modifiers.copy(alt = !state.modifiers.alt))
+            KeyActionType.FN_MODIFIER -> state.copy(modifiers = state.modifiers.copy(fn = !state.modifiers.fn))
             KeyActionType.TAB -> sendKey(KeyEvent.KEYCODE_TAB, state, heldModifiers)
             KeyActionType.ESCAPE -> sendKey(KeyEvent.KEYCODE_ESCAPE, state, heldModifiers)
             KeyActionType.ARROW_LEFT -> sendArrowKey(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MOVE_HOME, state, heldModifiers)
@@ -93,6 +94,11 @@ class KeyActionEngine(
             val keyCode = metaTextKeyCode(text.first())
             if (keyCode != null) return sendKey(keyCode, state, heldModifiers)
         }
+        val shiftedText = shiftAlternateText(text, modifiers, heldModifiers)
+        if (shiftedText != null) {
+            service.currentInputConnection?.commitText(shiftedText, 1)
+            return state.clearTransientModifiers()
+        }
 
         val output = text.applyKeyboardCapitalization(
             modifiers = state.modifiers,
@@ -102,7 +108,7 @@ class KeyActionEngine(
         )
         service.currentInputConnection?.commitText(output, 1)
         return if (state.modifiers.shiftLocked) {
-            state.copy(modifiers = state.modifiers.copy(ctrl = false, alt = false))
+            state.copy(modifiers = state.modifiers.copy(ctrl = false, alt = false, fn = false))
         } else {
             state.clearTransientModifiers()
         }
@@ -159,7 +165,7 @@ class KeyActionEngine(
         heldModifiers: HeldModifiers,
     ): KeyboardState {
         val modifiers = state.modifiers.effectiveWith(heldModifiers)
-        return if (modifiers.shift || heldModifiers.fn) {
+        return if (modifiers.shift || modifiers.fn) {
             sendKey(navigationKeyCode, state, heldModifiers.copy(shift = false), suppressShift = true)
         } else {
             sendKey(arrowKeyCode, state, heldModifiers)
@@ -171,6 +177,7 @@ class KeyActionEngine(
             shift = shift || heldModifiers.shift,
             ctrl = ctrl || heldModifiers.ctrl,
             alt = alt || heldModifiers.alt,
+            fn = fn || heldModifiers.fn,
         )
     }
 
@@ -199,3 +206,39 @@ internal fun metaTextKeyCode(char: Char): Int? {
         else -> null
     }
 }
+
+internal fun shiftAlternateText(
+    text: String,
+    modifiers: ModifierState,
+    heldModifiers: HeldModifiers,
+): String? {
+    if (text.length != 1) return null
+    if (modifiers.shiftLocked) return null
+    val shiftActive = modifiers.shift || heldModifiers.shift
+    if (!shiftActive) return null
+    return shiftAlternates[text]
+}
+
+private val shiftAlternates = mapOf(
+    "1" to "!",
+    "2" to "@",
+    "3" to "#",
+    "4" to "$",
+    "5" to "%",
+    "6" to "^",
+    "7" to "&",
+    "8" to "*",
+    "9" to "(",
+    "0" to ")",
+    "-" to "_",
+    "=" to "+",
+    "`" to "~",
+    "[" to "{",
+    "]" to "}",
+    "\\" to "|",
+    ";" to ":",
+    "'" to "\"",
+    "," to "<",
+    "." to ">",
+    "/" to "?",
+)
