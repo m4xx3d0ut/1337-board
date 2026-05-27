@@ -286,6 +286,36 @@ class LayoutEngineTest {
     }
 
     @Test
+    fun fourRowHomeRowExposesProgrammerAlternates() {
+        val layout = engine.layoutFor(KeyboardState(activeLayoutId = "qwerty4"), Configuration.ORIENTATION_PORTRAIT)
+        val homeRow = layout.rows[1].keys
+
+        assertEquals("~", homeRow.first { it.id == "key_a" }.secondaryLabel)
+        assertEquals("`", homeRow.first { it.id == "key_s" }.longPressAction?.text)
+        assertEquals("|", homeRow.first { it.id == "key_d" }.swipeUpAction?.text)
+        assertEquals("\\", homeRow.first { it.id == "key_f" }.secondaryLabel)
+        assertEquals("{", homeRow.first { it.id == "key_g" }.secondaryLabel)
+        assertEquals("}", homeRow.first { it.id == "key_h" }.secondaryLabel)
+        assertEquals("$", homeRow.first { it.id == "key_j" }.secondaryLabel)
+        assertEquals("[", homeRow.first { it.id == "key_k" }.secondaryLabel)
+        assertEquals("]", homeRow.first { it.id == "key_l" }.secondaryLabel)
+    }
+
+    @Test
+    fun fourRowBottomRowPrioritizesCommonPunctuationAlternates() {
+        val layout = engine.layoutFor(KeyboardState(activeLayoutId = "qwerty4"), Configuration.ORIENTATION_PORTRAIT)
+        val bottomRow = layout.rows[2].keys
+
+        assertEquals("'", bottomRow.first { it.id == "key_z" }.secondaryLabel)
+        assertEquals(";", bottomRow.first { it.id == "key_x" }.longPressAction?.text)
+        assertEquals(":", bottomRow.first { it.id == "key_c" }.swipeUpAction?.text)
+        assertEquals("!", bottomRow.first { it.id == "key_v" }.secondaryLabel)
+        assertEquals("?", bottomRow.first { it.id == "key_b" }.secondaryLabel)
+        assertEquals(",", bottomRow.first { it.id == "key_n" }.secondaryLabel)
+        assertEquals(".", bottomRow.first { it.id == "key_m" }.secondaryLabel)
+    }
+
+    @Test
     fun deleteAndArrowKeysAreRepeatable() {
         val layout = engine.layoutFor(KeyboardState(), Configuration.ORIENTATION_PORTRAIT)
         val repeatableActions = layout.rows

@@ -4,6 +4,10 @@ All notable changes to 1337 Board are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Adjusted the four-row phone layout so lower-row alternates prioritize common punctuation and home-row alternates carry programmer symbols.
+
 ## [0.1.3] - 2026-05-27
 
 ### Added

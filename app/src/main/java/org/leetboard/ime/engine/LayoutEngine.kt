@@ -248,7 +248,7 @@ class LayoutEngine {
                 ),
                 KeyRow(
                     listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
-                        .map { label -> quickNavText(label, quickNavHold) },
+                        .map { label -> quickNavText(label, quickNavHold, swipe = qwertyFourHomeAlternates[label]) },
                     startInsetWeight = 0.5f,
                     endInsetWeight = 0.5f,
                     layoutWeight = PHONE_GRID_WEIGHT,
@@ -256,13 +256,13 @@ class LayoutEngine {
                 KeyRow(
                     listOf(
                         action("shift", "Shift", KeyActionType.SHIFT, 1.4f, preserveSpaceWhenHidden = true),
-                        quickNavText("z", quickNavHold, swipe = "~"),
-                        quickNavText("x", quickNavHold, swipe = "`"),
-                        quickNavText("c", quickNavHold, swipe = "|"),
-                        quickNavText("v", quickNavHold, swipe = "\\"),
-                        quickNavText("b", quickNavHold, swipe = "{"),
-                        quickNavText("n", quickNavHold, swipe = "}"),
-                        quickNavText("m", quickNavHold, swipe = "$"),
+                        quickNavText("z", quickNavHold, swipe = qwertyFourBottomAlternates["z"]),
+                        quickNavText("x", quickNavHold, swipe = qwertyFourBottomAlternates["x"]),
+                        quickNavText("c", quickNavHold, swipe = qwertyFourBottomAlternates["c"]),
+                        quickNavText("v", quickNavHold, swipe = qwertyFourBottomAlternates["v"]),
+                        quickNavText("b", quickNavHold, swipe = qwertyFourBottomAlternates["b"]),
+                        quickNavText("n", quickNavHold, swipe = qwertyFourBottomAlternates["n"]),
+                        quickNavText("m", quickNavHold, swipe = qwertyFourBottomAlternates["m"]),
                         action("delete", "Backspace", KeyActionType.DELETE, 1.4f, repeatable = true),
                     ),
                     layoutWeight = PHONE_GRID_WEIGHT,
@@ -789,6 +789,28 @@ class LayoutEngine {
             "i" to "8",
             "o" to "9",
             "p" to "0",
+        )
+
+        private val qwertyFourHomeAlternates = mapOf(
+            "a" to "~",
+            "s" to "`",
+            "d" to "|",
+            "f" to "\\",
+            "g" to "{",
+            "h" to "}",
+            "j" to "$",
+            "k" to "[",
+            "l" to "]",
+        )
+
+        private val qwertyFourBottomAlternates = mapOf(
+            "z" to "'",
+            "x" to ";",
+            "c" to ":",
+            "v" to "!",
+            "b" to "?",
+            "n" to ",",
+            "m" to ".",
         )
 
         private val defaultSwipeAlternates = mapOf(
