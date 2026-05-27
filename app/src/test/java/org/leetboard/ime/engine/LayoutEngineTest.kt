@@ -83,11 +83,12 @@ class LayoutEngineTest {
     }
 
     @Test
-    fun symbolKeyLongPressOpensSettings() {
+    fun symbolKeyLongPressOpensEmoji() {
         val layout = engine.layoutFor(KeyboardState(), Configuration.ORIENTATION_PORTRAIT)
         val symbolKey = layout.rows.flatMap { it.keys }.first { it.id == "symbols" }
 
-        assertEquals(KeyActionType.SETTINGS, symbolKey.longPressAction?.type)
+        assertEquals(KeyActionType.SWITCH_EMOJI, symbolKey.longPressAction?.type)
+        assertEquals(KeyIcon.EMOJI, symbolKey.secondaryIcon)
     }
 
     @Test
@@ -128,6 +129,28 @@ class LayoutEngineTest {
     }
 
     @Test
+    fun fnHoldShowsFunctionKeysOnFiveRowNumberRow() {
+        val layout = engine.layoutFor(KeyboardState(fnHold = true), Configuration.ORIENTATION_PORTRAIT)
+        val topRow = layout.rows.first().keys
+
+        assertEquals("qwerty5", layout.id)
+        assertEquals("f1", topRow.first().id)
+        assertEquals("f12", topRow[11].id)
+        assertEquals("delete", topRow.last().id)
+        assertEquals(KeyEvent.KEYCODE_F12, topRow[11].action.keyCode)
+    }
+
+    @Test
+    fun emojiStateSelectsBuiltInEmojiLayer() {
+        val layout = engine.layoutFor(KeyboardState(emoji = true), Configuration.ORIENTATION_PORTRAIT)
+        val keys = layout.rows.flattenKeys()
+
+        assertEquals("emoji", layout.id)
+        assertTrue(keys.any { it.action.text == "😀" })
+        assertEquals(KeyActionType.SWITCH_EMOJI, keys.first { it.id == "emoji" }.action.type)
+    }
+
+    @Test
     fun fnLayerUpArrowAlignsOverDownArrow() {
         val layout = engine.layoutFor(KeyboardState(fn = true), Configuration.ORIENTATION_PORTRAIT)
         val upCenter = layout.rows[3].centerOf("up")
@@ -157,6 +180,7 @@ class LayoutEngineTest {
         assertEquals(null, keys.first { it.id == "delete" }.longPressAction)
         assertEquals(null, keys.first { it.id == "delete" }.swipeUpAction)
         assertEquals("!", keys.first { it.id == "key_1" }.secondaryLabel)
+        assertEquals("F1", keys.first { it.id == "fn" }.secondaryLabel)
     }
 
     @Test

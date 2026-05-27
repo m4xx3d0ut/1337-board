@@ -84,11 +84,14 @@ import org.leetboard.ime.model.opaque
 import org.leetboard.ime.model.resolvedDisplay
 import org.leetboard.ime.prefs.CustomThemeColorField
 import org.leetboard.ime.prefs.CustomThemeOpacityField
+import org.leetboard.ime.prefs.DEFAULT_FN_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
 import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
+import org.leetboard.ime.prefs.MAX_FN_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
+import org.leetboard.ime.prefs.MIN_FN_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.defaultLayoutOptions
@@ -481,6 +484,9 @@ private fun InteractionSection(
                 scope.launch { repository.setShiftCapsLockEnabled(checked) }
             },
         )
+        FnLongPressDelaySlider(preferences.fnLongPressDelayMs) { delayMs ->
+            scope.launch { repository.setFnLongPressDelayMs(delayMs) }
+        }
     }
 }
 
@@ -669,6 +675,20 @@ private fun FeatureSection(
                 } else {
                     micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }
+            },
+        )
+        SettingSwitch(
+            label = "Show typed suggestions",
+            checked = preferences.typedSuggestionsEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setTypedSuggestionsEnabled(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Autocorrect typed words",
+            checked = preferences.typedAutocorrectEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setTypedAutocorrectEnabled(checked) }
             },
         )
     }
@@ -1316,6 +1336,31 @@ private fun EdgeKeyWidthSlider(
 }
 
 @Composable
+private fun FnLongPressDelaySlider(
+    value: Int,
+    onChange: (Int) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("Fn long press timing: ${value.coerceIn(MIN_FN_LONG_PRESS_DELAY_MS, MAX_FN_LONG_PRESS_DELAY_MS)}ms")
+        Slider(
+            value = value.toFloat().coerceIn(
+                MIN_FN_LONG_PRESS_DELAY_MS.toFloat(),
+                MAX_FN_LONG_PRESS_DELAY_MS.toFloat(),
+            ),
+            onValueChange = { next -> onChange(next.toInt()) },
+            valueRange = MIN_FN_LONG_PRESS_DELAY_MS.toFloat()..MAX_FN_LONG_PRESS_DELAY_MS.toFloat(),
+            steps = ((MAX_FN_LONG_PRESS_DELAY_MS - MIN_FN_LONG_PRESS_DELAY_MS) / 50) - 1,
+        )
+        OutlinedButton(
+            onClick = { onChange(DEFAULT_FN_LONG_PRESS_DELAY_MS) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Reset Fn timing")
+        }
+    }
+}
+
+@Composable
 private fun GlideDwellThresholdSlider(
     value: Float,
     onChange: (Float) -> Unit,
@@ -1467,6 +1512,7 @@ private val actionCycle = listOf(
     KeyAction(KeyActionType.ARROW_RIGHT),
     KeyAction(KeyActionType.NUMPAD_TOGGLE),
     KeyAction(KeyActionType.SWITCH_SYMBOLS),
+    KeyAction(KeyActionType.SWITCH_EMOJI),
     KeyAction(KeyActionType.SETTINGS),
     KeyAction(KeyActionType.MICROPHONE),
     KeyAction.keyEvent(KeyEvent.KEYCODE_MOVE_HOME, "Home"),
@@ -1499,6 +1545,7 @@ private val keyDisplayControls = listOf(
     KeyDisplayControl("shift", "Left Shift", listOf(KeyIcon.SHIFT)),
     KeyDisplayControl("shift_right", "Right Shift", listOf(KeyIcon.SHIFT)),
     KeyDisplayControl("symbols", "Symbols", listOf(KeyIcon.SYMBOLS)),
+    KeyDisplayControl("emoji", "Emoji", listOf(KeyIcon.EMOJI)),
     KeyDisplayControl("fn", "Fn", listOf(KeyIcon.FN)),
     KeyDisplayControl("space", "Space", listOf(KeyIcon.SPACE_BAR)),
     KeyDisplayControl("settings", "Settings", listOf(KeyIcon.GEAR)),

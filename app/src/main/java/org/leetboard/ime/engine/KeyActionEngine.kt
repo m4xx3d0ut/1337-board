@@ -53,13 +53,14 @@ class KeyActionEngine(
             KeyActionType.ALT -> state.copy(modifiers = state.modifiers.copy(alt = !state.modifiers.alt))
             KeyActionType.TAB -> sendKey(KeyEvent.KEYCODE_TAB, state, heldModifiers)
             KeyActionType.ESCAPE -> sendKey(KeyEvent.KEYCODE_ESCAPE, state, heldModifiers)
-            KeyActionType.ARROW_LEFT -> sendKey(KeyEvent.KEYCODE_DPAD_LEFT, state, heldModifiers)
-            KeyActionType.ARROW_RIGHT -> sendKey(KeyEvent.KEYCODE_DPAD_RIGHT, state, heldModifiers)
-            KeyActionType.ARROW_UP -> sendKey(KeyEvent.KEYCODE_DPAD_UP, state, heldModifiers)
-            KeyActionType.ARROW_DOWN -> sendKey(KeyEvent.KEYCODE_DPAD_DOWN, state, heldModifiers)
-            KeyActionType.SWITCH_SYMBOLS -> state.copy(symbols = !state.symbols, fn = false, numpad = false)
-            KeyActionType.SWITCH_FN -> state.copy(fn = !state.fn, symbols = false, numpad = false)
-            KeyActionType.NUMPAD_TOGGLE -> state.copy(numpad = !state.numpad, symbols = false, fn = false)
+            KeyActionType.ARROW_LEFT -> sendArrowKey(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MOVE_HOME, state, heldModifiers)
+            KeyActionType.ARROW_RIGHT -> sendArrowKey(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MOVE_END, state, heldModifiers)
+            KeyActionType.ARROW_UP -> sendArrowKey(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_PAGE_UP, state, heldModifiers)
+            KeyActionType.ARROW_DOWN -> sendArrowKey(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_PAGE_DOWN, state, heldModifiers)
+            KeyActionType.SWITCH_SYMBOLS -> state.copy(symbols = !state.symbols, fn = false, fnHold = false, emoji = false, numpad = false)
+            KeyActionType.SWITCH_FN -> state.copy(fn = !state.fn, fnHold = false, symbols = false, emoji = false, numpad = false)
+            KeyActionType.SWITCH_EMOJI -> state.copy(emoji = !state.emoji, symbols = false, fn = false, fnHold = false, numpad = false)
+            KeyActionType.NUMPAD_TOGGLE -> state.copy(numpad = !state.numpad, symbols = false, fn = false, fnHold = false, emoji = false)
             KeyActionType.KEY_EVENT -> {
                 action.keyCode?.let { keyCode -> sendKey(keyCode, state, heldModifiers) } ?: state
             }
@@ -149,6 +150,20 @@ class KeyActionEngine(
             KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, keyCode, 0, metaState),
         )
         return state.clearTransientModifiers()
+    }
+
+    private fun sendArrowKey(
+        arrowKeyCode: Int,
+        navigationKeyCode: Int,
+        state: KeyboardState,
+        heldModifiers: HeldModifiers,
+    ): KeyboardState {
+        val modifiers = state.modifiers.effectiveWith(heldModifiers)
+        return if (modifiers.shift || heldModifiers.fn) {
+            sendKey(navigationKeyCode, state, heldModifiers.copy(shift = false), suppressShift = true)
+        } else {
+            sendKey(arrowKeyCode, state, heldModifiers)
+        }
     }
 
     private fun ModifierState.effectiveWith(heldModifiers: HeldModifiers): ModifierState {

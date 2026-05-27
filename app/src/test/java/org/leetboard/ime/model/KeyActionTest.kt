@@ -19,6 +19,7 @@ class KeyActionTest {
             KeyAction(KeyActionType.NO_OP),
             KeyAction(KeyActionType.TOGGLE_SPEECH_INPUT),
             KeyAction(KeyActionType.TOGGLE_GESTURE_TYPING),
+            KeyAction(KeyActionType.SWITCH_EMOJI),
         ).forEach { action ->
             assertEquals(action, keyActionFromPreferenceValue(action.toPreferenceValue()))
         }

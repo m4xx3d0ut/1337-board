@@ -18,6 +18,8 @@ import org.leetboard.ime.model.KeyboardGeometry
 import org.leetboard.ime.model.KeyboardTheme
 import org.leetboard.ime.model.ThemePreset
 
+const val DEFAULT_FN_LONG_PRESS_DELAY_MS = 520
+
 data class KeyboardPreferences(
     val layoutId: String = "qwerty5",
     val themePreset: ThemePreset = ThemePreset.LEET_GREEN,
@@ -32,8 +34,11 @@ data class KeyboardPreferences(
     val keyPreviewEnabled: Boolean = true,
     val stickyModifiersEnabled: Boolean = true,
     val shiftCapsLockEnabled: Boolean = true,
+    val fnLongPressDelayMs: Int = DEFAULT_FN_LONG_PRESS_DELAY_MS,
     val edgeKeyWidthScale: Float = 0.75f,
     val gestureTypingEnabled: Boolean = false,
+    val typedSuggestionsEnabled: Boolean = true,
+    val typedAutocorrectEnabled: Boolean = false,
     val autoCapAfterPeriodEnabled: Boolean = true,
     val swipeUpActionsEnabled: Boolean = true,
     val speechInputEnabled: Boolean = false,

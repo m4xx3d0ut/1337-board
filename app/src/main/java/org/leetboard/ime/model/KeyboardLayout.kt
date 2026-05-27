@@ -27,6 +27,7 @@ enum class KeyIcon {
     SWIPE,
     SWIPE_OFF,
     NUMPAD,
+    EMOJI,
     ENTER,
     TAB,
     ESC,
@@ -90,6 +91,8 @@ data class KeyboardState(
     val activeLayoutId: String = "qwerty5",
     val symbols: Boolean = false,
     val fn: Boolean = false,
+    val fnHold: Boolean = false,
+    val emoji: Boolean = false,
     val numpad: Boolean = false,
     val modifiers: ModifierState = ModifierState(),
     val keyPreviewEnabled: Boolean = true,
@@ -102,8 +105,9 @@ data class HeldModifiers(
     val shift: Boolean = false,
     val ctrl: Boolean = false,
     val alt: Boolean = false,
+    val fn: Boolean = false,
 ) {
-    fun isActive(): Boolean = shift || ctrl || alt
+    fun isActive(): Boolean = shift || ctrl || alt || fn
 }
 
 fun KeyboardState.activeKeyIds(): Set<String> = buildSet {
@@ -112,7 +116,8 @@ fun KeyboardState.activeKeyIds(): Set<String> = buildSet {
     if (modifiers.ctrl) add("ctrl")
     if (modifiers.alt) add("alt")
     if (symbols) add("symbols")
-    if (fn) add("fn")
+    if (fn || fnHold) add("fn")
+    if (emoji) add("emoji")
     if (numpad) add("num_toggle")
 }
 

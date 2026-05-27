@@ -34,6 +34,7 @@ import org.leetboard.ime.engine.SpeechInputEngine
 import org.leetboard.ime.engine.SpeechStartResult
 import org.leetboard.ime.engine.TextContextPolicy
 import org.leetboard.ime.engine.ThemeEngine
+import org.leetboard.ime.engine.TypedPredictionEngine
 import org.leetboard.ime.engine.applyKeyboardCapitalization
 import org.leetboard.ime.engine.findPendingGlideReplacementSpan
 import org.leetboard.ime.engine.normalizeWord
@@ -58,6 +59,7 @@ class ModernKeyboardImeService : InputMethodService() {
     private val glideUserLanguageModel = GlideUserLanguageModel()
 
     private lateinit var gestureTypingEngine: GestureTypingEngine
+    private lateinit var typedPredictionEngine: TypedPredictionEngine
     private lateinit var keyActionEngine: KeyActionEngine
     private lateinit var speechInputEngine: SpeechInputEngine
     private lateinit var preferenceRepository: PreferenceRepository
@@ -74,6 +76,7 @@ class ModernKeyboardImeService : InputMethodService() {
     private var pendingGlideCorrection: PendingGlideCorrection? = null
     private var glideLearningResetRevision: Int? = null
     private var glideSuggestions: List<String> = emptyList()
+    private var suggestionMode = SuggestionMode.NONE
 
     override fun onCreate() {
         super.onCreate()
@@ -86,6 +89,7 @@ class ModernKeyboardImeService : InputMethodService() {
             predictionEngine = FrequencyContextGlidePredictionEngine(glideUserLanguageModel),
             wordsProvider = glideDictionaryLoader::loadWords,
         )
+        typedPredictionEngine = TypedPredictionEngine(glideDictionaryLoader::loadWords, glideUserLanguageModel)
         keyActionEngine = KeyActionEngine(this)
         speechInputEngine = SpeechInputEngine(this, textContextPolicy)
         preferenceRepository = PreferenceRepository(this)
@@ -138,8 +142,12 @@ class ModernKeyboardImeService : InputMethodService() {
                 handleGlide(path, touchTrace, heldModifiers)
                 renderKeyboard()
             }
+            view.keyboardView.onFnHoldChanged = { active ->
+                keyboardState = keyboardState.copy(fnHold = active, fn = if (active) false else keyboardState.fn)
+                renderKeyboard()
+            }
             view.onSuggestion = { word ->
-                handleGlideSuggestion(word)
+                handleSuggestion(word)
                 renderKeyboard()
             }
             renderKeyboard()
@@ -173,6 +181,8 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun renderKeyboard() {
         val orientation = resources.configuration.orientation
+        val gestureTypingAllowed = preferences.gestureTypingEnabled && gestureTypingEngine.isEnabledFor(currentInputEditorInfo)
+        val suggestionBarEnabled = gestureTypingAllowed || typedSuggestionsAllowed()
         val layoutState = keyboardState.copy(
             activeLayoutId = preferences.layoutId,
             keyPreviewEnabled = preferences.keyPreviewEnabled,
@@ -200,8 +210,10 @@ class ModernKeyboardImeService : InputMethodService() {
             preferences.keyPreviewEnabled,
             preferences.stickyModifiersEnabled,
             preferences.keyLabelStyle,
-            preferences.gestureTypingEnabled && gestureTypingEngine.isEnabledFor(currentInputEditorInfo),
+            gestureTypingAllowed,
             preferences.swipeUpActionsEnabled,
+            preferences.fnLongPressDelayMs,
+            suggestionBarEnabled,
             glideSuggestions,
         )
         hideSystemImeSwitcher()
@@ -280,6 +292,17 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun handleKeyAction(action: KeyAction, heldModifiers: HeldModifiers) {
         if (action.type == KeyActionType.DELETE && tryUndoLastGlide(heldModifiers)) return
+        trimPendingGlideSpaceBeforePunctuation(action, heldModifiers)
+        val boundaryToken = typedBoundaryToken(action, heldModifiers)
+        val boundaryContext = boundaryToken?.let(::typedPredictionContextBeforeToken)
+        val autocorrected = if (boundaryToken != null && boundaryContext != null) {
+            autocorrectTypedToken(boundaryToken, boundaryContext)
+        } else {
+            false
+        }
+        if (!autocorrected && boundaryToken != null && boundaryContext != null) {
+            recordTypedAcceptedWord(boundaryToken, boundaryContext)
+        }
         updatePendingGlideCorrection(action, heldModifiers)
         if (action.type != KeyActionType.DELETE) {
             pendingGlideUndo = null
@@ -307,6 +330,19 @@ class ModernKeyboardImeService : InputMethodService() {
                 )
             }
         }
+        if (shouldRefreshTypedSuggestionsAfter(action)) {
+            refreshTypedSuggestions()
+        } else if (suggestionMode == SuggestionMode.TYPED) {
+            clearGlideSuggestions()
+        }
+    }
+
+    private fun handleSuggestion(word: String) {
+        when (suggestionMode) {
+            SuggestionMode.GLIDE -> handleGlideSuggestion(word)
+            SuggestionMode.TYPED -> handleTypedSuggestion(word)
+            SuggestionMode.NONE -> Unit
+        }
     }
 
     private fun handleGlideSuggestion(word: String) {
@@ -328,6 +364,18 @@ class ModernKeyboardImeService : InputMethodService() {
             word = normalizedWord,
             committedText = committedText,
         )
+        clearGlideSuggestions()
+    }
+
+    private fun handleTypedSuggestion(word: String) {
+        if (!typedSuggestionsAllowed()) return
+        val normalizedWord = normalizeWord(word) ?: return
+        val token = currentTypedTokenBeforeCursor() ?: return
+        val context = typedPredictionContextBeforeToken(token)
+        val replacement = "${formatTypedReplacement(normalizedWord, token)} "
+        if (!replaceTypedToken(token, replacement)) return
+        typedPredictionEngine.recordAcceptedWord(normalizedWord, context)
+        persistGlideUserLanguageModel()
         clearGlideSuggestions()
     }
 
@@ -386,6 +434,133 @@ class ModernKeyboardImeService : InputMethodService() {
         return inputConnection.deleteSurroundingText(pendingCommittedText.length, 0)
     }
 
+    private fun trimPendingGlideSpaceBeforePunctuation(action: KeyAction, heldModifiers: HeldModifiers): Boolean {
+        if (punctuationTextOrNull(action, heldModifiers) == null) return false
+        val undo = pendingGlideUndo ?: return false
+        if (!undo.committedText.endsWith(" ")) return false
+        val trimmedCommit = undo.committedText.dropLast(1)
+        if (!replacePendingGlideCommit(undo.committedText, trimmedCommit)) return false
+        pendingGlideUndo = undo.copy(committedText = trimmedCommit)
+        return true
+    }
+
+    private fun typedBoundaryToken(action: KeyAction, heldModifiers: HeldModifiers): String? {
+        if (!typedLearningAllowed() || !isTypedBoundaryAction(action, heldModifiers)) return null
+        return currentTypedTokenBeforeCursor()?.takeIf { token -> normalizeWord(token) != null }
+    }
+
+    private fun isTypedBoundaryAction(action: KeyAction, heldModifiers: HeldModifiers): Boolean {
+        if (hasTextMeta(heldModifiers)) return false
+        return when (action.type) {
+            KeyActionType.SPACE,
+            KeyActionType.ENTER,
+            KeyActionType.TAB -> true
+            KeyActionType.COMMIT_TEXT -> punctuationTextOrNull(action, heldModifiers) != null
+            else -> false
+        }
+    }
+
+    private fun shouldRefreshTypedSuggestionsAfter(action: KeyAction): Boolean {
+        return when (action.type) {
+            KeyActionType.COMMIT_TEXT,
+            KeyActionType.DELETE,
+            KeyActionType.SPACE,
+            KeyActionType.ENTER,
+            KeyActionType.TAB -> true
+            else -> false
+        }
+    }
+
+    private fun punctuationTextOrNull(action: KeyAction, heldModifiers: HeldModifiers): String? {
+        if (action.type != KeyActionType.COMMIT_TEXT || heldModifiers.ctrl || heldModifiers.alt || keyboardState.modifiers.ctrl || keyboardState.modifiers.alt) {
+            return null
+        }
+        return action.text?.takeIf { text -> text in PUNCTUATION_THAT_TRIMS_GLIDE_SPACE }
+    }
+
+    private fun autocorrectTypedToken(token: String, context: GlidePredictionContext): Boolean {
+        if (!preferences.typedAutocorrectEnabled || !typedPredictionAllowed()) return false
+        val correction = typedPredictionEngine.autocorrect(token, context) ?: return false
+        val replacement = formatTypedReplacement(correction, token)
+        if (!replaceTypedToken(token, replacement)) return false
+        typedPredictionEngine.recordAcceptedWord(correction, context)
+        persistGlideUserLanguageModel()
+        return true
+    }
+
+    private fun recordTypedAcceptedWord(token: String, context: GlidePredictionContext) {
+        if (!typedLearningAllowed()) return
+        val word = normalizeWord(token) ?: return
+        typedPredictionEngine.recordAcceptedWord(word, context)
+        persistGlideUserLanguageModel()
+    }
+
+    private fun refreshTypedSuggestions() {
+        if (pendingGlideUndo != null && suggestionMode == SuggestionMode.GLIDE) return
+        if (!typedSuggestionsAllowed()) {
+            if (suggestionMode == SuggestionMode.TYPED) clearGlideSuggestions()
+            return
+        }
+        val token = currentTypedTokenBeforeCursor()
+        if (token == null) {
+            if (suggestionMode == SuggestionMode.TYPED) clearGlideSuggestions()
+            return
+        }
+        val suggestions = typedPredictionEngine.suggestions(
+            token = token,
+            context = typedPredictionContextBeforeToken(token),
+            limit = GLIDE_SUGGESTION_LIMIT,
+        )
+        if (suggestions.isEmpty()) {
+            if (suggestionMode == SuggestionMode.TYPED) clearGlideSuggestions()
+            return
+        }
+        suggestionMode = SuggestionMode.TYPED
+        glideSuggestions = suggestions
+    }
+
+    private fun replaceTypedToken(token: String, replacementText: String): Boolean {
+        val inputConnection = currentInputConnection ?: return false
+        if (token.isEmpty()) return false
+        inputConnection.beginBatchEdit()
+        return try {
+            inputConnection.finishComposingText()
+            inputConnection.deleteSurroundingText(token.length, 0) &&
+                inputConnection.commitText(replacementText, 1)
+        } finally {
+            inputConnection.endBatchEdit()
+        }
+    }
+
+    private fun currentTypedTokenBeforeCursor(): String? {
+        val text = currentInputConnection?.getTextBeforeCursor(TYPED_CONTEXT_CHARS, 0)?.toString() ?: return null
+        var index = text.length - 1
+        if (index < 0 || !text[index].isAsciiLetter()) return null
+        val end = index + 1
+        while (index >= 0 && text[index].isAsciiLetter()) index--
+        return text.substring(index + 1, end).takeIf { token -> token.length >= MIN_TYPED_SUGGESTION_LENGTH }
+    }
+
+    private fun typedPredictionContextBeforeToken(token: String): GlidePredictionContext {
+        val textBeforeCursor = currentInputConnection
+            ?.getTextBeforeCursor(TYPED_CONTEXT_CHARS + token.length, 0)
+            ?.toString()
+        val contextText = if (textBeforeCursor?.endsWith(token) == true) {
+            textBeforeCursor.dropLast(token.length)
+        } else {
+            textBeforeCursor
+        }
+        return GlidePredictionContext(textBeforeCursor = contextText)
+    }
+
+    private fun formatTypedReplacement(word: String, token: String): String {
+        return when {
+            token.all { char -> char.isUpperCase() } -> word.uppercase()
+            token.firstOrNull()?.isUpperCase() == true -> word.replaceFirstChar { it.uppercase() }
+            else -> word
+        }
+    }
+
     private fun sendBackspaces(inputConnection: InputConnection, count: Int) {
         repeat(count) {
             sendBackspaceKey(inputConnection)
@@ -404,6 +579,18 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun isTermuxInput(): Boolean {
         return currentInputEditorInfo?.packageName?.startsWith(TERMUX_PACKAGE_PREFIX) == true
+    }
+
+    private fun typedSuggestionsAllowed(): Boolean {
+        return preferences.typedSuggestionsEnabled && typedPredictionAllowed()
+    }
+
+    private fun typedLearningAllowed(): Boolean {
+        return (preferences.typedSuggestionsEnabled || preferences.typedAutocorrectEnabled) && typedPredictionAllowed()
+    }
+
+    private fun typedPredictionAllowed(): Boolean {
+        return !isTermuxInput() && textContextPolicy.allowsLearning(currentInputEditorInfo)
     }
 
     private fun glidePredictionContext(): GlidePredictionContext {
@@ -563,11 +750,13 @@ class ModernKeyboardImeService : InputMethodService() {
         glideSuggestionsJob?.cancel()
         glideSuggestionsJob = null
         glideSuggestions = emptyList()
+        suggestionMode = SuggestionMode.NONE
         val suggestions = words.distinct().take(GLIDE_SUGGESTION_LIMIT)
         if (suggestions.isEmpty()) return
         glideSuggestionsJob = serviceScope.launch {
             delay(GLIDE_SUGGESTION_DELAY_MS)
             if (pendingGlideUndo != null) {
+                suggestionMode = SuggestionMode.GLIDE
                 glideSuggestions = suggestions
                 renderKeyboard()
             }
@@ -578,6 +767,7 @@ class ModernKeyboardImeService : InputMethodService() {
         glideSuggestionsJob?.cancel()
         glideSuggestionsJob = null
         glideSuggestions = emptyList()
+        suggestionMode = SuggestionMode.NONE
     }
 
     private fun updatePendingGlideCorrection(action: KeyAction, heldModifiers: HeldModifiers) {
@@ -795,6 +985,12 @@ class ModernKeyboardImeService : InputMethodService() {
         ERROR,
     }
 
+    private enum class SuggestionMode {
+        NONE,
+        GLIDE,
+        TYPED,
+    }
+
     private data class PendingGlideUndo(
         val path: List<String>,
         val word: String,
@@ -812,13 +1008,20 @@ class ModernKeyboardImeService : InputMethodService() {
         const val SPEECH_STATUS_RESET_MS = 1600L
         const val AUTO_CAP_CONTEXT_CHARS = 8
         const val GLIDE_CONTEXT_CHARS = 160
+        const val TYPED_CONTEXT_CHARS = 160
         const val GLIDE_SUGGESTION_LIMIT = 5
         const val GLIDE_SUGGESTION_DELAY_MS = 450L
         const val GLIDE_MANUAL_CORRECTION_RECORD_DELAY_MS = 700L
         const val MIN_GLIDE_MANUAL_CORRECTION_LENGTH = 2
         const val MAX_GLIDE_MANUAL_CORRECTION_LENGTH = 24
         const val MAX_GLIDE_CORRECTION_LENGTH_DELTA = 4
+        const val MIN_TYPED_SUGGESTION_LENGTH = 2
         const val GLIDE_DEBUG_SNAPSHOT_FILE = "glide_debug_snapshot.txt"
         const val TERMUX_PACKAGE_PREFIX = "com.termux"
+        val PUNCTUATION_THAT_TRIMS_GLIDE_SPACE = setOf(".", ",", "!", "?", ";", ":")
     }
+}
+
+private fun Char.isAsciiLetter(): Boolean {
+    return this in 'a'..'z' || this in 'A'..'Z'
 }

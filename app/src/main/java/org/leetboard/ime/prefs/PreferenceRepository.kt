@@ -66,8 +66,14 @@ class PreferenceRepository(context: Context) {
             keyPreviewEnabled = values[Keys.keyPreviewEnabled] ?: true,
             stickyModifiersEnabled = values[Keys.stickyModifiersEnabled] ?: true,
             shiftCapsLockEnabled = values[Keys.shiftCapsLockEnabled] ?: true,
+            fnLongPressDelayMs = values[Keys.fnLongPressDelayMs]
+                ?: KeyboardPreferences.defaults().fnLongPressDelayMs,
             edgeKeyWidthScale = values[Keys.edgeKeyWidthScale] ?: KeyboardPreferences.defaults().edgeKeyWidthScale,
             gestureTypingEnabled = values[Keys.gestureTypingEnabled] ?: false,
+            typedSuggestionsEnabled = values[Keys.typedSuggestionsEnabled]
+                ?: KeyboardPreferences.defaults().typedSuggestionsEnabled,
+            typedAutocorrectEnabled = values[Keys.typedAutocorrectEnabled]
+                ?: KeyboardPreferences.defaults().typedAutocorrectEnabled,
             autoCapAfterPeriodEnabled = values[Keys.autoCapAfterPeriodEnabled] ?: true,
             swipeUpActionsEnabled = values[Keys.swipeUpActionsEnabled] ?: true,
             speechInputEnabled = values[Keys.speechInputEnabled] ?: false,
@@ -219,6 +225,15 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.shiftCapsLockEnabled] = enabled }
     }
 
+    suspend fun setFnLongPressDelayMs(delayMs: Int) {
+        dataStore.edit { values ->
+            values[Keys.fnLongPressDelayMs] = delayMs.coerceIn(
+                MIN_FN_LONG_PRESS_DELAY_MS,
+                MAX_FN_LONG_PRESS_DELAY_MS,
+            )
+        }
+    }
+
     suspend fun setEdgeKeyWidthScale(value: Float) {
         dataStore.edit { values -> values[Keys.edgeKeyWidthScale] = value.coerceIn(MIN_EDGE_KEY_SCALE, MAX_EDGE_KEY_SCALE) }
     }
@@ -233,6 +248,14 @@ class PreferenceRepository(context: Context) {
 
     suspend fun setGestureTypingEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.gestureTypingEnabled] = enabled }
+    }
+
+    suspend fun setTypedSuggestionsEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.typedSuggestionsEnabled] = enabled }
+    }
+
+    suspend fun setTypedAutocorrectEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.typedAutocorrectEnabled] = enabled }
     }
 
     suspend fun setGlideCorrectionLearningEnabled(enabled: Boolean) {
@@ -529,8 +552,11 @@ class PreferenceRepository(context: Context) {
         val keyPreviewEnabled = booleanPreferencesKey("key_preview_enabled")
         val stickyModifiersEnabled = booleanPreferencesKey("sticky_modifiers_enabled")
         val shiftCapsLockEnabled = booleanPreferencesKey("shift_caps_lock_enabled")
+        val fnLongPressDelayMs = intPreferencesKey("fn_long_press_delay_ms")
         val edgeKeyWidthScale = floatPreferencesKey("edge_key_width_scale")
         val gestureTypingEnabled = booleanPreferencesKey("gesture_typing_enabled")
+        val typedSuggestionsEnabled = booleanPreferencesKey("typed_suggestions_enabled")
+        val typedAutocorrectEnabled = booleanPreferencesKey("typed_autocorrect_enabled")
         val autoCapAfterPeriodEnabled = booleanPreferencesKey("auto_cap_after_period_enabled")
         val swipeUpActionsEnabled = booleanPreferencesKey("swipe_up_actions_enabled")
         val speechInputEnabled = booleanPreferencesKey("speech_input_enabled")
@@ -600,6 +626,8 @@ class PreferenceRepository(context: Context) {
 
 const val MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.2f
 const val MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.85f
+const val MIN_FN_LONG_PRESS_DELAY_MS = 300
+const val MAX_FN_LONG_PRESS_DELAY_MS = 800
 
 fun glideCorrectionsFromPreferenceValue(value: String?): Map<String, GlideCorrectionEntry> {
     if (value.isNullOrBlank()) return emptyMap()

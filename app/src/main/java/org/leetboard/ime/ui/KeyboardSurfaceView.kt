@@ -12,12 +12,16 @@ import android.graphics.RectF
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import org.leetboard.ime.engine.GlideGeometryScorer
 import org.leetboard.ime.engine.GlidePoint
 import org.leetboard.ime.engine.GlideTouchTrace
+import org.leetboard.ime.engine.RolloverTap
+import org.leetboard.ime.engine.TouchRolloverCoordinator
 import org.leetboard.ime.model.HeldModifiers
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
@@ -35,6 +39,7 @@ import org.leetboard.ime.model.resolvedDisplay
 class KeyboardSurfaceView(context: Context) : View(context) {
     var onKey: ((KeyAction, HeldModifiers) -> Unit)? = null
     var onGlide: ((List<String>, GlideTouchTrace?, HeldModifiers) -> Unit)? = null
+    var onFnHoldChanged: ((Boolean) -> Unit)? = null
 
     private var layout: KeyboardLayout? = null
     private var theme: KeyboardTheme = KeyboardTheme.leetGreen
@@ -44,6 +49,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private var keyLabelStyle: KeyLabelStyle = KeyLabelStyle()
     private var glideTypingEnabled: Boolean = false
     private var swipeUpActionsEnabled: Boolean = true
+    private var fnLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt()
     private var backgroundImageUri: String? = null
     private var backgroundImageBitmap: Bitmap? = null
     private var pressedKeyIds: Set<String> = emptySet()
@@ -51,8 +57,12 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private val pointerPresses = mutableMapOf<Int, PointerPress>()
     private var repeatPointerId: Int? = null
     private var longPressPointerId: Int? = null
+    private var fnHoldPointerId: Int? = null
+    private var nextDownOrder: Long = 0L
     private val hitKeys = mutableListOf<HitKey>()
     private val handler = Handler(Looper.getMainLooper())
+    private val touchSlopSquared = ViewConfiguration.get(context).scaledTouchSlop.toFloat().let { it * it }
+    private val rolloverCoordinator = TouchRolloverCoordinator<QueuedKeyTap>(ROLLOVER_WINDOW_MS)
     private val repeatRunnable = object : Runnable {
         override fun run() {
             val pointerId = repeatPointerId ?: return
@@ -72,6 +82,21 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         previewKey = key.copy(label = action.displayLabel())
         onKey?.invoke(action, activeHeldModifiers(excludingPointerId = pointerId))
         invalidate()
+    }
+    private val fnHoldRunnable = Runnable {
+        val pointerId = fnHoldPointerId ?: return@Runnable
+        val key = pressedKey(pointerId) ?: return@Runnable
+        if (key.action.type != KeyActionType.SWITCH_FN) return@Runnable
+        pointerPresses[pointerId] = pointerPresses.getValue(pointerId).copy(
+            longPressConsumed = true,
+            fnHoldActive = true,
+        )
+        previewKey = key
+        onFnHoldChanged?.invoke(true)
+        invalidate()
+    }
+    private val tapDispatchRunnable = Runnable {
+        flushQueuedTaps()
     }
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -94,6 +119,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         keyLabelStyle: KeyLabelStyle = KeyLabelStyle(),
         glideTypingEnabled: Boolean = false,
         swipeUpActionsEnabled: Boolean = true,
+        fnLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt(),
     ) {
         this.layout = layout
         this.theme = theme
@@ -103,6 +129,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         this.keyLabelStyle = keyLabelStyle
         this.glideTypingEnabled = glideTypingEnabled
         this.swipeUpActionsEnabled = swipeUpActionsEnabled
+        this.fnLongPressDelayMs = fnLongPressDelayMs
         loadBackgroundImageIfNeeded(theme.backgroundImageUri)
         invalidate()
     }
@@ -164,6 +191,10 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     }
 
     override fun onDetachedFromWindow() {
+        handler.removeCallbacks(repeatRunnable)
+        handler.removeCallbacks(longPressRunnable)
+        handler.removeCallbacks(fnHoldRunnable)
+        handler.removeCallbacks(tapDispatchRunnable)
         backgroundImageBitmap?.recycle()
         backgroundImageBitmap = null
         super.onDetachedFromWindow()
@@ -191,6 +222,10 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacks(repeatRunnable)
                 handler.removeCallbacks(longPressRunnable)
+                handler.removeCallbacks(fnHoldRunnable)
+                handler.removeCallbacks(tapDispatchRunnable)
+                rolloverCoordinator.clear()
+                clearFnHoldIfActive()
                 pointerPresses.clear()
                 pressedKeyIds = emptySet()
                 previewKey = null
@@ -204,6 +239,10 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private fun handlePointerDown(event: MotionEvent) {
         val index = event.actionIndex
         val pointerId = event.getPointerId(index)
+        if (pointerPresses.size >= MAX_ROLLOVER_POINTERS && pointerId !in pointerPresses) {
+            updatePressedKeyIds()
+            return
+        }
         val hitKey = findKey(event.getX(index), event.getY(index))
         if (hitKey == null) {
             updatePressedKeyIds()
@@ -211,6 +250,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         }
         pointerPresses[pointerId] = PointerPress(
             keyId = hitKey.key.id,
+            downOrder = nextDownOrder++,
             downX = event.getX(index),
             downY = event.getY(index),
             glidePath = alphaKeyLabel(hitKey.key)?.let(::listOf).orEmpty(),
@@ -228,6 +268,11 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             longPressPointerId = pointerId
             handler.removeCallbacks(longPressRunnable)
             handler.postDelayed(longPressRunnable, LONG_PRESS_DELAY_MS)
+        }
+        if (hitKey.key.action.type == KeyActionType.SWITCH_FN) {
+            fnHoldPointerId = pointerId
+            handler.removeCallbacks(fnHoldRunnable)
+            handler.postDelayed(fnHoldRunnable, fnLongPressDelayMs.toLong())
         }
     }
 
@@ -272,6 +317,10 @@ class KeyboardSurfaceView(context: Context) : View(context) {
                     handler.removeCallbacks(longPressRunnable)
                     longPressPointerId = null
                 }
+                if (fnHoldPointerId == pointerId) {
+                    handler.removeCallbacks(fnHoldRunnable)
+                    fnHoldPointerId = null
+                }
                 previewKey = null
             }
             pointerPresses[pointerId] = press.copy(
@@ -310,10 +359,19 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             handler.removeCallbacks(longPressRunnable)
             longPressPointerId = null
         }
+        if (fnHoldPointerId == pointerId) {
+            handler.removeCallbacks(fnHoldRunnable)
+            fnHoldPointerId = null
+        }
         val heldModifiers = activeHeldModifiers(excludingPointerId = pointerId)
         pointerPresses.remove(pointerId)
         updatePressedKeyIds()
         previewKey = null
+        if (press.fnHoldActive) {
+            onFnHoldChanged?.invoke(false)
+            flushQueuedTaps()
+            return
+        }
         val releaseGliding = releasePress.gliding ||
             (
                 glideTypingEnabled &&
@@ -332,8 +390,9 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         if (press.longPressConsumed || pressedHitKey == null) return
 
         val releasedOnPressedKey = hitKey?.key?.id == press.keyId
+        val releasedNearPressedKey = distanceSquared(press.downX, press.downY, releaseX, releaseY) <= touchSlopSquared
         if (pressedHitKey.key.isModifierKey()) {
-            if (!releasedOnPressedKey) return
+            if (!releasedOnPressedKey && !releasedNearPressedKey) return
             if (!press.usedInCombo && stickyModifiersEnabled) {
                 performClick()
                 onKey?.invoke(pressedHitKey.key.action, HeldModifiers())
@@ -342,16 +401,80 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         }
 
         val swipeUpAction = swipeUpActionForRelease(pressedHitKey.key, event.getY(index), press.downY)
-        if (swipeUpAction == null && !releasedOnPressedKey) return
+        if (swipeUpAction == null && !releasedOnPressedKey && !releasedNearPressedKey) return
 
         if (heldModifiers.isActive()) markActiveModifiersUsedInCombo()
         performClick()
-        onKey?.invoke(swipeUpAction ?: pressedHitKey.key.action, heldModifiers)
+        val action = swipeUpAction ?: pressedHitKey.key.action
+        if (swipeUpAction == null && shouldQueueRolloverTap(pressedHitKey.key, press)) {
+            queueRolloverTap(press.downOrder, action, heldModifiers)
+        } else {
+            flushQueuedTaps()
+            onKey?.invoke(action, heldModifiers)
+        }
     }
 
     override fun performClick(): Boolean {
         super.performClick()
         return true
+    }
+
+    private fun queueRolloverTap(downOrder: Long, action: KeyAction, heldModifiers: HeldModifiers) {
+        val now = SystemClock.uptimeMillis()
+        val ready = rolloverCoordinator.enqueue(
+            RolloverTap(
+                downOrder = downOrder,
+                releaseTimeMs = now,
+                value = QueuedKeyTap(action, heldModifiers),
+            ),
+            activeRolloverDownOrders(),
+            now,
+        )
+        dispatchQueuedTaps(ready)
+        scheduleRolloverFlushIfNeeded()
+    }
+
+    private fun flushQueuedTaps() {
+        val ready = rolloverCoordinator.flush(activeRolloverDownOrders(), SystemClock.uptimeMillis())
+        dispatchQueuedTaps(ready)
+        scheduleRolloverFlushIfNeeded()
+    }
+
+    private fun dispatchQueuedTaps(taps: List<RolloverTap<QueuedKeyTap>>) {
+        taps.forEach { tap ->
+            onKey?.invoke(tap.value.action, tap.value.heldModifiers)
+        }
+    }
+
+    private fun scheduleRolloverFlushIfNeeded() {
+        handler.removeCallbacks(tapDispatchRunnable)
+        if (rolloverCoordinator.hasPending()) {
+            handler.postDelayed(tapDispatchRunnable, ROLLOVER_WINDOW_MS)
+        }
+    }
+
+    private fun activeRolloverDownOrders(): Set<Long> {
+        return pointerPresses.values.mapNotNull { press ->
+            val key = hitKeys.firstOrNull { it.key.id == press.keyId }?.key ?: return@mapNotNull null
+            press.downOrder.takeIf { shouldQueueRolloverTap(key, press) }
+        }.toSet()
+    }
+
+    private fun shouldQueueRolloverTap(key: KeySpec, press: PointerPress): Boolean {
+        if (press.longPressConsumed || press.gliding || key.repeatable || key.isModifierKey()) return false
+        return when (key.action.type) {
+            KeyActionType.COMMIT_TEXT,
+            KeyActionType.SPACE,
+            KeyActionType.ENTER,
+            KeyActionType.TAB,
+            KeyActionType.ESCAPE -> true
+            else -> false
+        }
+    }
+
+    private fun clearFnHoldIfActive() {
+        val wasActive = pointerPresses.values.any { press -> press.fnHoldActive }
+        if (wasActive) onFnHoldChanged?.invoke(false)
     }
 
     private fun drawKey(canvas: Canvas, rect: RectF, key: KeySpec, geometry: KeyboardGeometryPx) {
@@ -493,6 +616,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             KeyIcon.SWIPE -> drawSwipeIcon(canvas, iconRect)
             KeyIcon.SWIPE_OFF -> drawSwipeOffIcon(canvas, iconRect)
             KeyIcon.NUMPAD -> drawNumpadIcon(canvas, iconRect)
+            KeyIcon.EMOJI -> drawEmojiIcon(canvas, iconRect)
             KeyIcon.ENTER -> drawEnterIcon(canvas, iconRect)
             KeyIcon.TAB -> drawTextIcon(canvas, iconRect, "⇥", primary)
             KeyIcon.SYMBOLS -> drawTextIcon(canvas, iconRect, "#+", primary)
@@ -577,6 +701,28 @@ class KeyboardSurfaceView(context: Context) : View(context) {
                 canvas.drawCircle(rect.left + column * stepX, rect.top + row * stepY, radius, fillPaint)
             }
         }
+    }
+
+    private fun drawEmojiIcon(canvas: Canvas, rect: RectF) {
+        val size = rect.width().coerceAtMost(rect.height())
+        val centerX = rect.centerX()
+        val centerY = rect.centerY()
+        val radius = size * 0.42f
+        canvas.drawCircle(centerX, centerY, radius, strokePaint)
+
+        val eyeRadius = size * 0.045f
+        val eyeOffsetX = size * 0.15f
+        val eyeY = centerY - size * 0.1f
+        canvas.drawCircle(centerX - eyeOffsetX, eyeY, eyeRadius, fillPaint)
+        canvas.drawCircle(centerX + eyeOffsetX, eyeY, eyeRadius, fillPaint)
+
+        val smileRect = RectF(
+            centerX - size * 0.2f,
+            centerY - size * 0.02f,
+            centerX + size * 0.2f,
+            centerY + size * 0.22f,
+        )
+        canvas.drawArc(smileRect, 20f, 140f, false, strokePaint)
     }
 
     private fun drawEnterIcon(canvas: Canvas, rect: RectF) {
@@ -722,6 +868,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             shift = activeKeys.any { it.action.type == KeyActionType.SHIFT },
             ctrl = activeKeys.any { it.action.type == KeyActionType.CTRL },
             alt = activeKeys.any { it.action.type == KeyActionType.ALT },
+            fn = activeKeys.any { it.action.type == KeyActionType.SWITCH_FN },
         )
     }
 
@@ -752,12 +899,19 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val timeMs: Long,
     )
 
+    private data class QueuedKeyTap(
+        val action: KeyAction,
+        val heldModifiers: HeldModifiers,
+    )
+
     private data class PointerPress(
         val keyId: String,
+        val downOrder: Long,
         val downX: Float,
         val downY: Float,
         val usedInCombo: Boolean = false,
         val longPressConsumed: Boolean = false,
+        val fnHoldActive: Boolean = false,
         val gliding: Boolean = false,
         val glidePath: List<String> = emptyList(),
         val glidePoints: List<PointF> = emptyList(),
@@ -778,6 +932,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         const val INITIAL_REPEAT_DELAY_MS = 420L
         const val REPEAT_INTERVAL_MS = 65L
         const val LONG_PRESS_DELAY_MS = 520L
+        const val ROLLOVER_WINDOW_MS = 45L
         const val SWIPE_UP_THRESHOLD_PX = 44f
         const val GLIDE_START_THRESHOLD_DP = 18f
         const val GLIDE_TRACE_WIDTH_DP = 4f
@@ -786,6 +941,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         const val MIN_HEIGHT_DP = 160f
         const val TOP_MARGIN_DP = 4f
         const val BOLD_WEIGHT = 600f
+        const val MAX_ROLLOVER_POINTERS = 10
     }
 }
 

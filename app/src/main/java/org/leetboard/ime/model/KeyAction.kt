@@ -17,6 +17,7 @@ enum class KeyActionType {
     ARROW_DOWN,
     SWITCH_SYMBOLS,
     SWITCH_FN,
+    SWITCH_EMOJI,
     NUMPAD_TOGGLE,
     KEY_EVENT,
     SETTINGS,
@@ -60,6 +61,7 @@ fun KeyAction.displayLabel(): String {
         KeyActionType.ARROW_DOWN -> "Down"
         KeyActionType.SWITCH_SYMBOLS -> "Sym"
         KeyActionType.SWITCH_FN -> "Fn"
+        KeyActionType.SWITCH_EMOJI -> "Emoji"
         KeyActionType.NUMPAD_TOGGLE -> "Num"
         KeyActionType.KEY_EVENT -> label ?: keyCode?.toString().orEmpty()
         KeyActionType.SETTINGS -> "Settings"

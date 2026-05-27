@@ -22,7 +22,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
 
     private val suggestionBar = GlideSuggestionBar(context)
     private var theme: KeyboardTheme = KeyboardTheme.leetGreen
-    private var glideTypingEnabled: Boolean = false
+    private var suggestionBarEnabled: Boolean = false
 
     init {
         addView(suggestionBar)
@@ -38,14 +38,16 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         keyLabelStyle: KeyLabelStyle = KeyLabelStyle(),
         glideTypingEnabled: Boolean = false,
         swipeUpActionsEnabled: Boolean = true,
-        glideSuggestions: List<String> = emptyList(),
+        fnLongPressDelayMs: Int = KeyboardSurfaceView.LONG_PRESS_DELAY_MS.toInt(),
+        suggestionBarEnabled: Boolean = glideTypingEnabled,
+        suggestions: List<String> = emptyList(),
     ) {
         this.theme = theme
-        this.glideTypingEnabled = glideTypingEnabled
+        this.suggestionBarEnabled = suggestionBarEnabled
         suggestionBar.render(
             theme = theme,
-            enabled = glideTypingEnabled,
-            suggestions = glideSuggestions.take(MAX_SUGGESTIONS),
+            enabled = suggestionBarEnabled,
+            suggestions = suggestions.take(MAX_SUGGESTIONS),
             onSuggestion = { word -> onSuggestion?.invoke(word) },
         )
         keyboardView.render(
@@ -57,6 +59,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             keyLabelStyle = keyLabelStyle,
             glideTypingEnabled = glideTypingEnabled,
             swipeUpActionsEnabled = swipeUpActionsEnabled,
+            fnLongPressDelayMs = fnLongPressDelayMs,
         )
         requestLayout()
     }
@@ -99,7 +102,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
     }
 
     private fun suggestionHeightPx(): Int {
-        return if (glideTypingEnabled) {
+        return if (suggestionBarEnabled) {
             (resources.displayMetrics.density * SUGGESTION_STRIP_HEIGHT_DP).toInt()
         } else {
             0

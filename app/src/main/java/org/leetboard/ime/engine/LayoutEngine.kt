@@ -15,38 +15,21 @@ class LayoutEngine {
         return when {
             state.numpad -> numpad()
             state.fn -> functionLayer()
+            state.emoji -> emoji()
             state.symbols -> symbols()
             state.activeLayoutId == "qwerty4" -> qwertyFourRow()
-            state.activeLayoutId == "compact5" -> compactFiveRow()
-            else -> qwertyFiveRow(state.edgeKeyWidthScale)
+            state.activeLayoutId == "compact5" -> compactFiveRow(state.fnHold)
+            else -> qwertyFiveRow(state.edgeKeyWidthScale, state.fnHold)
         }
     }
 
-    private fun qwertyFiveRow(edgeKeyWidthScale: Float): KeyboardLayout {
+    private fun qwertyFiveRow(edgeKeyWidthScale: Float, fnHold: Boolean): KeyboardLayout {
         val edgeScale = edgeKeyWidthScale.coerceIn(MIN_EDGE_KEY_SCALE, MAX_EDGE_KEY_SCALE)
         return KeyboardLayout(
             id = "qwerty5",
             name = "HK-style QWERTY five-row",
             rows = listOf(
-                KeyRow(
-                    listOf(
-                        text("`", weight = 0.8f, swipe = "~"),
-                        text("1", swipe = "!"),
-                        text("2", swipe = "@"),
-                        text("3", swipe = "#"),
-                        text("4", swipe = "$"),
-                        text("5", swipe = "%"),
-                        text("6", swipe = "^"),
-                        text("7", swipe = "&"),
-                        text("8", swipe = "*"),
-                        text("9", swipe = "("),
-                        text("0", swipe = ")"),
-                        text("-", swipe = "_"),
-                        text("=", swipe = "+"),
-                        action("delete", "Backspace", KeyActionType.DELETE, 2.2f, repeatable = true),
-                    ),
-                    layoutWeight = FULL_GRID_WEIGHT,
-                ),
+                qwertyFiveTopRow(fnHold),
                 KeyRow(
                     balancedEdgeRow(
                         action("tab", "Tab", KeyActionType.TAB, 1.5f, optional = true, preserveSpaceWhenHidden = true),
@@ -110,8 +93,8 @@ class LayoutEngine {
                     listOf(
                         action("esc", "Esc", KeyActionType.ESCAPE, 1.2f, optional = true, preserveSpaceWhenHidden = true),
                         action("alt", "Alt", KeyActionType.ALT, optional = true),
-                        action("fn", "Fn", KeyActionType.SWITCH_FN, optional = true),
-                        action("symbols", "Symbols", KeyActionType.SWITCH_SYMBOLS, longPress = KeyAction(KeyActionType.SETTINGS)),
+                        fnKey(optional = true),
+                        symbolsKey(),
                         action("space", "Space", KeyActionType.SPACE, 5f),
                         settingsKey(),
                         micKey(),
@@ -124,6 +107,37 @@ class LayoutEngine {
                 ),
             ),
         )
+    }
+
+    private fun qwertyFiveTopRow(fnHold: Boolean): KeyRow {
+        return if (fnHold) {
+            KeyRow(
+                (1..12).map { index ->
+                    keyEvent("f$index", "F$index", KeyEvent.KEYCODE_F1 + index - 1)
+                } + action("delete", "Backspace", KeyActionType.DELETE, 3f, repeatable = true),
+                layoutWeight = FULL_GRID_WEIGHT,
+            )
+        } else {
+            KeyRow(
+                listOf(
+                    text("`", weight = 0.8f, swipe = "~"),
+                    text("1", swipe = "!"),
+                    text("2", swipe = "@"),
+                    text("3", swipe = "#"),
+                    text("4", swipe = "$"),
+                    text("5", swipe = "%"),
+                    text("6", swipe = "^"),
+                    text("7", swipe = "&"),
+                    text("8", swipe = "*"),
+                    text("9", swipe = "("),
+                    text("0", swipe = ")"),
+                    text("-", swipe = "_"),
+                    text("=", swipe = "+"),
+                    action("delete", "Backspace", KeyActionType.DELETE, 2.2f, repeatable = true),
+                ),
+                layoutWeight = FULL_GRID_WEIGHT,
+            )
+        }
     }
 
     private fun functionLayer(): KeyboardLayout {
@@ -198,7 +212,7 @@ class LayoutEngine {
                 row("`", "~", ";", ":", "'", "\"", ",", ".", "/", "?"),
                 KeyRow(
                     listOf(
-                        action("symbols", "ABC", KeyActionType.SWITCH_SYMBOLS, 1.5f, longPress = KeyAction(KeyActionType.SETTINGS)),
+                        symbolsKey(label = "ABC", weight = 1.5f),
                         settingsKey(),
                         action("left", "◀", KeyActionType.ARROW_LEFT, optional = true, repeatable = true),
                         action("up", "▲", KeyActionType.ARROW_UP, optional = true, repeatable = true),
@@ -243,7 +257,7 @@ class LayoutEngine {
                 KeyRow(
                     listOf(
                         action("esc", "Esc", KeyActionType.ESCAPE, optional = true),
-                        action("symbols", "Symbols", KeyActionType.SWITCH_SYMBOLS, longPress = KeyAction(KeyActionType.SETTINGS)),
+                        symbolsKey(),
                         settingsKey(),
                         action("space", "Space", KeyActionType.SPACE, 2.2f),
                         micKey(),
@@ -258,27 +272,12 @@ class LayoutEngine {
         )
     }
 
-    private fun compactFiveRow(): KeyboardLayout {
+    private fun compactFiveRow(fnHold: Boolean): KeyboardLayout {
         return KeyboardLayout(
             id = "compact5",
             name = "HK-style compact five-row",
             rows = listOf(
-                KeyRow(
-                    listOf(
-                        text("1", swipe = "!"),
-                        text("2", swipe = "@"),
-                        text("3", swipe = "#"),
-                        text("4", swipe = "$"),
-                        text("5", swipe = "%"),
-                        text("6", swipe = "^"),
-                        text("7", swipe = "&"),
-                        text("8", swipe = "*"),
-                        text("9", swipe = "("),
-                        text("0", swipe = ")"),
-                        action("delete", "Backspace", KeyActionType.DELETE, repeatable = true),
-                    ),
-                    layoutWeight = COMPACT_GRID_WEIGHT,
-                ),
+                compactFiveTopRow(fnHold),
                 KeyRow(
                     listOf(
                         text("q"),
@@ -330,7 +329,7 @@ class LayoutEngine {
                 KeyRow(
                     listOf(
                         action("esc", "Esc", KeyActionType.ESCAPE, optional = true),
-                        action("symbols", "Symbols", KeyActionType.SWITCH_SYMBOLS, longPress = KeyAction(KeyActionType.SETTINGS)),
+                        symbolsKey(),
                         action("space", "Space", KeyActionType.SPACE, 3f),
                         settingsKey(),
                         micKey(),
@@ -339,6 +338,57 @@ class LayoutEngine {
                         action("num_toggle", "Num", KeyActionType.NUMPAD_TOGGLE, optional = true),
                     ),
                     layoutWeight = COMPACT_GRID_WEIGHT,
+                ),
+            ),
+        )
+    }
+
+    private fun compactFiveTopRow(fnHold: Boolean): KeyRow {
+        return if (fnHold) {
+            KeyRow(
+                (1..10).map { index ->
+                    keyEvent("f$index", "F$index", KeyEvent.KEYCODE_F1 + index - 1)
+                } + action("delete", "Backspace", KeyActionType.DELETE, repeatable = true),
+                layoutWeight = COMPACT_GRID_WEIGHT,
+            )
+        } else {
+            KeyRow(
+                listOf(
+                    text("1", swipe = "!"),
+                    text("2", swipe = "@"),
+                    text("3", swipe = "#"),
+                    text("4", swipe = "$"),
+                    text("5", swipe = "%"),
+                    text("6", swipe = "^"),
+                    text("7", swipe = "&"),
+                    text("8", swipe = "*"),
+                    text("9", swipe = "("),
+                    text("0", swipe = ")"),
+                    action("delete", "Backspace", KeyActionType.DELETE, repeatable = true),
+                ),
+                layoutWeight = COMPACT_GRID_WEIGHT,
+            )
+        }
+    }
+
+    private fun emoji(): KeyboardLayout {
+        return KeyboardLayout(
+            id = "emoji",
+            name = "Emoji",
+            rows = listOf(
+                row("😀", "😁", "😂", "🤣", "😊", "😍", "😎", "😅", "🙃", "😉"),
+                row("👍", "👎", "🙏", "👏", "🙌", "💪", "🤝", "✌️", "👌", "🤘"),
+                row("🔥", "✨", "✅", "❌", "⚠️", "💡", "💻", "⌨️", "📱", "🔒"),
+                row("❤️", "💚", "💙", "💜", "🖤", "⭐", "🎯", "🚀", "☕", "🍕"),
+                KeyRow(
+                    listOf(
+                        action("emoji", "ABC", KeyActionType.SWITCH_EMOJI, 1.4f),
+                        action("symbols", "Symbols", KeyActionType.SWITCH_SYMBOLS, 1.2f),
+                        action("space", "Space", KeyActionType.SPACE, 4f),
+                        action("delete", "Backspace", KeyActionType.DELETE, 1.4f, repeatable = true),
+                        action("enter", "Enter", KeyActionType.ENTER, 1.4f),
+                    ),
+                    layoutWeight = 9.4f,
                 ),
             ),
         )
@@ -401,7 +451,7 @@ class LayoutEngine {
                 KeyRow(
                     listOf(
                         action("num_toggle", "ABC", KeyActionType.NUMPAD_TOGGLE),
-                        action("fn", "Fn", KeyActionType.SWITCH_FN),
+                        fnKey(),
                         settingsKey(),
                         action("enter", "Enter", KeyActionType.ENTER, 1.6f),
                     ),
@@ -489,6 +539,36 @@ class LayoutEngine {
         )
     }
 
+    private fun fnKey(
+        weight: Float = 1f,
+        optional: Boolean = false,
+    ): KeySpec {
+        return action(
+            id = "fn",
+            label = "Fn",
+            type = KeyActionType.SWITCH_FN,
+            weight = weight,
+            optional = optional,
+        ).copy(
+            secondaryLabel = "F1",
+        )
+    }
+
+    private fun symbolsKey(
+        label: String = "Symbols",
+        weight: Float = 1f,
+    ): KeySpec {
+        return action(
+            id = "symbols",
+            label = label,
+            type = KeyActionType.SWITCH_SYMBOLS,
+            weight = weight,
+            longPress = KeyAction(KeyActionType.SWITCH_EMOJI),
+        ).copy(
+            secondaryIcon = KeyIcon.EMOJI,
+        )
+    }
+
     private fun micKey(weight: Float = 1f): KeySpec {
         return action(
             id = "mic",
@@ -538,6 +618,7 @@ class LayoutEngine {
             KeyActionType.DELETE -> KeyIcon.BACKSPACE
             KeyActionType.SHIFT -> KeyIcon.SHIFT
             KeyActionType.SWITCH_SYMBOLS -> KeyIcon.SYMBOLS
+            KeyActionType.SWITCH_EMOJI -> KeyIcon.EMOJI
             KeyActionType.SETTINGS -> KeyIcon.GEAR
             KeyActionType.MICROPHONE,
             KeyActionType.TOGGLE_SPEECH_INPUT -> KeyIcon.MIC

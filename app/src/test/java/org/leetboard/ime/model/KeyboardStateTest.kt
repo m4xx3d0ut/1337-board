@@ -35,6 +35,8 @@ class KeyboardStateTest {
         val state = KeyboardState(
             symbols = true,
             fn = true,
+            fnHold = true,
+            emoji = true,
             numpad = true,
             modifiers = ModifierState(shift = true, ctrl = true, alt = true),
         )
@@ -47,6 +49,7 @@ class KeyboardStateTest {
         assertTrue("alt" in active)
         assertTrue("symbols" in active)
         assertTrue("fn" in active)
+        assertTrue("emoji" in active)
         assertTrue("num_toggle" in active)
     }
 }

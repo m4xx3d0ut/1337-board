@@ -45,6 +45,7 @@ fun KeyIcon.fallbackLabel(): String {
         KeyIcon.SWIPE -> "Swipe"
         KeyIcon.SWIPE_OFF -> "Swipe off"
         KeyIcon.NUMPAD -> "Num"
+        KeyIcon.EMOJI -> "Emoji"
         KeyIcon.ENTER -> "Enter"
         KeyIcon.TAB -> "Tab"
         KeyIcon.ESC -> "Esc"
