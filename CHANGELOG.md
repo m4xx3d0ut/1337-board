@@ -4,6 +4,27 @@ All notable changes to 1337 Board are documented here.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-27
+
+### Added
+
+- Added rollover-aware tap dispatch to improve fast multi-key typing order.
+- Added conservative local typed suggestions and autocorrect controls.
+- Added Fn long-hold access to function keys on five-row layouts, with adjustable timing.
+- Added long-press emoji access from `#+`.
+- Added top-right hold indicators for Fn and `#+` keys.
+
+### Changed
+
+- Trim glide word trailing space before punctuation.
+- Use a custom material-style emoji key icon instead of a text glyph.
+- Expand Fn and arrow navigation handling for Home, End, PgUp, and PgDn access.
+
+### Fixed
+
+- Improved backspace/delete handling around selected text and shifted delete behavior.
+- Improved fast typing resilience with bounded touch rollover handling.
+
 ## [0.1.1] - 2026-05-26
 
 ### Added
