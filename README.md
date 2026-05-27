@@ -13,14 +13,15 @@
 ## Highlights
 
 - Five-row PC-style QWERTY layout with number row, Esc, Tab, Ctrl, Alt, Shift, Enter, Backspace, Delete, and arrow keys.
-- Phone, compact, landscape, Fn, symbol, and numpad-oriented layouts.
+- Phone, compact, full five-row, Fn, symbol, and numpad-oriented layouts, with separate portrait and landscape layout choices.
+- Num-hold quick overlays expose Fn/navigation layers from four-row, compact five-row, and full five-row layouts.
 - Configurable optional keys, preset action slots, key labels/icons, sticky modifiers, and key preview behavior.
 - Local glide typing with a bundled word list, ranked suggestions, optional imported word lists, private on-device prediction, and tunable accuracy controls for path tolerance, spatial precision, and dwell sensitivity.
 - Mic input through Android speech recognition, with offline preference requested when supported by the device recognizer.
 - Theme presets and a custom theme slot including light, dark, alternate dark, cyberpunk, terminal, high contrast, 1337 green-on-black, background images, and transparency controls.
-- Separate portrait and landscape controls for keyboard height, margins, gaps, borders, radius, and label styling.
+- Separate portrait and landscape controls for keyboard height, margins, gaps, borders, radius, label styling, and long-press timing.
 
-![1337 Board five-theme grid captured on OnePlus Pad3](1337-board-theme-grid.png)
+![1337 Board theme and layout grid captured on OnePlus Pad3](1337-board-theme-grid.png)
 
 ## Privacy
 
@@ -91,7 +92,7 @@ Run unit tests:
 Build release artifacts:
 
 ```sh
-scripts/build-release.sh v0.1.1
+scripts/build-release.sh v0.1.2
 ```
 
 After installing, open 1337 Board, open input settings, enable the IME, then choose it from the keyboard picker.

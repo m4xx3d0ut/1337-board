@@ -4,6 +4,17 @@ All notable changes to 1337 Board are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added per-orientation layout selection for different portrait and landscape keyboard layouts.
+- Added Num-hold Fn/navigation overlays for four-row, compact five-row, and full five-row layouts.
+- Added separate regular-key and special-action long-press timing settings.
+
+### Changed
+
+- Show `Fn` in the held-key preview while a Num-hold Fn overlay is active.
+- Updated the README visual grid with Pad3 captures of custom four-row and compact five-row Num-hold overlays.
+
 ## [0.1.2] - 2026-05-27
 
 ### Added

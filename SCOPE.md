@@ -268,8 +268,8 @@ Complete these items before starting GitHub release artifact automation or F-Dro
 - Custom theme v1: add one custom theme slot that can clone a current preset, persist local colors/opacities, and optionally render a user-selected keyboard background image.
 - Settings UX: expose clone, color/opacity adjustment, background image picker/removal, and custom-theme reset controls without expanding into a full multi-theme library.
 - Rendering QA: verify custom colors, key fill opacity, border opacity, label opacity, image opacity, and image fallback in portrait and landscape.
-- Pad3 smoke test: install the debug APK on the OnePlus Pad3 over ADB, validate typing, glide suggestions, mic input, preset themes, custom theme, and orientation behavior.
-- README visual: capture cyberpunk, 1337 green, light, and high-contrast themes from the Pad3 using a 45% height landscape keyboard, compose a 2x2 PNG, and place it under the README Highlights list.
+- Pad3 smoke test: install the debug APK on the OnePlus Pad3 over ADB, validate typing, glide suggestions, mic input, preset themes, custom theme, per-orientation layouts, and Num-hold overlays.
+- README visual: keep the Pad3 theme/layout grid current with cyberpunk, 1337 green, light, high-contrast, custom full five-row, custom four-row Num-hold Fn overlay, and custom compact five-row Num-hold Fn overlay captures under the README Highlights list.
 - Release handoff: resume GitHub/F-Droid release preparation only after the milestone above has passed smoke testing and the working tree is committed.
 
 ## Source Notes
