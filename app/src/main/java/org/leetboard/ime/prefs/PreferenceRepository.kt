@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.Reader
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.leetboard.ime.engine.DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.engine.GlideCorrectionEntry
@@ -425,8 +426,54 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.glideImportedWordCount] = 0 }
     }
 
+    suspend fun exportSettings(format: SettingsExportFormat): String {
+        val current = preferences.first()
+        val importedWords = importedGlideWordsFile()
+            .takeIf { it.isFile }
+            ?.readLines()
+            .orEmpty()
+        val userLanguageModel = GlideUserLanguageModel.storageFile(appContext.filesDir)
+            .takeIf { it.isFile }
+            ?.readText()
+            .orEmpty()
+        return SettingsExportSnapshot(
+            preferences = current.toExportPreferenceMap(importedWords.size),
+            importedGlideWords = importedWords,
+            glideUserLanguageModel = userLanguageModel,
+        ).encode(format)
+    }
+
+    suspend fun importSettings(reader: Reader): SettingsImportResult {
+        val snapshot = decodeSettingsExportSnapshot(reader.readText())
+        val importedWords = snapshot.importedGlideWords
+            .mapNotNull(::normalizeImportedWord)
+            .distinct()
+            .take(MAX_IMPORTED_GLIDE_WORDS)
+        if (importedWords.isEmpty()) {
+            importedGlideWordsFile().delete()
+        } else {
+            importedGlideWordsFile().writeText(importedWords.joinToString(separator = "\n"))
+        }
+        val languageModelFile = GlideUserLanguageModel.storageFile(appContext.filesDir)
+        if (snapshot.glideUserLanguageModel.isBlank()) {
+            languageModelFile.delete()
+        } else {
+            languageModelFile.parentFile?.mkdirs()
+            languageModelFile.writeText(snapshot.glideUserLanguageModel)
+        }
+        dataStore.edit { values ->
+            values.clear()
+            values.writeExportedPreferences(snapshot.preferences, importedWords.size)
+        }
+        return SettingsImportResult(
+            preferenceCount = snapshot.preferences.size,
+            importedGlideWordCount = importedWords.size,
+        )
+    }
+
     suspend fun resetToDefaults() {
         importedGlideWordsFile().delete()
+        GlideUserLanguageModel.storageFile(appContext.filesDir).delete()
         dataStore.edit { values -> values.clear() }
     }
 
@@ -655,6 +702,224 @@ class PreferenceRepository(context: Context) {
         const val MAX_EDGE_KEY_SCALE = 1.1f
         const val IMPORTED_GLIDE_WORDS_FILE = "glide_words_user.txt"
         const val MAX_IMPORTED_GLIDE_WORDS = 5000
+    }
+
+    private fun KeyboardPreferences.toExportPreferenceMap(importedWordCount: Int): Map<String, Any?> {
+        return linkedMapOf<String, Any?>().apply {
+            put(Keys.layoutId.name, layoutId)
+            put(Keys.portraitLayoutId.name, portraitLayoutId)
+            put(Keys.landscapeLayoutId.name, landscapeLayoutId)
+            put(Keys.themePreset.name, themePreset.name)
+            putGeometry("portrait", portraitGeometry)
+            putGeometry("landscape", landscapeGeometry)
+            put(Keys.hiddenOptionalKeys.name, hiddenOptionalKeyIds.sorted())
+            put(
+                Keys.keyDisplayOverrides.name,
+                keyDisplayOverrides.toSortedMap().map { (keyId, override) ->
+                    keyDisplayOverrideToPreferenceValue(keyId, override)
+                },
+            )
+            put(Keys.escTouchMode.name, escTouchMode.name)
+            put(Keys.primaryTextSizeSp.name, keyLabelStyle.primaryTextSizeSp)
+            put(Keys.secondaryTextSizeSp.name, keyLabelStyle.secondaryTextSizeSp)
+            put(Keys.fontWeight.name, keyLabelStyle.fontWeight)
+            put(Keys.labelOpacity.name, keyLabelStyle.labelOpacity)
+            put(Keys.uppercaseOnShift.name, keyLabelStyle.uppercaseOnShift)
+            put(Keys.numpadToggleEnabled.name, numpadToggleEnabled)
+            put(Keys.keyPreviewEnabled.name, keyPreviewEnabled)
+            put(Keys.stickyModifiersEnabled.name, stickyModifiersEnabled)
+            put(Keys.shiftCapsLockEnabled.name, shiftCapsLockEnabled)
+            put(Keys.keyLongPressDelayMs.name, keyLongPressDelayMs)
+            put(Keys.specialLongPressDelayMs.name, specialLongPressDelayMs)
+            put(Keys.edgeKeyWidthScale.name, edgeKeyWidthScale)
+            put(Keys.gestureTypingEnabled.name, gestureTypingEnabled)
+            put(Keys.typedSuggestionsEnabled.name, typedSuggestionsEnabled)
+            put(Keys.typedAutocorrectEnabled.name, typedAutocorrectEnabled)
+            put(Keys.autoCapAfterPeriodEnabled.name, autoCapAfterPeriodEnabled)
+            put(Keys.swipeUpActionsEnabled.name, swipeUpActionsEnabled)
+            put(Keys.speechInputEnabled.name, speechInputEnabled)
+            put(Keys.glideImportedWordCount.name, importedWordCount)
+            put(Keys.glideCorrectionLearningEnabled.name, glideCorrectionLearningEnabled)
+            put(Keys.glideCorrections.name, glideCorrectionsToPreferenceValue(glideCorrections))
+            put(Keys.glidePreferShorterWords.name, glidePreferShorterWords)
+            put(Keys.glideStrictFirstLastLetter.name, glideStrictFirstLastLetter)
+            put(Keys.glidePathTolerance.name, glidePathTolerance.name)
+            put(Keys.glideSpatialPrecision.name, glideSpatialPrecision.name)
+            put(Keys.glideDwellSensitivity.name, glideDwellSensitivity.name)
+            put(Keys.glideDwellActivationThreshold.name, glideDwellActivationThreshold)
+            put(Keys.glideImportedWordsPriority.name, glideImportedWordsPriority.name)
+            put(Keys.glideRawFallbackMode.name, glideRawFallbackMode.name)
+            put(Keys.glidePredictiveRankingEnabled.name, glidePredictiveRankingEnabled)
+            put(Keys.glideLearningResetRevision.name, glideLearningResetRevision)
+            put(Keys.customBasePreset.name, customTheme.basePreset.name)
+            put(Keys.customBackgroundColor.name, customTheme.backgroundColor.opaque())
+            put(Keys.customKeyFillColor.name, customTheme.keyFillColor.opaque())
+            put(Keys.customKeyStrokeColor.name, customTheme.keyStrokeColor.opaque())
+            put(Keys.customKeyTextColor.name, customTheme.keyTextColor.opaque())
+            put(Keys.customPressedFillColor.name, customTheme.pressedFillColor.opaque())
+            put(Keys.customActiveModifierFillColor.name, customTheme.activeModifierFillColor.opaque())
+            put(Keys.customBackgroundImageUri.name, customTheme.backgroundImageUri.orEmpty())
+            put(Keys.customBackgroundImageOpacity.name, customTheme.backgroundImageOpacity)
+            put(Keys.customKeyFillOpacity.name, customTheme.keyFillOpacity)
+            put(Keys.customKeyStrokeOpacity.name, customTheme.keyStrokeOpacity)
+            put(Keys.customKeyTextOpacity.name, customTheme.keyTextOpacity)
+            Keys.actionSlotKeys.forEach { (slotId, key) ->
+                slotActions[slotId]?.let { action -> put(key.name, action.toPreferenceValue()) }
+            }
+        }
+    }
+
+    private fun MutableMap<String, Any?>.putGeometry(prefix: String, geometry: KeyboardGeometry) {
+        put(Keys.geometryKey(prefix, GeometryField.KEYBOARD_HEIGHT_PERCENT).name, geometry.keyboardHeightPercent)
+        put(Keys.geometryKey(prefix, GeometryField.KEY_RADIUS).name, geometry.keyRadiusDp)
+        put(Keys.geometryKey(prefix, GeometryField.BORDER_WIDTH).name, geometry.borderWidthDp)
+        put(Keys.geometryKey(prefix, GeometryField.KEY_GAP).name, geometry.keyGapDp)
+        put(Keys.geometryKey(prefix, GeometryField.HORIZONTAL_MARGIN).name, geometry.horizontalMarginDp)
+        put(Keys.geometryKey(prefix, GeometryField.BOTTOM_MARGIN).name, geometry.bottomMarginDp)
+        put(Keys.geometryKey(prefix, GeometryField.ROW_GAP).name, geometry.rowGapDp)
+    }
+
+    private fun MutablePreferences.writeExportedPreferences(settings: Map<String, Any?>, importedWordCount: Int) {
+        settings.string(Keys.layoutId)?.let { this[Keys.layoutId] = it }
+        settings.string(Keys.portraitLayoutId)?.let { this[Keys.portraitLayoutId] = it }
+        settings.string(Keys.landscapeLayoutId)?.let { this[Keys.landscapeLayoutId] = it }
+        settings.string(Keys.themePreset)?.let(::themePresetFromName)?.let { this[Keys.themePreset] = it.name }
+        writeGeometry(settings, "portrait")
+        writeGeometry(settings, "landscape")
+        settings.stringSet(Keys.hiddenOptionalKeys)?.let { this[Keys.hiddenOptionalKeys] = it }
+        settings.stringSet(Keys.keyDisplayOverrides)?.let { this[Keys.keyDisplayOverrides] = it }
+        settings.string(Keys.escTouchMode)?.let(::escTouchModeFromName)?.let { this[Keys.escTouchMode] = it.name }
+        settings.float(Keys.primaryTextSizeSp)?.let {
+            this[Keys.primaryTextSizeSp] = it.coerceIn(
+                KeyLabelStyleField.PRIMARY_TEXT_SIZE.minimum,
+                KeyLabelStyleField.PRIMARY_TEXT_SIZE.maximum,
+            )
+        }
+        settings.float(Keys.secondaryTextSizeSp)?.let {
+            this[Keys.secondaryTextSizeSp] = it.coerceIn(
+                KeyLabelStyleField.SECONDARY_TEXT_SIZE.minimum,
+                KeyLabelStyleField.SECONDARY_TEXT_SIZE.maximum,
+            )
+        }
+        settings.float(Keys.fontWeight)?.let {
+            this[Keys.fontWeight] = it.coerceIn(
+                KeyLabelStyleField.FONT_WEIGHT.minimum,
+                KeyLabelStyleField.FONT_WEIGHT.maximum,
+            )
+        }
+        settings.float(Keys.labelOpacity)?.let {
+            this[Keys.labelOpacity] = it.coerceIn(
+                KeyLabelStyleField.LABEL_OPACITY.minimum,
+                KeyLabelStyleField.LABEL_OPACITY.maximum,
+            )
+        }
+        settings.boolean(Keys.uppercaseOnShift)?.let { this[Keys.uppercaseOnShift] = it }
+        settings.boolean(Keys.numpadToggleEnabled)?.let { this[Keys.numpadToggleEnabled] = it }
+        settings.boolean(Keys.keyPreviewEnabled)?.let { this[Keys.keyPreviewEnabled] = it }
+        settings.boolean(Keys.stickyModifiersEnabled)?.let { this[Keys.stickyModifiersEnabled] = it }
+        settings.boolean(Keys.shiftCapsLockEnabled)?.let { this[Keys.shiftCapsLockEnabled] = it }
+        settings.int(Keys.keyLongPressDelayMs)?.let {
+            this[Keys.keyLongPressDelayMs] = it.coerceIn(MIN_LONG_PRESS_DELAY_MS, MAX_LONG_PRESS_DELAY_MS)
+        }
+        settings.int(Keys.specialLongPressDelayMs)?.let {
+            this[Keys.specialLongPressDelayMs] = it.coerceIn(MIN_LONG_PRESS_DELAY_MS, MAX_LONG_PRESS_DELAY_MS)
+        }
+        settings.float(Keys.edgeKeyWidthScale)?.let {
+            this[Keys.edgeKeyWidthScale] = it.coerceIn(MIN_EDGE_KEY_SCALE, MAX_EDGE_KEY_SCALE)
+        }
+        settings.boolean(Keys.gestureTypingEnabled)?.let { this[Keys.gestureTypingEnabled] = it }
+        settings.boolean(Keys.typedSuggestionsEnabled)?.let { this[Keys.typedSuggestionsEnabled] = it }
+        settings.boolean(Keys.typedAutocorrectEnabled)?.let { this[Keys.typedAutocorrectEnabled] = it }
+        settings.boolean(Keys.autoCapAfterPeriodEnabled)?.let { this[Keys.autoCapAfterPeriodEnabled] = it }
+        settings.boolean(Keys.swipeUpActionsEnabled)?.let { this[Keys.swipeUpActionsEnabled] = it }
+        settings.boolean(Keys.speechInputEnabled)?.let { this[Keys.speechInputEnabled] = it }
+        this[Keys.glideImportedWordCount] = importedWordCount
+        settings.boolean(Keys.glideCorrectionLearningEnabled)?.let { this[Keys.glideCorrectionLearningEnabled] = it }
+        settings.string(Keys.glideCorrections)?.let { corrections ->
+            val normalized = glideCorrectionsToPreferenceValue(glideCorrectionsFromPreferenceValue(corrections))
+            if (normalized.isNotBlank()) this[Keys.glideCorrections] = normalized
+        }
+        settings.boolean(Keys.glidePreferShorterWords)?.let { this[Keys.glidePreferShorterWords] = it }
+        settings.boolean(Keys.glideStrictFirstLastLetter)?.let { this[Keys.glideStrictFirstLastLetter] = it }
+        settings.string(Keys.glidePathTolerance)?.let(::glidePathToleranceFromName)?.let {
+            this[Keys.glidePathTolerance] = it.name
+        }
+        settings.string(Keys.glideSpatialPrecision)?.let(::glideSpatialPrecisionFromName)?.let {
+            this[Keys.glideSpatialPrecision] = it.name
+        }
+        settings.string(Keys.glideDwellSensitivity)?.let(::glideDwellSensitivityFromName)?.let {
+            this[Keys.glideDwellSensitivity] = it.name
+        }
+        settings.float(Keys.glideDwellActivationThreshold)?.let {
+            this[Keys.glideDwellActivationThreshold] = it.coerceIn(
+                MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD,
+                MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD,
+            )
+        }
+        settings.string(Keys.glideImportedWordsPriority)?.let(::glideImportedWordsPriorityFromName)?.let {
+            this[Keys.glideImportedWordsPriority] = it.name
+        }
+        settings.string(Keys.glideRawFallbackMode)?.let(::glideRawFallbackModeFromName)?.let {
+            this[Keys.glideRawFallbackMode] = it.name
+        }
+        settings.boolean(Keys.glidePredictiveRankingEnabled)?.let { this[Keys.glidePredictiveRankingEnabled] = it }
+        settings.int(Keys.glideLearningResetRevision)?.let {
+            this[Keys.glideLearningResetRevision] = it.coerceAtLeast(0)
+        }
+        settings.string(Keys.customBasePreset)?.let(::themePresetFromName)?.takeUnless { it == ThemePreset.CUSTOM }?.let {
+            this[Keys.customBasePreset] = it.name
+        }
+        settings.int(Keys.customBackgroundColor)?.let { this[Keys.customBackgroundColor] = it.opaque() }
+        settings.int(Keys.customKeyFillColor)?.let { this[Keys.customKeyFillColor] = it.opaque() }
+        settings.int(Keys.customKeyStrokeColor)?.let { this[Keys.customKeyStrokeColor] = it.opaque() }
+        settings.int(Keys.customKeyTextColor)?.let { this[Keys.customKeyTextColor] = it.opaque() }
+        settings.int(Keys.customPressedFillColor)?.let { this[Keys.customPressedFillColor] = it.opaque() }
+        settings.int(Keys.customActiveModifierFillColor)?.let { this[Keys.customActiveModifierFillColor] = it.opaque() }
+        settings.string(Keys.customBackgroundImageUri)?.takeIf { it.isNotBlank() }?.let {
+            this[Keys.customBackgroundImageUri] = it
+        }
+        settings.float(Keys.customBackgroundImageOpacity)?.let {
+            this[Keys.customBackgroundImageOpacity] = it.coerceIn(0f, 1f)
+        }
+        settings.float(Keys.customKeyFillOpacity)?.let { this[Keys.customKeyFillOpacity] = it.coerceIn(0f, 1f) }
+        settings.float(Keys.customKeyStrokeOpacity)?.let { this[Keys.customKeyStrokeOpacity] = it.coerceIn(0f, 1f) }
+        settings.float(Keys.customKeyTextOpacity)?.let { this[Keys.customKeyTextOpacity] = it.coerceIn(0f, 1f) }
+        Keys.actionSlotKeys.forEach { (_, key) ->
+            settings.string(key)?.let { encodedAction ->
+                keyActionFromPreferenceValue(encodedAction)?.let { action -> this[key] = action.toPreferenceValue() }
+            }
+        }
+    }
+
+    private fun MutablePreferences.writeGeometry(settings: Map<String, Any?>, prefix: String) {
+        GeometryField.entries.forEach { field ->
+            val key = Keys.geometryKey(prefix, field)
+            settings.float(key)?.let { this[key] = it.coerceIn(field.minimum, field.maximum) }
+        }
+    }
+
+    private fun Map<String, Any?>.string(key: Preferences.Key<String>): String? = this[key.name] as? String
+
+    private fun Map<String, Any?>.boolean(key: Preferences.Key<Boolean>): Boolean? = this[key.name] as? Boolean
+
+    private fun Map<String, Any?>.int(key: Preferences.Key<Int>): Int? = when (val value = this[key.name]) {
+        is Number -> value.toInt()
+        is String -> value.toIntOrNull()
+        else -> null
+    }
+
+    private fun Map<String, Any?>.float(key: Preferences.Key<Float>): Float? = when (val value = this[key.name]) {
+        is Number -> value.toFloat()
+        is String -> value.toFloatOrNull()
+        else -> null
+    }
+
+    private fun Map<String, Any?>.stringSet(key: Preferences.Key<Set<String>>): Set<String>? {
+        return when (val value = this[key.name]) {
+            is Iterable<*> -> value.mapNotNull { it as? String }.toSet()
+            is String -> setOf(value)
+            else -> null
+        }
     }
 
     private fun importedGlideWordsFile() = appContext.filesDir.resolve(IMPORTED_GLIDE_WORDS_FILE)

@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -96,6 +97,7 @@ import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.MIN_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.PreferenceRepository
+import org.leetboard.ime.prefs.SettingsExportFormat
 import org.leetboard.ime.prefs.defaultLayoutOptions
 import org.leetboard.ime.prefs.layoutIdForOrientation
 
@@ -148,7 +150,56 @@ fun SettingsScreen(
 ) {
     val preferences by repository.preferences.collectAsState(initial = KeyboardPreferences.defaults())
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var showResetConfirmation by remember { mutableStateOf(false) }
+    var settingsTransferStatus by remember { mutableStateOf<String?>(null) }
+    fun exportSettings(uri: android.net.Uri?, format: SettingsExportFormat) {
+        if (uri == null) return
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { stream ->
+                        OutputStreamWriter(stream).use { writer ->
+                            writer.write(repository.exportSettings(format))
+                        }
+                    } ?: error("Unable to open export destination.")
+                }
+            }
+            settingsTransferStatus = result.fold(
+                onSuccess = { "Settings exported." },
+                onFailure = { "Export failed: ${it.message.orEmpty()}" },
+            )
+        }
+    }
+    val jsonExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        exportSettings(uri, SettingsExportFormat.JSON)
+    }
+    val yamlExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/x-yaml"),
+    ) { uri ->
+        exportSettings(uri, SettingsExportFormat.YAML)
+    }
+    val settingsImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                            repository.importSettings(InputStreamReader(stream))
+                        } ?: error("Unable to open settings file.")
+                    }
+                }
+                settingsTransferStatus = result.fold(
+                    onSuccess = {
+                        "Settings imported (${it.preferenceCount} preferences, ${it.importedGlideWordCount} glide words)."
+                    },
+                    onFailure = { "Import failed: ${it.message.orEmpty()}" },
+                )
+            }
+        }
+    }
 
     LeetBoardTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -174,9 +225,19 @@ fun SettingsScreen(
                             OptionalKeysSection(preferences, repository)
                             InteractionSection(preferences, repository)
                             FeatureSection(preferences, repository)
-                            SettingsActions(onOpenDiagnostics, onClose) {
-                                showResetConfirmation = true
-                            }
+                            SettingsActions(
+                                onOpenDiagnostics = onOpenDiagnostics,
+                                onClose = onClose,
+                                onResetDefaults = { showResetConfirmation = true },
+                                onExportJson = { jsonExportLauncher.launch("leetboard-settings.json") },
+                                onExportYaml = { yamlExportLauncher.launch("leetboard-settings.yaml") },
+                                onImportSettings = {
+                                    settingsImportLauncher.launch(
+                                        arrayOf("application/json", "application/x-yaml", "text/yaml", "text/*"),
+                                    )
+                                },
+                                transferStatus = settingsTransferStatus,
+                            )
                         }
                         Column(
                             modifier = Modifier
@@ -207,9 +268,19 @@ fun SettingsScreen(
                         ActionSlotsSection(preferences, repository)
                         KeyDisplaySection(preferences, repository)
                         FeatureSection(preferences, repository)
-                        SettingsActions(onOpenDiagnostics, onClose) {
-                            showResetConfirmation = true
-                        }
+                        SettingsActions(
+                            onOpenDiagnostics = onOpenDiagnostics,
+                            onClose = onClose,
+                            onResetDefaults = { showResetConfirmation = true },
+                            onExportJson = { jsonExportLauncher.launch("leetboard-settings.json") },
+                            onExportYaml = { yamlExportLauncher.launch("leetboard-settings.yaml") },
+                            onImportSettings = {
+                                settingsImportLauncher.launch(
+                                    arrayOf("application/json", "application/x-yaml", "text/yaml", "text/*"),
+                                )
+                            },
+                            transferStatus = settingsTransferStatus,
+                        )
                     }
                 }
             }
@@ -217,7 +288,9 @@ fun SettingsScreen(
                 AlertDialog(
                     onDismissRequest = { showResetConfirmation = false },
                     title = { Text("Reset defaults") },
-                    text = { Text("Reset layout, theme, geometry, optional keys, action slots, and feature flags.") },
+                    text = {
+                        Text("Reset layout, theme, geometry, optional keys, action slots, feature flags, and local glide learning.")
+                    },
                     confirmButton = {
                         TextButton(
                             onClick = {
@@ -877,10 +950,26 @@ private fun SettingsActions(
     onOpenDiagnostics: () -> Unit,
     onClose: () -> Unit,
     onResetDefaults: () -> Unit,
+    onExportJson: () -> Unit,
+    onExportYaml: () -> Unit,
+    onImportSettings: () -> Unit,
+    transferStatus: String?,
 ) {
-    SettingsGroup(title = "Maintenance", body = "Diagnostics and reset controls.") {
+    SettingsGroup(title = "Maintenance", body = "Diagnostics, settings transfer, and reset controls.") {
         OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth()) {
             Text("Open diagnostics")
+        }
+        OutlinedButton(onClick = onExportJson, modifier = Modifier.fillMaxWidth()) {
+            Text("Export settings JSON")
+        }
+        OutlinedButton(onClick = onExportYaml, modifier = Modifier.fillMaxWidth()) {
+            Text("Export settings YAML")
+        }
+        OutlinedButton(onClick = onImportSettings, modifier = Modifier.fillMaxWidth()) {
+            Text("Import settings")
+        }
+        if (!transferStatus.isNullOrBlank()) {
+            Text(transferStatus, style = MaterialTheme.typography.bodySmall)
         }
         OutlinedButton(onClick = onResetDefaults, modifier = Modifier.fillMaxWidth()) {
             Text("Reset defaults")

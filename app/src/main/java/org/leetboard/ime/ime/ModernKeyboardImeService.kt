@@ -314,8 +314,8 @@ class ModernKeyboardImeService : InputMethodService() {
     private fun handleKeyAction(action: KeyAction, heldModifiers: HeldModifiers) {
         if (action.type == KeyActionType.TAB && tryAcceptFirstSuggestionWithTab(heldModifiers)) return
         if (action.type == KeyActionType.DELETE && tryUndoLastGlide(heldModifiers)) return
-        trimPendingSpaceBeforePunctuation(action, heldModifiers)
-        val boundaryToken = typedBoundaryToken(action, heldModifiers)
+        val actionToHandle = action.withPostPredictionPunctuationSpacing(heldModifiers)
+        val boundaryToken = typedBoundaryToken(actionToHandle, heldModifiers)
         val boundaryContext = boundaryToken?.let(::typedPredictionContextBeforeToken)
         val autocorrected = if (boundaryToken != null && boundaryContext != null) {
             autocorrectTypedToken(boundaryToken, boundaryContext)
@@ -325,13 +325,13 @@ class ModernKeyboardImeService : InputMethodService() {
         if (!autocorrected && boundaryToken != null && boundaryContext != null) {
             recordTypedAcceptedWord(boundaryToken, boundaryContext)
         }
-        updatePendingGlideCorrection(action, heldModifiers)
-        if (action.type != KeyActionType.DELETE) {
+        updatePendingGlideCorrection(actionToHandle, heldModifiers)
+        if (actionToHandle.type != KeyActionType.DELETE) {
             pendingGlideUndo = null
             pendingSuggestionCommit = null
             clearGlideSuggestions()
         }
-        when (action.type) {
+        when (actionToHandle.type) {
             KeyActionType.TOGGLE_SPEECH_INPUT -> {
                 serviceScope.launch { preferenceRepository.setSpeechInputEnabled(!preferences.speechInputEnabled) }
             }
@@ -343,7 +343,7 @@ class ModernKeyboardImeService : InputMethodService() {
             }
             else -> {
                 keyboardState = keyActionEngine.handle(
-                    action,
+                    actionToHandle,
                     keyboardState.copy(
                         stickyModifiersEnabled = preferences.stickyModifiersEnabled,
                         shiftCapsLockEnabled = preferences.shiftCapsLockEnabled,
@@ -353,7 +353,7 @@ class ModernKeyboardImeService : InputMethodService() {
                 )
             }
         }
-        if (shouldRefreshTypedSuggestionsAfter(action)) {
+        if (shouldRefreshTypedSuggestionsAfter(actionToHandle)) {
             refreshTypedSuggestions()
         } else if (suggestionMode == SuggestionMode.TYPED) {
             clearGlideSuggestions()
@@ -469,6 +469,12 @@ class ModernKeyboardImeService : InputMethodService() {
         }
         handleSuggestion(word)
         return true
+    }
+
+    private fun KeyAction.withPostPredictionPunctuationSpacing(heldModifiers: HeldModifiers): KeyAction {
+        val punctuation = punctuationTextOrNull(this, heldModifiers) ?: return this
+        val trimmedPendingSpace = trimPendingSpaceBeforePunctuation(this, heldModifiers)
+        return postPredictionPunctuationAction(this, punctuation, trimmedPendingSpace)
     }
 
     private fun trimPendingSpaceBeforePunctuation(action: KeyAction, heldModifiers: HeldModifiers): Boolean {
@@ -1088,6 +1094,14 @@ class ModernKeyboardImeService : InputMethodService() {
         val QUICK_NAV_STICKY_INDICATOR_LAYOUTS = setOf("qwerty4", "compact5")
         val QUICK_MODIFIER_BAR_LAYOUTS = setOf("qwerty4", "compact5")
     }
+}
+
+internal fun postPredictionPunctuationAction(
+    action: KeyAction,
+    punctuation: String,
+    trimmedPendingSpace: Boolean,
+): KeyAction {
+    return if (trimmedPendingSpace) KeyAction.text("$punctuation ") else action
 }
 
 private fun Char.isAsciiLetter(): Boolean {

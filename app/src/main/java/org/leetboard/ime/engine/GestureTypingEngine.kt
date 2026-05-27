@@ -302,13 +302,13 @@ enum class GlideCandidateSource {
 }
 
 data class GlideTypingOptions(
-    val preferShorterWords: Boolean = false,
-    val strictFirstLastLetter: Boolean = true,
-    val pathTolerance: GlidePathTolerance = GlidePathTolerance.BALANCED,
+    val preferShorterWords: Boolean = true,
+    val strictFirstLastLetter: Boolean = false,
+    val pathTolerance: GlidePathTolerance = GlidePathTolerance.LOOSE,
     val spatialPrecision: GlideSpatialPrecision = GlideSpatialPrecision.STANDARD,
-    val dwellSensitivity: GlideDwellSensitivity = GlideDwellSensitivity.STANDARD,
+    val dwellSensitivity: GlideDwellSensitivity = GlideDwellSensitivity.HIGH,
     val dwellActivationThreshold: Float = DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD,
-    val importedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.NORMAL,
+    val importedWordsPriority: GlideImportedWordsPriority = GlideImportedWordsPriority.HIGH,
     val rawPathFallbackMode: GlideRawFallbackMode = GlideRawFallbackMode.OFF,
     val importedWordCount: Int = 0,
     val predictiveRankingEnabled: Boolean = true,
@@ -492,7 +492,7 @@ fun collapseRepeats(value: String): String {
 
 private const val MIN_KEYS_FOR_GESTURE = 2
 private const val MAX_GLIDE_PATH_SIGNATURE_LENGTH = 64
-const val DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.42f
+const val DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.30214944f
 
 private fun normalizePath(labels: List<String>): List<String> {
     return labels

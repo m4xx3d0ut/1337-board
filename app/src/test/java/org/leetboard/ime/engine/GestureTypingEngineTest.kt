@@ -228,8 +228,13 @@ class GestureTypingEngineTest {
             pathTolerance = GlidePathTolerance.LOOSE,
             rawPathFallbackMode = GlideRawFallbackMode.OFF,
         )
+        val strictOptions = GlideTypingOptions(
+            strictFirstLastLetter = true,
+            pathTolerance = GlidePathTolerance.BALANCED,
+            rawPathFallbackMode = GlideRawFallbackMode.OFF,
+        )
 
-        assertNull(engine.decode(path, GlideTypingOptions(rawPathFallbackMode = GlideRawFallbackMode.OFF)))
+        assertNull(engine.decode(path, strictOptions))
         assertEquals("test", engine.decode(path, looseOptions))
     }
 

@@ -4,9 +4,20 @@ All notable changes to 1337 Board are documented here.
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [0.1.4] - 2026-05-27
+
+### Added
+
+- Added settings import and export as JSON or YAML, including imported glide words and local glide learning data.
+
 ### Changed
 
+- Added a trailing space after punctuation that follows a glide or accepted suggestion, while still trimming the pre-punctuation space.
+- Adopted the Pad3-tested glide tuning as the reset/default glide behavior while keeping glide opt-in on fresh installs.
 - Adjusted the four-row phone layout so lower-row alternates prioritize common punctuation and home-row alternates carry programmer symbols.
+- Reset defaults now also clears local glide learning state.
 
 ## [0.1.3] - 2026-05-27
 
