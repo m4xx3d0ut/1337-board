@@ -4,16 +4,32 @@ All notable changes to 1337 Board are documented here.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-27
+
 ### Added
 
 - Added per-orientation layout selection for different portrait and landscape keyboard layouts.
 - Added Num-hold Fn/navigation overlays for four-row, compact five-row, and full five-row layouts.
+- Added four-row quick access to Ctrl, Alt, and F1-F12 from the overlay strip.
+- Added compact five-row quick access to Ctrl and Alt from the overlay strip.
+- Added quick navigation overlays for PgUp/PgDn, arrow movement, Home, and End.
+- Added top-row number long-press access on the four-row layout.
 - Added separate regular-key and special-action long-press timing settings.
 
 ### Changed
 
+- Full five-row Fn hold and Num hold now expose the same F1-F12, Ins, Del, and Backspace top-row overlay.
+- Shift-held number and punctuation keys now emit their shifted symbols while shift lock keeps number keys normal.
+- Suggestion-bar punctuation handling now trims the pending trailing space after accepting a suggestion.
+- Tab can accept the first available suggestion when no modifiers are active.
 - Show `Fn` in the held-key preview while a Num-hold Fn overlay is active.
+- Improved key label fitting for compact keys and secondary labels.
 - Updated the README visual grid with Pad3 captures of custom four-row and compact five-row Num-hold overlays.
+
+### Fixed
+
+- Quick modifier sticky state is visually indicated while waiting for the next keypress.
+- Num-hold overlays avoid applying Home/End behavior to WASD left/right overlays, preserving shift-arrow style selection behavior.
 
 ## [0.1.2] - 2026-05-27
 
