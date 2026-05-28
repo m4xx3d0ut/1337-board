@@ -6,6 +6,28 @@ All notable changes to 1337 Board are documented here.
 
 No unreleased changes.
 
+## [0.1.5] - 2026-05-28
+
+### Added
+
+- Added hybrid speech push-to-talk support while preserving tap-to-talk operation.
+- Added speech pause timeout controls for possible and final silence.
+- Added a speech-specific "Cap speech after punctuation" setting, separate from touch and glide auto-cap behavior.
+- Added a shared four-row and compact five-row bottom-control order setting for `Num-Mic-Space` or `Space-Mic-Num`.
+- Added Tab as the four-row primary bottom-left key, with Esc available by long press.
+
+### Changed
+
+- Speech input now requests partial results and falls back to the best nonblank partial when final recognition is empty.
+- Speech insertion now normalizes spoken punctuation commands such as comma, period/full stop, question mark, exclamation mark, colon, semicolon, new line, and new paragraph.
+- Increased default and maximum primary and shift key label sizes for better phone readability.
+- Refreshed README Pad3 screenshots for four-row and compact five-row Num-hold overlays.
+
+### Fixed
+
+- Improved speech capitalization when dictation starts at a new line or after sentence-ending punctuation.
+- Improved speech result handling when recognizers return blank final candidates.
+
 ## [0.1.4] - 2026-05-27
 
 ### Added
