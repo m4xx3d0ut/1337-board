@@ -17,8 +17,15 @@ class LayoutEngine {
             state.fn -> functionLayer()
             state.emoji -> emoji()
             state.symbols -> symbols()
-            state.activeLayoutId == "qwerty4" -> qwertyFourRow(state.quickNavHold)
-            state.activeLayoutId == "compact5" -> compactFiveRow(state.fnHold, state.quickNavHold)
+            state.activeLayoutId == "qwerty4" -> qwertyFourRow(
+                state.quickNavHold,
+                state.compactBottomControlsRightHandEnabled,
+            )
+            state.activeLayoutId == "compact5" -> compactFiveRow(
+                state.fnHold,
+                state.quickNavHold,
+                state.compactBottomControlsRightHandEnabled,
+            )
             else -> qwertyFiveRow(state.edgeKeyWidthScale, state.fnHold, state.quickNavHold)
         }
     }
@@ -236,7 +243,7 @@ class LayoutEngine {
         )
     }
 
-    private fun qwertyFourRow(quickNavHold: Boolean): KeyboardLayout {
+    private fun qwertyFourRow(quickNavHold: Boolean, rightHandBottomControls: Boolean): KeyboardLayout {
         return KeyboardLayout(
             id = "qwerty4",
             name = "HK-style QWERTY four-row",
@@ -270,12 +277,16 @@ class LayoutEngine {
                 ),
                 KeyRow(
                     listOf(
-                        action("esc", "Esc", KeyActionType.ESCAPE, optional = true),
+                        action(
+                            id = "tab",
+                            label = "Tab",
+                            type = KeyActionType.TAB,
+                            optional = true,
+                            longPress = KeyAction(KeyActionType.ESCAPE),
+                        ).copy(secondaryLabel = "Esc"),
                         symbolsKey(),
                         settingsKey(),
-                        action("space", "Space", KeyActionType.SPACE, 2.2f),
-                        micKey(),
-                        quickNavNumToggle(),
+                    ) + compactBottomControlKeys(rightHandBottomControls, spaceWeight = 2.2f) + listOf(
                         quickNavLeftRight("left", "◀", KeyActionType.ARROW_LEFT, quickNavHold),
                         quickNavLeftRight("right", "▶", KeyActionType.ARROW_RIGHT, quickNavHold),
                         action("enter", "Enter", KeyActionType.ENTER, 1.4f),
@@ -286,7 +297,22 @@ class LayoutEngine {
         )
     }
 
-    private fun compactFiveRow(fnHold: Boolean, quickNavHold: Boolean): KeyboardLayout {
+    private fun compactBottomControlKeys(rightHandBottomControls: Boolean, spaceWeight: Float): List<KeySpec> {
+        val spaceKey = action("space", "Space", KeyActionType.SPACE, spaceWeight)
+        val micKey = micKey()
+        val numKey = quickNavNumToggle()
+        return if (rightHandBottomControls) {
+            listOf(numKey, micKey, spaceKey)
+        } else {
+            listOf(spaceKey, micKey, numKey)
+        }
+    }
+
+    private fun compactFiveRow(
+        fnHold: Boolean,
+        quickNavHold: Boolean,
+        rightHandBottomControls: Boolean,
+    ): KeyboardLayout {
         return KeyboardLayout(
             id = "compact5",
             name = "HK-style compact five-row",
@@ -344,12 +370,10 @@ class LayoutEngine {
                     listOf(
                         action("esc", "Esc", KeyActionType.ESCAPE, optional = true),
                         symbolsKey(),
-                        action("space", "Space", KeyActionType.SPACE, 3f),
                         settingsKey(),
-                        micKey(),
+                    ) + compactBottomControlKeys(rightHandBottomControls, spaceWeight = 3f) + listOf(
                         quickNavLeftRight("left", "◀", KeyActionType.ARROW_LEFT, quickNavHold),
                         quickNavLeftRight("right", "▶", KeyActionType.ARROW_RIGHT, quickNavHold),
-                        quickNavNumToggle(),
                     ),
                     layoutWeight = COMPACT_GRID_WEIGHT,
                 ),

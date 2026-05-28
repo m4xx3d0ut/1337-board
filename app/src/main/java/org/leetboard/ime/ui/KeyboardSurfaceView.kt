@@ -41,6 +41,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     var onGlide: ((List<String>, GlideTouchTrace?, HeldModifiers) -> Unit)? = null
     var onFnHoldChanged: ((Boolean) -> Unit)? = null
     var onQuickNavHoldChanged: ((Boolean) -> Unit)? = null
+    var onMicHoldChanged: ((Boolean) -> Unit)? = null
 
     private var layout: KeyboardLayout? = null
     private var theme: KeyboardTheme = KeyboardTheme.leetGreen
@@ -50,6 +51,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private var keyLabelStyle: KeyLabelStyle = KeyLabelStyle()
     private var glideTypingEnabled: Boolean = false
     private var swipeUpActionsEnabled: Boolean = true
+    private var speechPushToTalkEnabled: Boolean = false
     private var keyLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt()
     private var specialLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt()
     private var backgroundImageUri: String? = null
@@ -61,6 +63,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private var longPressPointerId: Int? = null
     private var fnHoldPointerId: Int? = null
     private var quickNavHoldPointerId: Int? = null
+    private var micHoldPointerId: Int? = null
     private var nextDownOrder: Long = 0L
     private val hitKeys = mutableListOf<HitKey>()
     private val handler = Handler(Looper.getMainLooper())
@@ -110,6 +113,18 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         onQuickNavHoldChanged?.invoke(true)
         invalidate()
     }
+    private val micHoldRunnable = Runnable {
+        val pointerId = micHoldPointerId ?: return@Runnable
+        val key = pressedKey(pointerId) ?: return@Runnable
+        if (!supportsMicHold(key)) return@Runnable
+        pointerPresses[pointerId] = pointerPresses.getValue(pointerId).copy(
+            longPressConsumed = true,
+            micHoldActive = true,
+        )
+        previewKey = key.copy(label = "Talk")
+        onMicHoldChanged?.invoke(true)
+        invalidate()
+    }
     private val tapDispatchRunnable = Runnable {
         flushQueuedTaps()
     }
@@ -134,6 +149,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         keyLabelStyle: KeyLabelStyle = KeyLabelStyle(),
         glideTypingEnabled: Boolean = false,
         swipeUpActionsEnabled: Boolean = true,
+        speechPushToTalkEnabled: Boolean = false,
         keyLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt(),
         specialLongPressDelayMs: Int = LONG_PRESS_DELAY_MS.toInt(),
     ) {
@@ -145,6 +161,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         this.keyLabelStyle = keyLabelStyle
         this.glideTypingEnabled = glideTypingEnabled
         this.swipeUpActionsEnabled = swipeUpActionsEnabled
+        this.speechPushToTalkEnabled = speechPushToTalkEnabled
         this.keyLongPressDelayMs = keyLongPressDelayMs
         this.specialLongPressDelayMs = specialLongPressDelayMs
         loadBackgroundImageIfNeeded(theme.backgroundImageUri)
@@ -212,8 +229,10 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         handler.removeCallbacks(longPressRunnable)
         handler.removeCallbacks(fnHoldRunnable)
         handler.removeCallbacks(quickNavHoldRunnable)
+        handler.removeCallbacks(micHoldRunnable)
         handler.removeCallbacks(tapDispatchRunnable)
         clearQuickNavHoldIfActive()
+        clearMicHoldIfActive()
         backgroundImageBitmap?.recycle()
         backgroundImageBitmap = null
         super.onDetachedFromWindow()
@@ -243,10 +262,12 @@ class KeyboardSurfaceView(context: Context) : View(context) {
                 handler.removeCallbacks(longPressRunnable)
                 handler.removeCallbacks(fnHoldRunnable)
                 handler.removeCallbacks(quickNavHoldRunnable)
+                handler.removeCallbacks(micHoldRunnable)
                 handler.removeCallbacks(tapDispatchRunnable)
                 rolloverCoordinator.clear()
                 clearFnHoldIfActive()
                 clearQuickNavHoldIfActive()
+                clearMicHoldIfActive()
                 pointerPresses.clear()
                 pressedKeyIds = emptySet()
                 previewKey = null
@@ -300,6 +321,11 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             handler.removeCallbacks(quickNavHoldRunnable)
             handler.postDelayed(quickNavHoldRunnable, specialLongPressDelayMs.toLong())
         }
+        if (supportsMicHold(hitKey.key)) {
+            micHoldPointerId = pointerId
+            handler.removeCallbacks(micHoldRunnable)
+            handler.postDelayed(micHoldRunnable, specialLongPressDelayMs.toLong())
+        }
     }
 
     private fun handlePointerMove(event: MotionEvent) {
@@ -351,6 +377,10 @@ class KeyboardSurfaceView(context: Context) : View(context) {
                     handler.removeCallbacks(quickNavHoldRunnable)
                     quickNavHoldPointerId = null
                 }
+                if (micHoldPointerId == pointerId) {
+                    handler.removeCallbacks(micHoldRunnable)
+                    micHoldPointerId = null
+                }
                 previewKey = null
             }
             pointerPresses[pointerId] = press.copy(
@@ -397,6 +427,10 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             handler.removeCallbacks(quickNavHoldRunnable)
             quickNavHoldPointerId = null
         }
+        if (micHoldPointerId == pointerId) {
+            handler.removeCallbacks(micHoldRunnable)
+            micHoldPointerId = null
+        }
         val heldModifiers = activeHeldModifiers(excludingPointerId = pointerId)
         pointerPresses.remove(pointerId)
         updatePressedKeyIds()
@@ -408,6 +442,11 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         }
         if (press.quickNavHoldActive) {
             onQuickNavHoldChanged?.invoke(false)
+            flushQueuedTaps()
+            return
+        }
+        if (press.micHoldActive) {
+            onMicHoldChanged?.invoke(false)
             flushQueuedTaps()
             return
         }
@@ -521,9 +560,18 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         if (wasActive) onQuickNavHoldChanged?.invoke(false)
     }
 
+    private fun clearMicHoldIfActive() {
+        val wasActive = pointerPresses.values.any { press -> press.micHoldActive }
+        if (wasActive) onMicHoldChanged?.invoke(false)
+    }
+
     private fun supportsQuickNavHold(key: KeySpec): Boolean {
         val layoutId = layout?.id ?: return false
         return key.id == "num_toggle" && layoutId in QUICK_NAV_HOLD_LAYOUTS
+    }
+
+    private fun supportsMicHold(key: KeySpec): Boolean {
+        return speechPushToTalkEnabled && key.action.type == KeyActionType.MICROPHONE
     }
 
     private fun longPressDelayMsFor(key: KeySpec): Int {
@@ -1041,6 +1089,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val longPressConsumed: Boolean = false,
         val fnHoldActive: Boolean = false,
         val quickNavHoldActive: Boolean = false,
+        val micHoldActive: Boolean = false,
         val gliding: Boolean = false,
         val glidePath: List<String> = emptyList(),
         val glidePoints: List<PointF> = emptyList(),

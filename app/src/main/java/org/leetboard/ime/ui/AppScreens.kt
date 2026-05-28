@@ -87,6 +87,8 @@ import org.leetboard.ime.model.resolvedDisplay
 import org.leetboard.ime.prefs.CustomThemeColorField
 import org.leetboard.ime.prefs.CustomThemeOpacityField
 import org.leetboard.ime.prefs.DEFAULT_KEY_LONG_PRESS_DELAY_MS
+import org.leetboard.ime.prefs.DEFAULT_SPEECH_COMPLETE_SILENCE_MS
+import org.leetboard.ime.prefs.DEFAULT_SPEECH_POSSIBLE_SILENCE_MS
 import org.leetboard.ime.prefs.DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
@@ -94,8 +96,10 @@ import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.MAX_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
+import org.leetboard.ime.prefs.MAX_SPEECH_SILENCE_MS
 import org.leetboard.ime.prefs.MIN_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD
+import org.leetboard.ime.prefs.MIN_SPEECH_SILENCE_MS
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.SettingsExportFormat
 import org.leetboard.ime.prefs.defaultLayoutOptions
@@ -339,6 +343,13 @@ private fun LayoutThemeSection(
             title = "Landscape layout",
             selectedLayoutId = preferences.landscapeLayoutId,
             onSelect = { layoutId -> scope.launch { repository.setLayoutId(GeometryOrientation.LANDSCAPE, layoutId) } },
+        )
+        SettingSwitch(
+            label = "4/compact Num-Mic-Space order",
+            checked = preferences.compactBottomControlsRightHandEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setCompactBottomControlsRightHandEnabled(checked) }
+            },
         )
         ThemePreset.entries.forEach { preset ->
             SelectButton(
@@ -786,6 +797,13 @@ private fun FeatureSection(
             },
         )
         SettingSwitch(
+            label = "Hold mic for push-to-talk",
+            checked = preferences.speechPushToTalkEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setSpeechPushToTalkEnabled(checked) }
+            },
+        )
+        SettingSwitch(
             label = "Show typed suggestions",
             checked = preferences.typedSuggestionsEnabled,
             onCheckedChange = { checked ->
@@ -799,6 +817,40 @@ private fun FeatureSection(
                 scope.launch { repository.setTypedAutocorrectEnabled(checked) }
             },
         )
+    }
+    SettingsGroup(
+        title = "Speech Timing",
+        body = "Raise pause limits when the recognizer stops too quickly between words or clauses.",
+    ) {
+        SettingSwitch(
+            label = "Cap speech after punctuation",
+            checked = preferences.speechAutoCapAfterPunctuationEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setSpeechAutoCapAfterPunctuationEnabled(checked) }
+            },
+        )
+        SpeechTimeoutSlider(
+            label = "Possible pause timeout",
+            detail = "Short pauses before the recognizer starts considering speech complete.",
+            value = preferences.speechPossibleSilenceMs,
+            minimum = MIN_SPEECH_SILENCE_MS,
+            maximum = preferences.speechCompleteSilenceMs,
+            resetValue = DEFAULT_SPEECH_POSSIBLE_SILENCE_MS,
+            resetLabel = "Reset possible pause",
+        ) { delayMs ->
+            scope.launch { repository.setSpeechPossibleSilenceMs(delayMs) }
+        }
+        SpeechTimeoutSlider(
+            label = "Final pause timeout",
+            detail = "Longer silence that ends a dictation request.",
+            value = preferences.speechCompleteSilenceMs,
+            minimum = MIN_SPEECH_SILENCE_MS,
+            maximum = MAX_SPEECH_SILENCE_MS,
+            resetValue = DEFAULT_SPEECH_COMPLETE_SILENCE_MS,
+            resetLabel = "Reset final pause",
+        ) { delayMs ->
+            scope.launch { repository.setSpeechCompleteSilenceMs(delayMs) }
+        }
     }
     SettingsGroup(
         title = "Glide Dictionary",
@@ -1112,6 +1164,7 @@ private fun KeymapPreview(
             KeyboardState(
                 activeLayoutId = preferences.layoutIdForOrientation(orientation),
                 edgeKeyWidthScale = preferences.edgeKeyWidthScale,
+                compactBottomControlsRightHandEnabled = preferences.compactBottomControlsRightHandEnabled,
             ),
             orientation,
         ),
@@ -1546,6 +1599,38 @@ private fun LongPressDelaySlider(
 }
 
 @Composable
+private fun SpeechTimeoutSlider(
+    label: String,
+    detail: String,
+    value: Int,
+    minimum: Int,
+    maximum: Int,
+    resetValue: Int,
+    resetLabel: String,
+    onChange: (Int) -> Unit,
+) {
+    val boundedMaximum = maximum.coerceAtLeast(minimum)
+    val boundedValue = value.coerceIn(minimum, boundedMaximum)
+    val stepCount = (((boundedMaximum - minimum) / SPEECH_TIMEOUT_STEP_MS) - 1).coerceAtLeast(0)
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("$label: ${boundedValue}ms")
+        Text(detail, style = MaterialTheme.typography.bodySmall)
+        Slider(
+            value = boundedValue.toFloat(),
+            onValueChange = { next -> onChange(next.toInt()) },
+            valueRange = minimum.toFloat()..boundedMaximum.toFloat(),
+            steps = stepCount,
+        )
+        OutlinedButton(
+            onClick = { onChange(resetValue.coerceIn(minimum, boundedMaximum)) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(resetLabel)
+        }
+    }
+}
+
+@Composable
 private fun GlideDwellThresholdSlider(
     value: Float,
     onChange: (Float) -> Unit,
@@ -1625,8 +1710,8 @@ private val KeyLabelStyleField.sliderMin: Float
 
 private val KeyLabelStyleField.sliderMax: Float
     get() = when (this) {
-        KeyLabelStyleField.PRIMARY_TEXT_SIZE -> 24f
-        KeyLabelStyleField.SECONDARY_TEXT_SIZE -> 16f
+        KeyLabelStyleField.PRIMARY_TEXT_SIZE -> 32f
+        KeyLabelStyleField.SECONDARY_TEXT_SIZE -> 24f
         KeyLabelStyleField.FONT_WEIGHT -> 900f
         KeyLabelStyleField.LABEL_OPACITY -> 1f
     }
@@ -1750,6 +1835,7 @@ private const val PREVIEW_TABLET_SMALLEST_WIDTH_DP = 600
 private const val PREVIEW_TEXT_FIT_ITERATIONS = 7
 private const val PREVIEW_MIN_PRIMARY_TEXT_SIZE_SP = 7f
 private const val PREVIEW_MIN_SECONDARY_TEXT_SIZE_SP = 5f
+private const val SPEECH_TIMEOUT_STEP_MS = 250
 
 private fun nextAction(current: KeyAction): KeyAction {
     val index = actionCycle.indexOfFirst { action ->

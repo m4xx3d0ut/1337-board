@@ -316,6 +316,69 @@ class LayoutEngineTest {
     }
 
     @Test
+    fun fourRowBottomControlsUseTabPrimaryWithEscLongPress() {
+        val layout = engine.layoutFor(KeyboardState(activeLayoutId = "qwerty4"), Configuration.ORIENTATION_PORTRAIT)
+        val tabKey = layout.rows[3].keys.first()
+
+        assertEquals("tab", tabKey.id)
+        assertEquals(KeyActionType.TAB, tabKey.action.type)
+        assertEquals("Esc", tabKey.secondaryLabel)
+        assertEquals(KeyActionType.ESCAPE, tabKey.longPressAction?.type)
+    }
+
+    @Test
+    fun fourRowBottomControlsDefaultToRightHandOrder() {
+        val layout = engine.layoutFor(KeyboardState(activeLayoutId = "qwerty4"), Configuration.ORIENTATION_PORTRAIT)
+        val controlIds = layout.rows[3].keys
+            .map { it.id }
+            .filter { it in setOf("space", "mic", "num_toggle") }
+
+        assertEquals(listOf("num_toggle", "mic", "space"), controlIds)
+    }
+
+    @Test
+    fun fourRowBottomControlsCanUseLeftHandOrder() {
+        val layout = engine.layoutFor(
+            KeyboardState(
+                activeLayoutId = "qwerty4",
+                compactBottomControlsRightHandEnabled = false,
+            ),
+            Configuration.ORIENTATION_PORTRAIT,
+        )
+        val controlIds = layout.rows[3].keys
+            .map { it.id }
+            .filter { it in setOf("space", "mic", "num_toggle") }
+
+        assertEquals(listOf("space", "mic", "num_toggle"), controlIds)
+    }
+
+    @Test
+    fun compactFiveBottomControlsDefaultToRightHandOrder() {
+        val layout = engine.layoutFor(KeyboardState(activeLayoutId = "compact5"), Configuration.ORIENTATION_PORTRAIT)
+        val controlIds = layout.rows.last().keys
+            .map { it.id }
+            .filter { it in setOf("space", "mic", "num_toggle") }
+
+        assertEquals(listOf("num_toggle", "mic", "space"), controlIds)
+    }
+
+    @Test
+    fun compactFiveBottomControlsCanUseLeftHandOrder() {
+        val layout = engine.layoutFor(
+            KeyboardState(
+                activeLayoutId = "compact5",
+                compactBottomControlsRightHandEnabled = false,
+            ),
+            Configuration.ORIENTATION_PORTRAIT,
+        )
+        val controlIds = layout.rows.last().keys
+            .map { it.id }
+            .filter { it in setOf("space", "mic", "num_toggle") }
+
+        assertEquals(listOf("space", "mic", "num_toggle"), controlIds)
+    }
+
+    @Test
     fun deleteAndArrowKeysAreRepeatable() {
         val layout = engine.layoutFor(KeyboardState(), Configuration.ORIENTATION_PORTRAIT)
         val repeatableActions = layout.rows

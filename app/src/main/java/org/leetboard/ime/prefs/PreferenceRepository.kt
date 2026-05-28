@@ -46,6 +46,14 @@ class PreferenceRepository(context: Context) {
     val preferences: Flow<KeyboardPreferences> = dataStore.data.map { values ->
         val glideCorrections = glideCorrectionsFromPreferenceValue(values[Keys.glideCorrections])
         val legacyLayoutId = values[Keys.layoutId] ?: KeyboardPreferences.defaults().layoutId
+        val speechCompleteSilenceMs = values[Keys.speechCompleteSilenceMs]?.coerceIn(
+            MIN_SPEECH_SILENCE_MS,
+            MAX_SPEECH_SILENCE_MS,
+        ) ?: KeyboardPreferences.defaults().speechCompleteSilenceMs
+        val speechPossibleSilenceMs = values[Keys.speechPossibleSilenceMs]?.coerceIn(
+            MIN_SPEECH_SILENCE_MS,
+            speechCompleteSilenceMs,
+        ) ?: KeyboardPreferences.defaults().speechPossibleSilenceMs.coerceAtMost(speechCompleteSilenceMs)
         KeyboardPreferences(
             layoutId = legacyLayoutId,
             portraitLayoutId = values[Keys.portraitLayoutId] ?: legacyLayoutId,
@@ -76,6 +84,9 @@ class PreferenceRepository(context: Context) {
                 ?: values[Keys.fnLongPressDelayMs]
                 ?: KeyboardPreferences.defaults().specialLongPressDelayMs,
             edgeKeyWidthScale = values[Keys.edgeKeyWidthScale] ?: KeyboardPreferences.defaults().edgeKeyWidthScale,
+            compactBottomControlsRightHandEnabled = values[Keys.compactBottomControlsRightHandEnabled]
+                ?: values[Keys.legacyFourRowRightHandControlsEnabled]
+                ?: KeyboardPreferences.defaults().compactBottomControlsRightHandEnabled,
             gestureTypingEnabled = values[Keys.gestureTypingEnabled] ?: false,
             typedSuggestionsEnabled = values[Keys.typedSuggestionsEnabled]
                 ?: KeyboardPreferences.defaults().typedSuggestionsEnabled,
@@ -84,6 +95,12 @@ class PreferenceRepository(context: Context) {
             autoCapAfterPeriodEnabled = values[Keys.autoCapAfterPeriodEnabled] ?: true,
             swipeUpActionsEnabled = values[Keys.swipeUpActionsEnabled] ?: true,
             speechInputEnabled = values[Keys.speechInputEnabled] ?: false,
+            speechPushToTalkEnabled = values[Keys.speechPushToTalkEnabled]
+                ?: KeyboardPreferences.defaults().speechPushToTalkEnabled,
+            speechAutoCapAfterPunctuationEnabled = values[Keys.speechAutoCapAfterPunctuationEnabled]
+                ?: KeyboardPreferences.defaults().speechAutoCapAfterPunctuationEnabled,
+            speechCompleteSilenceMs = speechCompleteSilenceMs,
+            speechPossibleSilenceMs = speechPossibleSilenceMs,
             glideImportedWordCount = values[Keys.glideImportedWordCount] ?: importedGlideWordsFile().lineCountOrZero(),
             glideCorrectionLearningEnabled = values[Keys.glideCorrectionLearningEnabled]
                 ?: KeyboardPreferences.defaults().glideCorrectionLearningEnabled,
@@ -264,6 +281,10 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.edgeKeyWidthScale] = value.coerceIn(MIN_EDGE_KEY_SCALE, MAX_EDGE_KEY_SCALE) }
     }
 
+    suspend fun setCompactBottomControlsRightHandEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.compactBottomControlsRightHandEnabled] = enabled }
+    }
+
     suspend fun setNumpadToggleEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.numpadToggleEnabled] = enabled }
     }
@@ -406,6 +427,37 @@ class PreferenceRepository(context: Context) {
 
     suspend fun setSpeechInputEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.speechInputEnabled] = enabled }
+    }
+
+    suspend fun setSpeechPushToTalkEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.speechPushToTalkEnabled] = enabled }
+    }
+
+    suspend fun setSpeechAutoCapAfterPunctuationEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.speechAutoCapAfterPunctuationEnabled] = enabled }
+    }
+
+    suspend fun setSpeechCompleteSilenceMs(delayMs: Int) {
+        dataStore.edit { values ->
+            val next = delayMs.coerceIn(MIN_SPEECH_SILENCE_MS, MAX_SPEECH_SILENCE_MS)
+            values[Keys.speechCompleteSilenceMs] = next
+            values[Keys.speechPossibleSilenceMs]?.takeIf { it > next }?.let {
+                values[Keys.speechPossibleSilenceMs] = next
+            }
+        }
+    }
+
+    suspend fun setSpeechPossibleSilenceMs(delayMs: Int) {
+        dataStore.edit { values ->
+            val completeSilenceMs = values[Keys.speechCompleteSilenceMs]?.coerceIn(
+                MIN_SPEECH_SILENCE_MS,
+                MAX_SPEECH_SILENCE_MS,
+            ) ?: KeyboardPreferences.defaults().speechCompleteSilenceMs
+            values[Keys.speechPossibleSilenceMs] = delayMs.coerceIn(
+                MIN_SPEECH_SILENCE_MS,
+                completeSilenceMs,
+            )
+        }
     }
 
     suspend fun importGlideWords(reader: Reader): Int {
@@ -630,12 +682,18 @@ class PreferenceRepository(context: Context) {
         val specialLongPressDelayMs = intPreferencesKey("special_long_press_delay_ms")
         val fnLongPressDelayMs = intPreferencesKey("fn_long_press_delay_ms")
         val edgeKeyWidthScale = floatPreferencesKey("edge_key_width_scale")
+        val compactBottomControlsRightHandEnabled = booleanPreferencesKey("compact_bottom_controls_right_hand_enabled")
+        val legacyFourRowRightHandControlsEnabled = booleanPreferencesKey("four_row_right_hand_controls_enabled")
         val gestureTypingEnabled = booleanPreferencesKey("gesture_typing_enabled")
         val typedSuggestionsEnabled = booleanPreferencesKey("typed_suggestions_enabled")
         val typedAutocorrectEnabled = booleanPreferencesKey("typed_autocorrect_enabled")
         val autoCapAfterPeriodEnabled = booleanPreferencesKey("auto_cap_after_period_enabled")
         val swipeUpActionsEnabled = booleanPreferencesKey("swipe_up_actions_enabled")
         val speechInputEnabled = booleanPreferencesKey("speech_input_enabled")
+        val speechPushToTalkEnabled = booleanPreferencesKey("speech_push_to_talk_enabled")
+        val speechAutoCapAfterPunctuationEnabled = booleanPreferencesKey("speech_auto_cap_after_punctuation_enabled")
+        val speechCompleteSilenceMs = intPreferencesKey("speech_complete_silence_ms")
+        val speechPossibleSilenceMs = intPreferencesKey("speech_possible_silence_ms")
         val glideImportedWordCount = intPreferencesKey("glide_imported_word_count")
         val glideCorrectionLearningEnabled = booleanPreferencesKey("glide_correction_learning_enabled")
         val glideCorrections = stringPreferencesKey("glide_corrections")
@@ -732,12 +790,17 @@ class PreferenceRepository(context: Context) {
             put(Keys.keyLongPressDelayMs.name, keyLongPressDelayMs)
             put(Keys.specialLongPressDelayMs.name, specialLongPressDelayMs)
             put(Keys.edgeKeyWidthScale.name, edgeKeyWidthScale)
+            put(Keys.compactBottomControlsRightHandEnabled.name, compactBottomControlsRightHandEnabled)
             put(Keys.gestureTypingEnabled.name, gestureTypingEnabled)
             put(Keys.typedSuggestionsEnabled.name, typedSuggestionsEnabled)
             put(Keys.typedAutocorrectEnabled.name, typedAutocorrectEnabled)
             put(Keys.autoCapAfterPeriodEnabled.name, autoCapAfterPeriodEnabled)
             put(Keys.swipeUpActionsEnabled.name, swipeUpActionsEnabled)
             put(Keys.speechInputEnabled.name, speechInputEnabled)
+            put(Keys.speechPushToTalkEnabled.name, speechPushToTalkEnabled)
+            put(Keys.speechAutoCapAfterPunctuationEnabled.name, speechAutoCapAfterPunctuationEnabled)
+            put(Keys.speechCompleteSilenceMs.name, speechCompleteSilenceMs)
+            put(Keys.speechPossibleSilenceMs.name, speechPossibleSilenceMs)
             put(Keys.glideImportedWordCount.name, importedWordCount)
             put(Keys.glideCorrectionLearningEnabled.name, glideCorrectionLearningEnabled)
             put(Keys.glideCorrections.name, glideCorrectionsToPreferenceValue(glideCorrections))
@@ -827,12 +890,31 @@ class PreferenceRepository(context: Context) {
         settings.float(Keys.edgeKeyWidthScale)?.let {
             this[Keys.edgeKeyWidthScale] = it.coerceIn(MIN_EDGE_KEY_SCALE, MAX_EDGE_KEY_SCALE)
         }
+        (
+            settings.boolean(Keys.compactBottomControlsRightHandEnabled)
+                ?: settings.boolean(Keys.legacyFourRowRightHandControlsEnabled)
+        )?.let {
+            this[Keys.compactBottomControlsRightHandEnabled] = it
+        }
         settings.boolean(Keys.gestureTypingEnabled)?.let { this[Keys.gestureTypingEnabled] = it }
         settings.boolean(Keys.typedSuggestionsEnabled)?.let { this[Keys.typedSuggestionsEnabled] = it }
         settings.boolean(Keys.typedAutocorrectEnabled)?.let { this[Keys.typedAutocorrectEnabled] = it }
         settings.boolean(Keys.autoCapAfterPeriodEnabled)?.let { this[Keys.autoCapAfterPeriodEnabled] = it }
         settings.boolean(Keys.swipeUpActionsEnabled)?.let { this[Keys.swipeUpActionsEnabled] = it }
         settings.boolean(Keys.speechInputEnabled)?.let { this[Keys.speechInputEnabled] = it }
+        settings.boolean(Keys.speechPushToTalkEnabled)?.let { this[Keys.speechPushToTalkEnabled] = it }
+        settings.boolean(Keys.speechAutoCapAfterPunctuationEnabled)?.let {
+            this[Keys.speechAutoCapAfterPunctuationEnabled] = it
+        }
+        val speechCompleteSilenceMs = settings.int(Keys.speechCompleteSilenceMs)
+            ?.coerceIn(MIN_SPEECH_SILENCE_MS, MAX_SPEECH_SILENCE_MS)
+            ?: KeyboardPreferences.defaults().speechCompleteSilenceMs
+        settings.int(Keys.speechCompleteSilenceMs)?.let {
+            this[Keys.speechCompleteSilenceMs] = speechCompleteSilenceMs
+        }
+        settings.int(Keys.speechPossibleSilenceMs)?.let {
+            this[Keys.speechPossibleSilenceMs] = it.coerceIn(MIN_SPEECH_SILENCE_MS, speechCompleteSilenceMs)
+        }
         this[Keys.glideImportedWordCount] = importedWordCount
         settings.boolean(Keys.glideCorrectionLearningEnabled)?.let { this[Keys.glideCorrectionLearningEnabled] = it }
         settings.string(Keys.glideCorrections)?.let { corrections ->
@@ -931,6 +1013,8 @@ const val MIN_LONG_PRESS_DELAY_MS = 300
 const val MAX_LONG_PRESS_DELAY_MS = 900
 const val MIN_FN_LONG_PRESS_DELAY_MS = MIN_LONG_PRESS_DELAY_MS
 const val MAX_FN_LONG_PRESS_DELAY_MS = MAX_LONG_PRESS_DELAY_MS
+const val MIN_SPEECH_SILENCE_MS = 1000
+const val MAX_SPEECH_SILENCE_MS = 8000
 
 fun glideCorrectionsFromPreferenceValue(value: String?): Map<String, GlideCorrectionEntry> {
     if (value.isNullOrBlank()) return emptyMap()
@@ -1009,8 +1093,8 @@ private val KeyLabelStyleField.minimum: Float
 
 private val KeyLabelStyleField.maximum: Float
     get() = when (this) {
-        KeyLabelStyleField.PRIMARY_TEXT_SIZE -> 24f
-        KeyLabelStyleField.SECONDARY_TEXT_SIZE -> 16f
+        KeyLabelStyleField.PRIMARY_TEXT_SIZE -> 32f
+        KeyLabelStyleField.SECONDARY_TEXT_SIZE -> 24f
         KeyLabelStyleField.FONT_WEIGHT -> 900f
         KeyLabelStyleField.LABEL_OPACITY -> 1f
     }

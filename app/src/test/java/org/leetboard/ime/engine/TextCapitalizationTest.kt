@@ -64,4 +64,84 @@ class TextCapitalizationTest {
     fun shiftLockDoesNotUseSymbolAlternatesForNumberKeys() {
         assertEquals(null, shiftAlternateText("1", ModifierState(shift = true, shiftLocked = true), HeldModifiers()))
     }
+
+    @Test
+    fun speechInsertionAddsSpaceAfterWords() {
+        assertEquals(
+            " hello",
+            formatSpeechInsertionText("hello", "test", autoCapAfterSentence = true),
+        )
+    }
+
+    @Test
+    fun speechInsertionCapitalizesAfterSentenceEnd() {
+        assertEquals(
+            " Hello",
+            formatSpeechInsertionText("hello", "test.", autoCapAfterSentence = true),
+        )
+    }
+
+    @Test
+    fun speechInsertionKeepsMidSentenceLowercaseAfterComma() {
+        assertEquals(
+            "hello",
+            formatSpeechInsertionText("Hello", "test, ", autoCapAfterSentence = true),
+        )
+    }
+
+    @Test
+    fun speechInsertionDoesNotSpaceBeforePunctuation() {
+        assertEquals(
+            ",",
+            formatSpeechInsertionText(",", "test", autoCapAfterSentence = true),
+        )
+    }
+
+    @Test
+    fun speechInsertionConvertsSpokenPunctuation() {
+        assertEquals(
+            "This is a test, this is only a test.",
+            formatSpeechInsertionText(
+                "this is a test comma this is only a test period",
+                "",
+                autoCapAfterSentence = true,
+            ),
+        )
+    }
+
+    @Test
+    fun speechInsertionCapitalizesAfterSpokenSentenceCommand() {
+        assertEquals(
+            "This is one. This is two.",
+            formatSpeechInsertionText(
+                "this is one period this is two period",
+                "",
+                autoCapAfterSentence = true,
+            ),
+        )
+    }
+
+    @Test
+    fun speechInsertionCapitalizesAtLineStart() {
+        assertEquals(
+            "Line start test.",
+            formatSpeechInsertionText(
+                "line start test period",
+                "Previous text\n",
+                autoCapAfterSentence = true,
+            ),
+        )
+    }
+
+    @Test
+    fun speechCommandsCanCreateNewLines() {
+        assertEquals(
+            "First line.\nSecond line.",
+            formatSpeechInsertionText(
+                "first line period new line second line period",
+                "",
+                autoCapAfterSentence = true,
+            ),
+        )
+    }
 }

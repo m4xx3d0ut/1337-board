@@ -42,6 +42,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         keyLabelStyle: KeyLabelStyle = KeyLabelStyle(),
         glideTypingEnabled: Boolean = false,
         swipeUpActionsEnabled: Boolean = true,
+        speechPushToTalkEnabled: Boolean = false,
         keyLongPressDelayMs: Int = KeyboardSurfaceView.LONG_PRESS_DELAY_MS.toInt(),
         specialLongPressDelayMs: Int = KeyboardSurfaceView.LONG_PRESS_DELAY_MS.toInt(),
         suggestionBarEnabled: Boolean = glideTypingEnabled,
@@ -72,6 +73,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             keyLabelStyle = keyLabelStyle,
             glideTypingEnabled = glideTypingEnabled,
             swipeUpActionsEnabled = swipeUpActionsEnabled,
+            speechPushToTalkEnabled = speechPushToTalkEnabled,
             keyLongPressDelayMs = keyLongPressDelayMs,
             specialLongPressDelayMs = specialLongPressDelayMs,
         )

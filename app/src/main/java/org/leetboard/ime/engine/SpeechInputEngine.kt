@@ -16,6 +16,7 @@ class SpeechInputEngine(
     private val textContextPolicy: TextContextPolicy,
 ) {
     private var recognizer: SpeechRecognizer? = null
+    private var latestPartialText: String = ""
 
     fun isAvailable(editorInfo: EditorInfo?): Boolean {
         return textContextPolicy.allowsSpeechInput(editorInfo)
@@ -23,6 +24,7 @@ class SpeechInputEngine(
 
     fun start(
         editorInfo: EditorInfo?,
+        options: SpeechInputOptions,
         onText: (String) -> Unit,
         onError: (String) -> Unit,
         onState: (SpeechInputEngineState) -> Unit = {},
@@ -37,6 +39,7 @@ class SpeechInputEngine(
             return SpeechStartResult.FeatureNotInstalled
         }
 
+        latestPartialText = ""
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(context).also { speechRecognizer ->
             speechRecognizer.setRecognitionListener(object : RecognitionListener {
@@ -55,7 +58,12 @@ class SpeechInputEngine(
                     onState(SpeechInputEngineState.PROCESSING)
                 }
 
-                override fun onPartialResults(partialResults: Bundle?) = Unit
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val partialCandidates = partialResults
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        .orEmpty()
+                    latestPartialText = bestSpeechRecognitionText(partialCandidates, latestPartialText)
+                }
                 override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
                 override fun onError(error: Int) {
@@ -67,10 +75,11 @@ class SpeechInputEngine(
                 override fun onResults(results: Bundle?) {
                     recognizer?.destroy()
                     recognizer = null
-                    val text = results
+                    val candidates = results
                         ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()
                         .orEmpty()
+                    val text = bestSpeechRecognitionText(candidates, latestPartialText)
+                    latestPartialText = ""
                     if (text.isBlank()) {
                         onError("No speech recognized")
                     } else {
@@ -78,7 +87,7 @@ class SpeechInputEngine(
                     }
                 }
             })
-            speechRecognizer.startListening(speechIntent())
+            speechRecognizer.startListening(speechIntent(options))
         }
         return SpeechStartResult.Started
     }
@@ -100,11 +109,23 @@ class SpeechInputEngine(
         recognizer = null
     }
 
-    private fun speechIntent(): Intent {
+    private fun speechIntent(options: SpeechInputOptions): Intent {
         return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                options.completeSilenceMs,
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                options.possibleSilenceMs,
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
+                options.minimumLengthMs,
+            )
         }
     }
 
@@ -133,4 +154,21 @@ sealed interface SpeechStartResult {
     data object FeatureNotInstalled : SpeechStartResult
     data object Started : SpeechStartResult
     data class Error(val message: String) : SpeechStartResult
+}
+
+data class SpeechInputOptions(
+    val completeSilenceMs: Int,
+    val possibleSilenceMs: Int,
+    val minimumLengthMs: Int = 1000,
+)
+
+internal fun bestSpeechRecognitionText(
+    candidates: List<String>,
+    partialFallback: String,
+): String {
+    return candidates
+        .firstOrNull { it.isNotBlank() }
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: partialFallback.trim()
 }

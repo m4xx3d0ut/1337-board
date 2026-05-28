@@ -8,6 +8,7 @@ import org.leetboard.ime.engine.GlideDwellSensitivity
 import org.leetboard.ime.engine.GlideSpatialPrecision
 import org.leetboard.ime.engine.GlideTypingOptions
 import org.leetboard.ime.engine.GlideCorrectionEntry
+import org.leetboard.ime.engine.SpeechInputOptions
 import org.leetboard.ime.engine.DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.model.CustomizationState
 import org.leetboard.ime.model.CustomThemeConfig
@@ -21,6 +22,8 @@ import org.leetboard.ime.model.ThemePreset
 
 const val DEFAULT_KEY_LONG_PRESS_DELAY_MS = 520
 const val DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS = 520
+const val DEFAULT_SPEECH_COMPLETE_SILENCE_MS = 3500
+const val DEFAULT_SPEECH_POSSIBLE_SILENCE_MS = 2500
 
 data class KeyboardPreferences(
     val layoutId: String = "qwerty5",
@@ -41,12 +44,17 @@ data class KeyboardPreferences(
     val keyLongPressDelayMs: Int = DEFAULT_KEY_LONG_PRESS_DELAY_MS,
     val specialLongPressDelayMs: Int = DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS,
     val edgeKeyWidthScale: Float = 0.75f,
+    val compactBottomControlsRightHandEnabled: Boolean = true,
     val gestureTypingEnabled: Boolean = false,
     val typedSuggestionsEnabled: Boolean = true,
     val typedAutocorrectEnabled: Boolean = false,
     val autoCapAfterPeriodEnabled: Boolean = true,
     val swipeUpActionsEnabled: Boolean = true,
     val speechInputEnabled: Boolean = false,
+    val speechPushToTalkEnabled: Boolean = false,
+    val speechAutoCapAfterPunctuationEnabled: Boolean = true,
+    val speechCompleteSilenceMs: Int = DEFAULT_SPEECH_COMPLETE_SILENCE_MS,
+    val speechPossibleSilenceMs: Int = DEFAULT_SPEECH_POSSIBLE_SILENCE_MS,
     val glideImportedWordCount: Int = 0,
     val glideCorrectionLearningEnabled: Boolean = false,
     val glideCorrections: Map<String, GlideCorrectionEntry> = emptyMap(),
@@ -88,6 +96,13 @@ data class KeyboardPreferences(
             rawPathFallbackMode = glideRawFallbackMode,
             importedWordCount = glideImportedWordCount,
             predictiveRankingEnabled = glidePredictiveRankingEnabled,
+        )
+    }
+
+    fun speechInputOptions(): SpeechInputOptions {
+        return SpeechInputOptions(
+            completeSilenceMs = speechCompleteSilenceMs,
+            possibleSilenceMs = speechPossibleSilenceMs,
         )
     }
 

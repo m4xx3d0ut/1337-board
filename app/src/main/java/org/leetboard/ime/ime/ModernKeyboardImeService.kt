@@ -2,6 +2,7 @@ package org.leetboard.ime.ime
 
 import android.inputmethodservice.InputMethodService
 import android.os.Build
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.WindowInsets
 import android.view.View
@@ -37,6 +38,7 @@ import org.leetboard.ime.engine.ThemeEngine
 import org.leetboard.ime.engine.TypedPredictionEngine
 import org.leetboard.ime.engine.applyKeyboardCapitalization
 import org.leetboard.ime.engine.findPendingGlideReplacementSpan
+import org.leetboard.ime.engine.formatSpeechInsertionText
 import org.leetboard.ime.engine.normalizeWord
 import org.leetboard.ime.engine.pendingGlideCommitMatchesBeforeCursor
 import org.leetboard.ime.model.HeldModifiers
@@ -70,6 +72,9 @@ class ModernKeyboardImeService : InputMethodService() {
     private var preferences = KeyboardPreferences.defaults()
     private var contextHiddenKeyIds: Set<String> = emptySet()
     private var speechUiState = SpeechUiState.IDLE
+    private var speechPushToTalkActive = false
+    private var speechPushToTalkStartedAtMs = 0L
+    private var speechPushToTalkStopPending = false
     private var speechResetJob: Job? = null
     private var glideSuggestionsJob: Job? = null
     private var glideCorrectionRecordJob: Job? = null
@@ -118,6 +123,8 @@ class ModernKeyboardImeService : InputMethodService() {
                 if (!preferences.speechInputEnabled && speechUiState != SpeechUiState.IDLE) {
                     speechInputEngine.cancel()
                     speechUiState = SpeechUiState.IDLE
+                    speechPushToTalkActive = false
+                    speechPushToTalkStopPending = false
                 }
                 renderKeyboard()
             }
@@ -155,6 +162,10 @@ class ModernKeyboardImeService : InputMethodService() {
                 )
                 renderKeyboard()
             }
+            view.keyboardView.onMicHoldChanged = { active ->
+                handleSpeechPushToTalk(active)
+                renderKeyboard()
+            }
             view.onSuggestion = { word ->
                 handleSuggestion(word)
                 renderKeyboard()
@@ -185,6 +196,8 @@ class ModernKeyboardImeService : InputMethodService() {
         super.onFinishInput()
         speechInputEngine.cancel()
         speechUiState = SpeechUiState.IDLE
+        speechPushToTalkActive = false
+        speechPushToTalkStopPending = false
         pendingGlideUndo = null
         pendingSuggestionCommit = null
         clearPendingGlideCorrection()
@@ -203,6 +216,7 @@ class ModernKeyboardImeService : InputMethodService() {
             stickyModifiersEnabled = preferences.stickyModifiersEnabled,
             shiftCapsLockEnabled = preferences.shiftCapsLockEnabled,
             edgeKeyWidthScale = preferences.edgeKeyWidthScale,
+            compactBottomControlsRightHandEnabled = preferences.compactBottomControlsRightHandEnabled,
         )
         val quickModifierBarEnabled = keyboardState.quickNavHold &&
             layoutState.activeLayoutId in QUICK_MODIFIER_BAR_LAYOUTS
@@ -228,6 +242,7 @@ class ModernKeyboardImeService : InputMethodService() {
             preferences.keyLabelStyle,
             gestureTypingAllowed,
             preferences.swipeUpActionsEnabled,
+            preferences.speechPushToTalkEnabled,
             preferences.keyLongPressDelayMs,
             preferences.specialLongPressDelayMs,
             suggestionBarEnabled,
@@ -705,16 +720,64 @@ class ModernKeyboardImeService : InputMethodService() {
             SpeechUiState.COMPLETE,
             SpeechUiState.ERROR -> Unit
         }
+        startSpeechInput("Listening")
+    }
+
+    private fun handleSpeechPushToTalk(active: Boolean) {
+        if (!preferences.speechPushToTalkEnabled) return
+        if (active) {
+            if (!preferences.speechInputEnabled) {
+                showToast("Enable mic input in settings")
+                return
+            }
+            if (speechUiState == SpeechUiState.LISTENING || speechUiState == SpeechUiState.PROCESSING) return
+            speechPushToTalkActive = true
+            speechPushToTalkStopPending = false
+            speechPushToTalkStartedAtMs = SystemClock.uptimeMillis()
+            startSpeechInput("Hold to talk")
+            return
+        }
+
+        if (!speechPushToTalkActive) return
+        speechPushToTalkActive = false
+        val heldForMs = SystemClock.uptimeMillis() - speechPushToTalkStartedAtMs
+        if (heldForMs < MIN_PUSH_TO_TALK_HOLD_MS) {
+            speechPushToTalkStopPending = false
+            speechInputEngine.cancel()
+            updateSpeechUiState(SpeechUiState.IDLE)
+            return
+        }
+        if (speechUiState == SpeechUiState.LISTENING && speechInputEngine.stopListening()) {
+            speechPushToTalkStopPending = true
+            updateSpeechUiState(SpeechUiState.PROCESSING)
+            showToast("Finishing speech")
+        } else if (speechUiState == SpeechUiState.PROCESSING) {
+            speechPushToTalkStopPending = true
+        }
+    }
+
+    private fun startSpeechInput(startMessage: String) {
         updateSpeechUiState(SpeechUiState.LISTENING)
         when (
             val result = speechInputEngine.start(
                 editorInfo = currentInputEditorInfo,
+                options = preferences.speechInputOptions(),
                 onText = { text ->
-                    currentInputConnection?.commitText(text, 1)
+                    commitSpeechText(text)
+                    speechPushToTalkActive = false
+                    speechPushToTalkStopPending = false
                     updateSpeechUiState(SpeechUiState.COMPLETE, resetAfter = true)
                     showToast("Speech inserted")
                 },
                 onError = { message ->
+                    speechPushToTalkActive = false
+                    if (speechPushToTalkStopPending && message.isBenignPushToTalkStopError()) {
+                        speechPushToTalkStopPending = false
+                        updateSpeechUiState(SpeechUiState.IDLE)
+                        showToast("No speech captured")
+                        return@start
+                    }
+                    speechPushToTalkStopPending = false
                     updateSpeechUiState(SpeechUiState.ERROR, resetAfter = true)
                     showToast(message)
                 },
@@ -726,21 +789,42 @@ class ModernKeyboardImeService : InputMethodService() {
                 },
             )
         ) {
-            SpeechStartResult.Started -> showToast("Listening")
+            SpeechStartResult.Started -> showToast(startMessage)
             SpeechStartResult.FeatureNotInstalled -> {
+                speechPushToTalkActive = false
+                speechPushToTalkStopPending = false
                 updateSpeechUiState(SpeechUiState.ERROR, resetAfter = true)
                 showToast("No speech recognizer available")
             }
             is SpeechStartResult.Error -> {
+                speechPushToTalkActive = false
+                speechPushToTalkStopPending = false
                 updateSpeechUiState(SpeechUiState.ERROR, resetAfter = true)
                 showToast(result.message)
             }
         }
     }
 
+    private fun commitSpeechText(text: String) {
+        val beforeCursor = currentInputConnection?.getTextBeforeCursor(SPEECH_CONTEXT_CHARS, 0)
+        val insertion = formatSpeechInsertionText(
+            recognizedText = text,
+            textBeforeCursor = beforeCursor,
+            autoCapAfterSentence = preferences.speechAutoCapAfterPunctuationEnabled,
+        )
+        if (insertion.isNotEmpty()) {
+            currentInputConnection?.commitText(insertion, 1)
+        }
+    }
+
+    private fun String.isBenignPushToTalkStopError(): Boolean {
+        return this in PUSH_TO_TALK_BENIGN_STOP_ERRORS
+    }
+
     private fun KeyboardLayout.withSpeechUiState(): KeyboardLayout {
         val secondaryLabel = when {
             !preferences.speechInputEnabled -> "Off"
+            preferences.speechPushToTalkEnabled && speechUiState == SpeechUiState.IDLE -> "Hold"
             speechUiState == SpeechUiState.LISTENING -> "Stop"
             speechUiState == SpeechUiState.PROCESSING -> "..."
             speechUiState == SpeechUiState.COMPLETE -> "Done"
@@ -1078,6 +1162,8 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private companion object {
         const val SPEECH_STATUS_RESET_MS = 1600L
+        const val SPEECH_CONTEXT_CHARS = 80
+        const val MIN_PUSH_TO_TALK_HOLD_MS = 300L
         const val AUTO_CAP_CONTEXT_CHARS = 8
         const val GLIDE_CONTEXT_CHARS = 160
         const val TYPED_CONTEXT_CHARS = 160
@@ -1091,6 +1177,11 @@ class ModernKeyboardImeService : InputMethodService() {
         const val GLIDE_DEBUG_SNAPSHOT_FILE = "glide_debug_snapshot.txt"
         const val TERMUX_PACKAGE_PREFIX = "com.termux"
         val PUNCTUATION_THAT_TRIMS_GLIDE_SPACE = setOf(".", ",", "!", "?", ";", ":")
+        val PUSH_TO_TALK_BENIGN_STOP_ERRORS = setOf(
+            "Speech recognizer client error",
+            "No speech recognized",
+            "No speech heard",
+        )
         val QUICK_NAV_STICKY_INDICATOR_LAYOUTS = setOf("qwerty4", "compact5")
         val QUICK_MODIFIER_BAR_LAYOUTS = setOf("qwerty4", "compact5")
     }
