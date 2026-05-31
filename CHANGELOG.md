@@ -6,6 +6,24 @@ All notable changes to 1337 Board are documented here.
 
 No unreleased changes.
 
+## [0.1.6] - 2026-05-31
+
+### Added
+
+- Added smart speech cleanup controls for mic input, including toggles for auto-spacing, sentence capitalization, name capitalization, and spoken punctuation commands.
+- Added editable custom speech names so user-defined names and acronyms can keep exact casing during speech cleanup.
+
+### Changed
+
+- Improved speech insertion across mic stop/start events with context-aware spacing and capitalization.
+- Spoken punctuation now trims existing cursor whitespace before committing punctuation, avoiding `word ,` style spacing.
+- Speech commits now use structured insertion edits before committing recognized text.
+
+### Fixed
+
+- Fixed speech punctuation spacing when the cursor already has trailing whitespace.
+- Improved capitalization for standalone `I`, `I'm`, common names, and custom speech names.
+
 ## [0.1.5] - 2026-05-28
 
 ### Added
