@@ -98,6 +98,18 @@ class TextCapitalizationTest {
     }
 
     @Test
+    fun speechInsertionDeletesCursorSpaceBeforeSpokenPunctuation() {
+        val insertion = formatSpeechInsertion(
+            recognizedText = "comma",
+            textBeforeCursor = "hello ",
+            options = SpeechTextAutomationOptions(),
+        )
+
+        assertEquals(",", insertion.text)
+        assertEquals(1, insertion.deleteBeforeChars)
+    }
+
+    @Test
     fun speechInsertionConvertsSpokenPunctuation() {
         assertEquals(
             "This is a test, this is only a test.",
@@ -106,6 +118,69 @@ class TextCapitalizationTest {
                 "",
                 autoCapAfterSentence = true,
             ),
+        )
+    }
+
+    @Test
+    fun speechInsertionCanDisableSmartCleanup() {
+        val insertion = formatSpeechInsertion(
+            recognizedText = "hello period michael",
+            textBeforeCursor = "test.",
+            options = SpeechTextAutomationOptions(smartCleanupEnabled = false),
+        )
+
+        assertEquals("hello period michael", insertion.text)
+        assertEquals(0, insertion.deleteBeforeChars)
+    }
+
+    @Test
+    fun speechInsertionCanDisableSpokenPunctuationCommands() {
+        assertEquals(
+            "Hello period Michael",
+            formatSpeechInsertion(
+                recognizedText = "hello period michael",
+                textBeforeCursor = "",
+                options = SpeechTextAutomationOptions(spokenPunctuationCommandsEnabled = false),
+            ).text,
+        )
+    }
+
+    @Test
+    fun speechInsertionCapitalizesBuiltInAndCustomNames() {
+        assertEquals(
+            " Michael met OnePlus and NASA",
+            formatSpeechInsertion(
+                recognizedText = "michael met oneplus and nasa",
+                textBeforeCursor = "today,",
+                options = SpeechTextAutomationOptions(customNames = setOf("OnePlus", "NASA")),
+            ).text,
+        )
+    }
+
+    @Test
+    fun speechInsertionCapitalizesStandaloneI() {
+        assertEquals(
+            " I think I'm ready.",
+            formatSpeechInsertion(
+                recognizedText = "i think i'm ready period",
+                textBeforeCursor = "okay.",
+                options = SpeechTextAutomationOptions(),
+            ).text,
+        )
+    }
+
+    @Test
+    fun speechInsertionCanDisablePronounAndNameCapitalization() {
+        assertEquals(
+            " i saw michael",
+            formatSpeechInsertion(
+                recognizedText = "i saw michael",
+                textBeforeCursor = "today,",
+                options = SpeechTextAutomationOptions(
+                    autoCapSentencesEnabled = false,
+                    autoCapNamesEnabled = false,
+                ),
+            ).text,
         )
     }
 

@@ -9,6 +9,7 @@ import org.leetboard.ime.engine.GlideSpatialPrecision
 import org.leetboard.ime.engine.GlideTypingOptions
 import org.leetboard.ime.engine.GlideCorrectionEntry
 import org.leetboard.ime.engine.SpeechInputOptions
+import org.leetboard.ime.engine.SpeechTextAutomationOptions
 import org.leetboard.ime.engine.DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.model.CustomizationState
 import org.leetboard.ime.model.CustomThemeConfig
@@ -52,7 +53,12 @@ data class KeyboardPreferences(
     val swipeUpActionsEnabled: Boolean = true,
     val speechInputEnabled: Boolean = false,
     val speechPushToTalkEnabled: Boolean = false,
+    val speechSmartCleanupEnabled: Boolean = true,
+    val speechAutoSpacingEnabled: Boolean = true,
     val speechAutoCapAfterPunctuationEnabled: Boolean = true,
+    val speechAutoCapNamesEnabled: Boolean = true,
+    val speechSpokenPunctuationEnabled: Boolean = true,
+    val speechCustomNames: Set<String> = emptySet(),
     val speechCompleteSilenceMs: Int = DEFAULT_SPEECH_COMPLETE_SILENCE_MS,
     val speechPossibleSilenceMs: Int = DEFAULT_SPEECH_POSSIBLE_SILENCE_MS,
     val glideImportedWordCount: Int = 0,
@@ -103,6 +109,17 @@ data class KeyboardPreferences(
         return SpeechInputOptions(
             completeSilenceMs = speechCompleteSilenceMs,
             possibleSilenceMs = speechPossibleSilenceMs,
+        )
+    }
+
+    fun speechTextAutomationOptions(): SpeechTextAutomationOptions {
+        return SpeechTextAutomationOptions(
+            smartCleanupEnabled = speechSmartCleanupEnabled,
+            autoSpacingEnabled = speechAutoSpacingEnabled,
+            autoCapSentencesEnabled = speechAutoCapAfterPunctuationEnabled,
+            autoCapNamesEnabled = speechAutoCapNamesEnabled,
+            spokenPunctuationCommandsEnabled = speechSpokenPunctuationEnabled,
+            customNames = speechCustomNames,
         )
     }
 

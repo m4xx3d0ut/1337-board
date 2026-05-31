@@ -753,6 +753,7 @@ private fun FeatureSection(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var showGlideCorrections by remember { mutableStateOf(false) }
+    var showSpeechNames by remember { mutableStateOf(false) }
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -819,9 +820,23 @@ private fun FeatureSection(
         )
     }
     SettingsGroup(
-        title = "Speech Timing",
-        body = "Raise pause limits when the recognizer stops too quickly between words or clauses.",
+        title = "Speech Text Automation",
+        body = "Smart cleanup keeps dictated prose spaced and capitalized. Disable it when dictating code or exact text.",
     ) {
+        SettingSwitch(
+            label = "Smart speech cleanup",
+            checked = preferences.speechSmartCleanupEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setSpeechSmartCleanupEnabled(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Auto speech spacing",
+            checked = preferences.speechAutoSpacingEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setSpeechAutoSpacingEnabled(checked) }
+            },
+        )
         SettingSwitch(
             label = "Cap speech after punctuation",
             checked = preferences.speechAutoCapAfterPunctuationEnabled,
@@ -829,6 +844,31 @@ private fun FeatureSection(
                 scope.launch { repository.setSpeechAutoCapAfterPunctuationEnabled(checked) }
             },
         )
+        SettingSwitch(
+            label = "Cap names and I",
+            checked = preferences.speechAutoCapNamesEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setSpeechAutoCapNamesEnabled(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Spoken punctuation commands",
+            checked = preferences.speechSpokenPunctuationEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setSpeechSpokenPunctuationEnabled(checked) }
+            },
+        )
+        OutlinedButton(
+            onClick = { showSpeechNames = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Edit speech names (${preferences.speechCustomNames.size})")
+        }
+    }
+    SettingsGroup(
+        title = "Speech Timing",
+        body = "Raise pause limits when the recognizer stops too quickly between words or clauses.",
+    ) {
         SpeechTimeoutSlider(
             label = "Possible pause timeout",
             detail = "Short pauses before the recognizer starts considering speech complete.",
@@ -995,6 +1035,13 @@ private fun FeatureSection(
             onDismiss = { showGlideCorrections = false },
         )
     }
+    if (showSpeechNames) {
+        SpeechNamesDialog(
+            names = preferences.speechCustomNames,
+            repository = repository,
+            onDismiss = { showSpeechNames = false },
+        )
+    }
 }
 
 @Composable
@@ -1117,6 +1164,64 @@ private fun GlideCorrectionsDialog(
                 },
             ) {
                 Text("Clear all")
+            }
+        },
+    )
+}
+
+@Composable
+private fun SpeechNamesDialog(
+    names: Set<String>,
+    repository: PreferenceRepository,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var namesText by remember(names) {
+        mutableStateOf(names.sortedWith(String.CASE_INSENSITIVE_ORDER).joinToString("\n"))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Speech names") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Add one name per line or separate names with commas. Exact casing is used during speech cleanup.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = namesText,
+                    onValueChange = { namesText = it },
+                    label = { Text("Custom names") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 180.dp, max = 360.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    scope.launch { repository.setSpeechCustomNamesFromText(namesText) }
+                    onDismiss()
+                },
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = {
+                        namesText = ""
+                        scope.launch { repository.setSpeechCustomNamesFromText("") }
+                    },
+                ) {
+                    Text("Clear")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         },
     )

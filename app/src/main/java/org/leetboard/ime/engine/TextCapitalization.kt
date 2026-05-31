@@ -24,13 +24,51 @@ fun shouldAutoCapAfterPeriod(textBeforeCursor: CharSequence?): Boolean {
     return trimmed.lastOrNull() == '.'
 }
 
+data class SpeechTextAutomationOptions(
+    val smartCleanupEnabled: Boolean = true,
+    val autoSpacingEnabled: Boolean = true,
+    val autoCapSentencesEnabled: Boolean = true,
+    val autoCapNamesEnabled: Boolean = true,
+    val spokenPunctuationCommandsEnabled: Boolean = true,
+    val customNames: Set<String> = emptySet(),
+)
+
+data class SpeechInsertion(
+    val text: String,
+    val deleteBeforeChars: Int = 0,
+)
+
 fun formatSpeechInsertionText(
     recognizedText: String,
     textBeforeCursor: CharSequence?,
     autoCapAfterSentence: Boolean,
+    customNames: Set<String> = emptySet(),
 ): String {
-    val trimmedSpeech = recognizedText.normalizeSpokenPunctuationCommands().trim()
-    if (trimmedSpeech.isEmpty()) return ""
+    return formatSpeechInsertion(
+        recognizedText = recognizedText,
+        textBeforeCursor = textBeforeCursor,
+        options = SpeechTextAutomationOptions(
+            autoCapSentencesEnabled = autoCapAfterSentence,
+            customNames = customNames,
+        ),
+    ).text
+}
+
+fun formatSpeechInsertion(
+    recognizedText: String,
+    textBeforeCursor: CharSequence?,
+    options: SpeechTextAutomationOptions,
+): SpeechInsertion {
+    val rawSpeech = recognizedText.trim()
+    if (rawSpeech.isEmpty()) return SpeechInsertion("")
+    if (!options.smartCleanupEnabled) return SpeechInsertion(rawSpeech)
+
+    val trimmedSpeech = if (options.spokenPunctuationCommandsEnabled) {
+        rawSpeech.normalizeSpokenPunctuationCommands().trim()
+    } else {
+        rawSpeech
+    }
+    if (trimmedSpeech.isEmpty()) return SpeechInsertion("")
 
     val beforeCursor = textBeforeCursor?.toString().orEmpty()
     val previousNonSpace = beforeCursor.lastOrNull { !it.isWhitespace() }
@@ -38,22 +76,37 @@ fun formatSpeechInsertionText(
     val cursorAtLineStart = beforeCursor.isBlank() ||
         beforeCursor.substringAfterLast('\n', missingDelimiterValue = beforeCursor).isBlank()
     val startsWithPunctuation = trimmedSpeech.first().isSpeechPunctuation()
-    val needsLeadingSpace = !startsWithPunctuation &&
+    val deleteBeforeChars = if (options.autoSpacingEnabled && startsWithPunctuation) {
+        beforeCursor.takeLastWhile { it == ' ' || it == '\t' }.length
+    } else {
+        0
+    }
+    val needsLeadingSpace = options.autoSpacingEnabled &&
+        !startsWithPunctuation &&
         previousNonSpace != null &&
         !cursorHasTrailingSpace &&
         previousNonSpace.needsSpaceBeforeSpeechWord()
-    val shouldCapitalize = autoCapAfterSentence &&
+    val shouldCapitalize = options.autoCapSentencesEnabled &&
         (previousNonSpace == null || previousNonSpace.endsSentence() || cursorAtLineStart)
     val normalizedSpeech = when {
         shouldCapitalize -> trimmedSpeech
-        previousNonSpace != null -> trimmedSpeech.lowercaseFirstWordStart()
+        options.autoCapSentencesEnabled && previousNonSpace != null -> trimmedSpeech.lowercaseFirstWordStart()
         else -> trimmedSpeech
-    }.applySpeechSentenceCase(capitalizeFirstWord = shouldCapitalize)
+    }.applySpeechTextCase(
+        capitalizeFirstWord = shouldCapitalize,
+        autoCapSentences = options.autoCapSentencesEnabled,
+        autoCapNames = options.autoCapNamesEnabled,
+        autoCapPronounI = options.autoCapSentencesEnabled || options.autoCapNamesEnabled,
+        properNames = speechProperNameMap(options.customNames),
+    )
 
-    return buildString {
-        if (needsLeadingSpace) append(' ')
-        append(normalizedSpeech)
-    }
+    return SpeechInsertion(
+        text = buildString {
+            if (needsLeadingSpace) append(' ')
+            append(normalizedSpeech)
+        },
+        deleteBeforeChars = deleteBeforeChars,
+    )
 }
 
 fun String.normalizeSpokenPunctuationCommands(): String {
@@ -121,22 +174,67 @@ private fun Char.isSpeechPunctuation(): Boolean = this in ",.!?;:"
 
 private fun Char.needsSpaceBeforeSpeechWord(): Boolean = isLetterOrDigit() || isSpeechPunctuation()
 
-private fun String.applySpeechSentenceCase(capitalizeFirstWord: Boolean): String {
+private fun String.applySpeechTextCase(
+    capitalizeFirstWord: Boolean,
+    autoCapSentences: Boolean,
+    autoCapNames: Boolean,
+    autoCapPronounI: Boolean,
+    properNames: Map<String, String>,
+): String {
     val builder = StringBuilder(length)
+    val word = StringBuilder()
     var capitalizeNextLetter = capitalizeFirstWord
+
+    fun flushWord() {
+        if (word.isEmpty()) return
+        val rawWord = word.toString()
+        builder.append(
+            rawWord.applySpeechWordCase(
+                capitalizeWordStart = capitalizeNextLetter,
+                autoCapNames = autoCapNames,
+                autoCapPronounI = autoCapPronounI,
+                properNames = properNames,
+            ),
+        )
+        if (rawWord.any { it.isLetter() }) {
+            capitalizeNextLetter = false
+        }
+        word.clear()
+    }
+
     forEach { char ->
         when {
-            char.isLetter() && capitalizeNextLetter -> {
-                builder.append(char.uppercaseChar())
-                capitalizeNextLetter = false
+            char.isSpeechWordChar() -> word.append(char)
+            else -> {
+                flushWord()
+                builder.append(char)
+                if (autoCapSentences && (char.endsSentence() || char == '\n')) {
+                    capitalizeNextLetter = true
+                }
             }
-            else -> builder.append(char)
-        }
-        if (char.endsSentence() || char == '\n') {
-            capitalizeNextLetter = true
         }
     }
+    flushWord()
     return builder.toString()
+}
+
+private fun String.applySpeechWordCase(
+    capitalizeWordStart: Boolean,
+    autoCapNames: Boolean,
+    autoCapPronounI: Boolean,
+    properNames: Map<String, String>,
+): String {
+    val lowerWord = lowercase()
+    if (autoCapNames) {
+        properNames[lowerWord]?.let { return it }
+    }
+    if (autoCapPronounI && lowerWord == "i") return "I"
+    if (autoCapPronounI && lowerWord.startsWith("i'")) return "I" + drop(1)
+    return if (capitalizeWordStart) capitalizeFirstChar() else this
+}
+
+private fun Char.isSpeechWordChar(): Boolean {
+    return isLetterOrDigit() || this == '\'' || this == '-'
 }
 
 private fun StringBuilder.appendSpeechWord(word: String) {
@@ -170,4 +268,47 @@ private val singleWordSpeechPunctuation = mapOf(
     "dot" to ".",
     "colon" to ":",
     "semicolon" to ";",
+)
+
+private fun speechProperNameMap(customNames: Set<String>): Map<String, String> {
+    return linkedMapOf<String, String>().apply {
+        builtInSpeechProperNames.forEach { name -> put(name.lowercase(), name) }
+        customNames.forEach { name ->
+            val trimmed = name.trim()
+            if (trimmed.isNotBlank()) put(trimmed.lowercase(), trimmed)
+        }
+    }
+}
+
+private val builtInSpeechProperNames = listOf(
+    "Michael",
+    "Sarah",
+    "David",
+    "James",
+    "Maria",
+    "Robert",
+    "John",
+    "Mary",
+    "Jennifer",
+    "Jessica",
+    "Daniel",
+    "Matthew",
+    "Christopher",
+    "Elizabeth",
+    "Joseph",
+    "Thomas",
+    "Susan",
+    "Karen",
+    "Lisa",
+    "Nancy",
+    "Steven",
+    "Kevin",
+    "Brian",
+    "George",
+    "Edward",
+    "Jason",
+    "Michelle",
+    "Amanda",
+    "Melissa",
+    "Stephanie",
 )

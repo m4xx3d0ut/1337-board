@@ -64,7 +64,12 @@ class KeyboardPreferencesTest {
         assertFalse(preferences.speechPushToTalkEnabled)
         assertEquals(DEFAULT_SPEECH_COMPLETE_SILENCE_MS, preferences.speechCompleteSilenceMs)
         assertEquals(DEFAULT_SPEECH_POSSIBLE_SILENCE_MS, preferences.speechPossibleSilenceMs)
+        assertTrue(preferences.speechSmartCleanupEnabled)
+        assertTrue(preferences.speechAutoSpacingEnabled)
         assertTrue(preferences.speechAutoCapAfterPunctuationEnabled)
+        assertTrue(preferences.speechAutoCapNamesEnabled)
+        assertTrue(preferences.speechSpokenPunctuationEnabled)
+        assertTrue(preferences.speechCustomNames.isEmpty())
         assertTrue(preferences.typedSuggestionsEnabled)
         assertFalse(preferences.typedAutocorrectEnabled)
         assertTrue(preferences.autoCapAfterPeriodEnabled)
@@ -131,6 +136,13 @@ class KeyboardPreferencesTest {
         assertEquals(GlideImportedWordsPriority.HIGH, options.importedWordsPriority)
         assertEquals(GlideRawFallbackMode.ALWAYS, options.rawPathFallbackMode)
         assertFalse(options.predictiveRankingEnabled)
+    }
+
+    @Test
+    fun speechCustomNamesNormalizeTextInput() {
+        val names = normalizeSpeechCustomNamesText(" OnePlus, NASA\nOnePlus\nbad name\nA ")
+
+        assertEquals(setOf("OnePlus", "NASA"), names)
     }
 
     @Test

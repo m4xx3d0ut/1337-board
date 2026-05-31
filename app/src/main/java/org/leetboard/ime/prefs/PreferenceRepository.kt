@@ -97,8 +97,17 @@ class PreferenceRepository(context: Context) {
             speechInputEnabled = values[Keys.speechInputEnabled] ?: false,
             speechPushToTalkEnabled = values[Keys.speechPushToTalkEnabled]
                 ?: KeyboardPreferences.defaults().speechPushToTalkEnabled,
+            speechSmartCleanupEnabled = values[Keys.speechSmartCleanupEnabled]
+                ?: KeyboardPreferences.defaults().speechSmartCleanupEnabled,
+            speechAutoSpacingEnabled = values[Keys.speechAutoSpacingEnabled]
+                ?: KeyboardPreferences.defaults().speechAutoSpacingEnabled,
             speechAutoCapAfterPunctuationEnabled = values[Keys.speechAutoCapAfterPunctuationEnabled]
                 ?: KeyboardPreferences.defaults().speechAutoCapAfterPunctuationEnabled,
+            speechAutoCapNamesEnabled = values[Keys.speechAutoCapNamesEnabled]
+                ?: KeyboardPreferences.defaults().speechAutoCapNamesEnabled,
+            speechSpokenPunctuationEnabled = values[Keys.speechSpokenPunctuationEnabled]
+                ?: KeyboardPreferences.defaults().speechSpokenPunctuationEnabled,
+            speechCustomNames = normalizeSpeechCustomNames(values[Keys.speechCustomNames].orEmpty()),
             speechCompleteSilenceMs = speechCompleteSilenceMs,
             speechPossibleSilenceMs = speechPossibleSilenceMs,
             glideImportedWordCount = values[Keys.glideImportedWordCount] ?: importedGlideWordsFile().lineCountOrZero(),
@@ -433,8 +442,35 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.speechPushToTalkEnabled] = enabled }
     }
 
+    suspend fun setSpeechSmartCleanupEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.speechSmartCleanupEnabled] = enabled }
+    }
+
+    suspend fun setSpeechAutoSpacingEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.speechAutoSpacingEnabled] = enabled }
+    }
+
     suspend fun setSpeechAutoCapAfterPunctuationEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.speechAutoCapAfterPunctuationEnabled] = enabled }
+    }
+
+    suspend fun setSpeechAutoCapNamesEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.speechAutoCapNamesEnabled] = enabled }
+    }
+
+    suspend fun setSpeechSpokenPunctuationEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.speechSpokenPunctuationEnabled] = enabled }
+    }
+
+    suspend fun setSpeechCustomNamesFromText(text: String) {
+        dataStore.edit { values ->
+            val names = normalizeSpeechCustomNamesText(text)
+            if (names.isEmpty()) {
+                values.remove(Keys.speechCustomNames)
+            } else {
+                values[Keys.speechCustomNames] = names
+            }
+        }
     }
 
     suspend fun setSpeechCompleteSilenceMs(delayMs: Int) {
@@ -691,7 +727,12 @@ class PreferenceRepository(context: Context) {
         val swipeUpActionsEnabled = booleanPreferencesKey("swipe_up_actions_enabled")
         val speechInputEnabled = booleanPreferencesKey("speech_input_enabled")
         val speechPushToTalkEnabled = booleanPreferencesKey("speech_push_to_talk_enabled")
+        val speechSmartCleanupEnabled = booleanPreferencesKey("speech_smart_cleanup_enabled")
+        val speechAutoSpacingEnabled = booleanPreferencesKey("speech_auto_spacing_enabled")
         val speechAutoCapAfterPunctuationEnabled = booleanPreferencesKey("speech_auto_cap_after_punctuation_enabled")
+        val speechAutoCapNamesEnabled = booleanPreferencesKey("speech_auto_cap_names_enabled")
+        val speechSpokenPunctuationEnabled = booleanPreferencesKey("speech_spoken_punctuation_enabled")
+        val speechCustomNames = stringSetPreferencesKey("speech_custom_names")
         val speechCompleteSilenceMs = intPreferencesKey("speech_complete_silence_ms")
         val speechPossibleSilenceMs = intPreferencesKey("speech_possible_silence_ms")
         val glideImportedWordCount = intPreferencesKey("glide_imported_word_count")
@@ -798,7 +839,12 @@ class PreferenceRepository(context: Context) {
             put(Keys.swipeUpActionsEnabled.name, swipeUpActionsEnabled)
             put(Keys.speechInputEnabled.name, speechInputEnabled)
             put(Keys.speechPushToTalkEnabled.name, speechPushToTalkEnabled)
+            put(Keys.speechSmartCleanupEnabled.name, speechSmartCleanupEnabled)
+            put(Keys.speechAutoSpacingEnabled.name, speechAutoSpacingEnabled)
             put(Keys.speechAutoCapAfterPunctuationEnabled.name, speechAutoCapAfterPunctuationEnabled)
+            put(Keys.speechAutoCapNamesEnabled.name, speechAutoCapNamesEnabled)
+            put(Keys.speechSpokenPunctuationEnabled.name, speechSpokenPunctuationEnabled)
+            put(Keys.speechCustomNames.name, speechCustomNames.sorted())
             put(Keys.speechCompleteSilenceMs.name, speechCompleteSilenceMs)
             put(Keys.speechPossibleSilenceMs.name, speechPossibleSilenceMs)
             put(Keys.glideImportedWordCount.name, importedWordCount)
@@ -903,8 +949,16 @@ class PreferenceRepository(context: Context) {
         settings.boolean(Keys.swipeUpActionsEnabled)?.let { this[Keys.swipeUpActionsEnabled] = it }
         settings.boolean(Keys.speechInputEnabled)?.let { this[Keys.speechInputEnabled] = it }
         settings.boolean(Keys.speechPushToTalkEnabled)?.let { this[Keys.speechPushToTalkEnabled] = it }
+        settings.boolean(Keys.speechSmartCleanupEnabled)?.let { this[Keys.speechSmartCleanupEnabled] = it }
+        settings.boolean(Keys.speechAutoSpacingEnabled)?.let { this[Keys.speechAutoSpacingEnabled] = it }
         settings.boolean(Keys.speechAutoCapAfterPunctuationEnabled)?.let {
             this[Keys.speechAutoCapAfterPunctuationEnabled] = it
+        }
+        settings.boolean(Keys.speechAutoCapNamesEnabled)?.let { this[Keys.speechAutoCapNamesEnabled] = it }
+        settings.boolean(Keys.speechSpokenPunctuationEnabled)?.let { this[Keys.speechSpokenPunctuationEnabled] = it }
+        settings.stringSet(Keys.speechCustomNames)?.let {
+            val names = normalizeSpeechCustomNames(it)
+            if (names.isNotEmpty()) this[Keys.speechCustomNames] = names
         }
         val speechCompleteSilenceMs = settings.int(Keys.speechCompleteSilenceMs)
             ?.coerceIn(MIN_SPEECH_SILENCE_MS, MAX_SPEECH_SILENCE_MS)
@@ -1053,6 +1107,29 @@ fun glideCorrectionsToPreferenceValue(corrections: Map<String, GlideCorrectionEn
         .joinToString(separator = "\n")
 }
 
+fun normalizeSpeechCustomNamesText(value: String): Set<String> {
+    return normalizeSpeechCustomNames(value.split(',', '\n', '\r'))
+}
+
+fun normalizeSpeechCustomNames(values: Iterable<String>): Set<String> {
+    val seen = mutableSetOf<String>()
+    return values
+        .asSequence()
+        .mapNotNull(::normalizeSpeechCustomName)
+        .filter { name -> seen.add(name.lowercase()) }
+        .take(MAX_SPEECH_CUSTOM_NAMES)
+        .toSet()
+}
+
+private fun normalizeSpeechCustomName(value: String): String? {
+    val normalized = value.trim()
+    return normalized.takeIf { name ->
+        name.length in 2..32 &&
+            name.any { char -> char.isLetter() } &&
+            name.all { char -> char.isLetterOrDigit() || char == '\'' || char == '-' }
+    }
+}
+
 private fun normalizeImportedWord(value: String): String? {
     val normalized = value.trim().lowercase()
     return normalized.takeIf { word ->
@@ -1062,6 +1139,7 @@ private fun normalizeImportedWord(value: String): String? {
 
 private const val GLIDE_CORRECTION_SEPARATOR = "\t"
 private const val MAX_GLIDE_CORRECTIONS = 500
+private const val MAX_SPEECH_CUSTOM_NAMES = 200
 
 private fun java.io.File.lineCountOrZero(): Int {
     if (!isFile) return 0

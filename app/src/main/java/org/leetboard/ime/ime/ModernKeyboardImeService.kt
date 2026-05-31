@@ -38,7 +38,7 @@ import org.leetboard.ime.engine.ThemeEngine
 import org.leetboard.ime.engine.TypedPredictionEngine
 import org.leetboard.ime.engine.applyKeyboardCapitalization
 import org.leetboard.ime.engine.findPendingGlideReplacementSpan
-import org.leetboard.ime.engine.formatSpeechInsertionText
+import org.leetboard.ime.engine.formatSpeechInsertion
 import org.leetboard.ime.engine.normalizeWord
 import org.leetboard.ime.engine.pendingGlideCommitMatchesBeforeCursor
 import org.leetboard.ime.model.HeldModifiers
@@ -807,13 +807,17 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun commitSpeechText(text: String) {
         val beforeCursor = currentInputConnection?.getTextBeforeCursor(SPEECH_CONTEXT_CHARS, 0)
-        val insertion = formatSpeechInsertionText(
+        val insertion = formatSpeechInsertion(
             recognizedText = text,
             textBeforeCursor = beforeCursor,
-            autoCapAfterSentence = preferences.speechAutoCapAfterPunctuationEnabled,
+            options = preferences.speechTextAutomationOptions(),
         )
-        if (insertion.isNotEmpty()) {
-            currentInputConnection?.commitText(insertion, 1)
+        if (insertion.text.isNotEmpty()) {
+            val inputConnection = currentInputConnection ?: return
+            if (insertion.deleteBeforeChars > 0) {
+                inputConnection.deleteSurroundingText(insertion.deleteBeforeChars, 0)
+            }
+            inputConnection.commitText(insertion.text, 1)
         }
     }
 
