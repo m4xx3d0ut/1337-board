@@ -33,6 +33,24 @@ class GestureTypingEngineTest {
     }
 
     @Test
+    fun normalizesApostropheWordsForGlideMatching() {
+        assertEquals("don't", normalizeWord("Don\u2019t"))
+        assertEquals("dont", glideWordSignature("don't"))
+        assertNull(normalizeWord("'dont"))
+        assertNull(normalizeWord("dont'"))
+        assertNull(normalizeWord("rock''n"))
+    }
+
+    @Test
+    fun decodesApostropheWordsFromLetterPath() {
+        val engine = GestureTypingEngine(TextContextPolicy()) {
+            listOf("don't")
+        }
+
+        assertEquals("don't", engine.decode(listOf("d", "o", "n", "t")))
+    }
+
+    @Test
     fun decodesPathsWithIntermediateCrossedKeys() {
         val engine = GestureTypingEngine(TextContextPolicy()) { words }
 

@@ -74,6 +74,26 @@ class TextCapitalizationTest {
     }
 
     @Test
+    fun speechInsertionTreatsDigitAfterDigitAsContinuation() {
+        assertEquals(
+            "45",
+            formatSpeechInsertionText("45", "123", autoCapAfterSentence = true),
+        )
+        assertEquals(
+            " test",
+            formatSpeechInsertionText("test", "123", autoCapAfterSentence = true),
+        )
+    }
+
+    @Test
+    fun leadingSpaceHelperSpacesGlideWordsAfterDigitsAndPunctuation() {
+        assertTrue(shouldInsertLeadingSpaceBeforeText("123", "test"))
+        assertTrue(shouldInsertLeadingSpaceBeforeText("hello.", "Test"))
+        assertFalse(shouldInsertLeadingSpaceBeforeText("123", "45", treatDigitAfterDigitAsContinuation = true))
+        assertFalse(shouldInsertLeadingSpaceBeforeText("hello ", "test"))
+    }
+
+    @Test
     fun speechInsertionCapitalizesAfterSentenceEnd() {
         assertEquals(
             " Hello",

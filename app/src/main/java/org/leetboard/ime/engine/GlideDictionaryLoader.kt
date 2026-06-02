@@ -12,7 +12,7 @@ class GlideDictionaryLoader(context: Context) {
         val stamp = importedFile.cacheStamp()
         val cached = cache
         if (cached != null && cached.importedStamp == stamp) return cached.words
-        return (importedWords(importedFile) + bundledWords()).also { words ->
+        return (importedWords(importedFile) + commonContractionWords + bundledWords()).distinct().also { words ->
             cache = CachedWords(stamp, words)
         }
     }
@@ -46,5 +46,51 @@ class GlideDictionaryLoader(context: Context) {
     private companion object {
         const val BUNDLED_WORDS_ASSET = "glide_words_en.txt"
         const val IMPORTED_WORDS_FILE = "glide_words_user.txt"
+        val commonContractionWords = listOf(
+            "aren't",
+            "can't",
+            "couldn't",
+            "didn't",
+            "doesn't",
+            "don't",
+            "hadn't",
+            "hasn't",
+            "haven't",
+            "he'd",
+            "he'll",
+            "he's",
+            "i'd",
+            "i'll",
+            "i'm",
+            "i've",
+            "isn't",
+            "it's",
+            "let's",
+            "she'd",
+            "she'll",
+            "she's",
+            "shouldn't",
+            "that's",
+            "there's",
+            "they'd",
+            "they'll",
+            "they're",
+            "they've",
+            "wasn't",
+            "we'd",
+            "we'll",
+            "we're",
+            "we've",
+            "weren't",
+            "what's",
+            "where's",
+            "who's",
+            "won't",
+            "wouldn't",
+            "you'd",
+            "you'll",
+            "you're",
+            "you've",
+        ).mapNotNull(::normalizeWord)
     }
 }

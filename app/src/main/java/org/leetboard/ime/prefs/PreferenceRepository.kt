@@ -499,7 +499,7 @@ class PreferenceRepository(context: Context) {
     suspend fun importGlideWords(reader: Reader): Int {
         val words = reader.useLines { lines ->
             lines
-                .mapNotNull(::normalizeImportedWord)
+                .mapNotNull(::normalizeWord)
                 .distinct()
                 .take(MAX_IMPORTED_GLIDE_WORDS)
                 .toList()
@@ -534,7 +534,7 @@ class PreferenceRepository(context: Context) {
     suspend fun importSettings(reader: Reader): SettingsImportResult {
         val snapshot = decodeSettingsExportSnapshot(reader.readText())
         val importedWords = snapshot.importedGlideWords
-            .mapNotNull(::normalizeImportedWord)
+            .mapNotNull(::normalizeWord)
             .distinct()
             .take(MAX_IMPORTED_GLIDE_WORDS)
         if (importedWords.isEmpty()) {
@@ -1127,13 +1127,6 @@ private fun normalizeSpeechCustomName(value: String): String? {
         name.length in 2..32 &&
             name.any { char -> char.isLetter() } &&
             name.all { char -> char.isLetterOrDigit() || char == '\'' || char == '-' }
-    }
-}
-
-private fun normalizeImportedWord(value: String): String? {
-    val normalized = value.trim().lowercase()
-    return normalized.takeIf { word ->
-        word.length in 2..24 && word.all { char -> char in 'a'..'z' }
     }
 }
 

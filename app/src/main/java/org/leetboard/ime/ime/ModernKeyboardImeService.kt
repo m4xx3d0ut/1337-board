@@ -40,7 +40,9 @@ import org.leetboard.ime.engine.applyKeyboardCapitalization
 import org.leetboard.ime.engine.findPendingGlideReplacementSpan
 import org.leetboard.ime.engine.formatSpeechInsertion
 import org.leetboard.ime.engine.normalizeWord
+import org.leetboard.ime.engine.normalizeWordPrefix
 import org.leetboard.ime.engine.pendingGlideCommitMatchesBeforeCursor
+import org.leetboard.ime.engine.shouldInsertLeadingSpaceBeforeText
 import org.leetboard.ime.model.HeldModifiers
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
@@ -287,7 +289,7 @@ class ModernKeyboardImeService : InputMethodService() {
             recordPendingGlideCorrection(word)
         }
         val outputWord = formatGlideWord(word, heldModifiers)
-        val committedText = "$outputWord "
+        val committedText = formatGlideCommitText(outputWord)
         currentInputConnection?.commitText(committedText, 1)
         val learningStatus = recordAcceptedGlideWord(word, predictionContext)
         persistGlideDebugSnapshot(
@@ -318,8 +320,14 @@ class ModernKeyboardImeService : InputMethodService() {
         )
     }
 
+    private fun formatGlideCommitText(word: String): String {
+        val beforeCursor = currentInputConnection?.getTextBeforeCursor(GLIDE_CONTEXT_CHARS, 0)
+        val leadingSpace = if (shouldInsertLeadingSpaceBeforeText(beforeCursor, word)) " " else ""
+        return "$leadingSpace$word "
+    }
+
     private fun formatReplacementWord(word: String, previousCommittedText: String): String {
-        return if (previousCommittedText.firstOrNull()?.isUpperCase() == true) {
+        return if (previousCommittedText.firstOrNull { it.isLetter() }?.isUpperCase() == true) {
             word.replaceFirstChar { it.uppercase() }
         } else {
             word
@@ -389,7 +397,7 @@ class ModernKeyboardImeService : InputMethodService() {
         val pathSignature = gestureTypingEngine.pathSignature(undo.path) ?: return
         val predictionContext = glidePredictionContextBeforePending(undo.committedText)
         val replacementWord = formatReplacementWord(normalizedWord, undo.committedText)
-        val committedText = "$replacementWord "
+        val committedText = formatReplacementCommitText(replacementWord, undo.committedText)
         if (!replacePendingGlideCommit(undo.committedText, committedText)) return
         rejectAcceptedGlideWord(undo.word, predictionContext, persist = false)
         recordAcceptedGlideWord(normalizedWord, predictionContext)
@@ -404,6 +412,12 @@ class ModernKeyboardImeService : InputMethodService() {
         )
         pendingSuggestionCommit = null
         clearGlideSuggestions()
+    }
+
+    private fun formatReplacementCommitText(word: String, previousCommittedText: String): String {
+        val leadingSpace = previousCommittedText.takeWhile { it.isWhitespace() }
+        val trailingSpace = if (previousCommittedText.endsWith(" ")) " " else ""
+        return "$leadingSpace$word$trailingSpace"
     }
 
     private fun handleTypedSuggestion(word: String) {
@@ -605,11 +619,7 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun currentTypedTokenBeforeCursor(): String? {
         val text = currentInputConnection?.getTextBeforeCursor(TYPED_CONTEXT_CHARS, 0)?.toString() ?: return null
-        var index = text.length - 1
-        if (index < 0 || !text[index].isAsciiLetter()) return null
-        val end = index + 1
-        while (index >= 0 && text[index].isAsciiLetter()) index--
-        return text.substring(index + 1, end).takeIf { token -> token.length >= MIN_TYPED_SUGGESTION_LENGTH }
+        return typedTokenBeforeCursorText(text, MIN_TYPED_SUGGESTION_LENGTH)
     }
 
     private fun typedPredictionContextBeforeToken(token: String): GlidePredictionContext {
@@ -968,9 +978,9 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun KeyAction.replacementLettersOrNull(heldModifiers: HeldModifiers): String? {
         if (type != KeyActionType.COMMIT_TEXT || hasTextMeta(heldModifiers)) return null
-        val letters = text.orEmpty().lowercase()
+        val letters = text.orEmpty().lowercase().replace('\u2019', '\'')
         return letters.takeIf { value ->
-            value.isNotEmpty() && value.all { char -> char in 'a'..'z' }
+            value.isNotEmpty() && value.all { char -> char in 'a'..'z' || char == '\'' }
         }
     }
 
@@ -1201,4 +1211,29 @@ internal fun postPredictionPunctuationAction(
 
 private fun Char.isAsciiLetter(): Boolean {
     return this in 'a'..'z' || this in 'A'..'Z'
+}
+
+private fun Char.isWordApostrophe(): Boolean {
+    return this == '\'' || this == '\u2019'
+}
+
+internal fun typedTokenBeforeCursorText(text: String, minLength: Int = 2): String? {
+    var index = text.length - 1
+    if (index < 0 || !text[index].isAsciiLetter()) return null
+    val end = index + 1
+    while (index >= 0) {
+        val char = text[index]
+        when {
+            char.isAsciiLetter() -> index--
+            char.isWordApostrophe() &&
+                index > 0 &&
+                index + 1 < end &&
+                text[index - 1].isAsciiLetter() &&
+                text[index + 1].isAsciiLetter() -> index--
+            else -> break
+        }
+    }
+    val token = text.substring(index + 1, end)
+    val normalized = normalizeWordPrefix(token) ?: return null
+    return token.takeIf { normalized.length >= minLength }
 }

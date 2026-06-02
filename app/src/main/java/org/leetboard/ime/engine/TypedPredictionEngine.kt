@@ -111,13 +111,6 @@ class TypedPredictionEngine(
     }
 }
 
-private fun normalizeWordPrefix(value: String): String? {
-    val normalized = value.trim().lowercase()
-    return normalized.takeIf { word ->
-        word.length in 1..24 && word.all { char -> char in 'a'..'z' }
-    }
-}
-
 private fun maximumCorrectionDistance(length: Int): Int {
     return if (length >= 6) 2 else 1
 }

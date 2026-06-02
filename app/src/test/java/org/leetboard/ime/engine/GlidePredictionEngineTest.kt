@@ -61,4 +61,16 @@ class GlidePredictionEngineTest {
 
         assertEquals("obscure", ranked.first().word)
     }
+
+    @Test
+    fun previousWordKeepsInternalApostrophes() {
+        assertEquals(
+            "don't",
+            GlidePredictionContext(textBeforeCursor = "I don't, ").previousWord(),
+        )
+        assertEquals(
+            "bar",
+            GlidePredictionContext(textBeforeCursor = "foo 'bar").previousWord(),
+        )
+    }
 }

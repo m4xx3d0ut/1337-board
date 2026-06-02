@@ -2,6 +2,7 @@ package org.leetboard.ime.engine
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TypedPredictionEngineTest {
@@ -44,5 +45,26 @@ class TypedPredictionEngineTest {
         )
 
         assertNull(engine.autocorrect("test", GlidePredictionContext()))
+    }
+
+    @Test
+    fun suggestionsSupportApostropheWords() {
+        val engine = TypedPredictionEngine(
+            wordsProvider = { listOf("don't", "done") },
+            userLanguageModel = GlideUserLanguageModel(),
+        )
+
+        assertTrue("don't" in engine.suggestions("don", GlidePredictionContext(), limit = 2))
+        assertEquals("don't", engine.suggestions("don'", GlidePredictionContext(), limit = 2).first())
+    }
+
+    @Test
+    fun autocorrectCanInsertMissingApostrophe() {
+        val engine = TypedPredictionEngine(
+            wordsProvider = { listOf("don't") },
+            userLanguageModel = GlideUserLanguageModel(),
+        )
+
+        assertEquals("don't", engine.autocorrect("dont", GlidePredictionContext()))
     }
 }

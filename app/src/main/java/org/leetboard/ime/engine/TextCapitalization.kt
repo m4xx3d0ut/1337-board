@@ -72,7 +72,6 @@ fun formatSpeechInsertion(
 
     val beforeCursor = textBeforeCursor?.toString().orEmpty()
     val previousNonSpace = beforeCursor.lastOrNull { !it.isWhitespace() }
-    val cursorHasTrailingSpace = beforeCursor.lastOrNull()?.isWhitespace() == true
     val cursorAtLineStart = beforeCursor.isBlank() ||
         beforeCursor.substringAfterLast('\n', missingDelimiterValue = beforeCursor).isBlank()
     val startsWithPunctuation = trimmedSpeech.first().isSpeechPunctuation()
@@ -82,10 +81,11 @@ fun formatSpeechInsertion(
         0
     }
     val needsLeadingSpace = options.autoSpacingEnabled &&
-        !startsWithPunctuation &&
-        previousNonSpace != null &&
-        !cursorHasTrailingSpace &&
-        previousNonSpace.needsSpaceBeforeSpeechWord()
+        shouldInsertLeadingSpaceBeforeText(
+            textBeforeCursor = beforeCursor,
+            insertedText = trimmedSpeech,
+            treatDigitAfterDigitAsContinuation = true,
+        )
     val shouldCapitalize = options.autoCapSentencesEnabled &&
         (previousNonSpace == null || previousNonSpace.endsSentence() || cursorAtLineStart)
     val normalizedSpeech = when {
@@ -107,6 +107,26 @@ fun formatSpeechInsertion(
         },
         deleteBeforeChars = deleteBeforeChars,
     )
+}
+
+fun shouldInsertLeadingSpaceBeforeText(
+    textBeforeCursor: CharSequence?,
+    insertedText: String,
+    treatDigitAfterDigitAsContinuation: Boolean = false,
+): Boolean {
+    val trimmedInsertedText = insertedText.trimStart()
+    if (trimmedInsertedText.isEmpty() || trimmedInsertedText.first().isSpeechPunctuation()) return false
+    val beforeCursor = textBeforeCursor?.toString().orEmpty()
+    if (beforeCursor.lastOrNull()?.isWhitespace() == true) return false
+    val previousNonSpace = beforeCursor.lastOrNull { !it.isWhitespace() } ?: return false
+    if (
+        treatDigitAfterDigitAsContinuation &&
+        previousNonSpace.isDigit() &&
+        trimmedInsertedText.first().isDigit()
+    ) {
+        return false
+    }
+    return previousNonSpace.needsSpaceBeforeInsertedWord()
 }
 
 fun String.normalizeSpokenPunctuationCommands(): String {
@@ -172,7 +192,7 @@ private fun Char.endsSentence(): Boolean = this == '.' || this == '!' || this ==
 
 private fun Char.isSpeechPunctuation(): Boolean = this in ",.!?;:"
 
-private fun Char.needsSpaceBeforeSpeechWord(): Boolean = isLetterOrDigit() || isSpeechPunctuation()
+private fun Char.needsSpaceBeforeInsertedWord(): Boolean = isLetterOrDigit() || isSpeechPunctuation()
 
 private fun String.applySpeechTextCase(
     capitalizeFirstWord: Boolean,

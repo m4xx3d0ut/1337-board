@@ -21,11 +21,22 @@ data class GlidePredictionContext(
     fun previousWord(): String? {
         val text = textBeforeCursor?.toString()?.lowercase().orEmpty()
         var index = text.length - 1
-        while (index >= 0 && text[index] !in 'a'..'z') index--
+        while (index >= 0 && !text[index].isPredictionWordLetter()) index--
         if (index < 0) return null
         val end = index + 1
-        while (index >= 0 && text[index] in 'a'..'z') index--
-        return text.substring(index + 1, end).takeIf { it.length >= 2 }
+        while (index >= 0) {
+            val char = text[index]
+            when {
+                char.isPredictionWordLetter() -> index--
+                char.isPredictionApostrophe() &&
+                    index > 0 &&
+                    index + 1 < end &&
+                    text[index - 1].isPredictionWordLetter() &&
+                    text[index + 1].isPredictionWordLetter() -> index--
+                else -> break
+            }
+        }
+        return normalizeWord(text.substring(index + 1, end))
     }
 }
 
@@ -102,9 +113,10 @@ class FrequencyContextGlidePredictionEngine(
 
     private fun endpointPenalty(word: String, pathSignature: String, options: GlideTypingOptions): Int {
         if (pathSignature.isEmpty() || options.strictFirstLastLetter) return 0
+        val wordSignature = glideWordSignature(word) ?: return 0
         var penalty = 0
-        if (word.firstOrNull() != pathSignature.first()) penalty += LOOSE_ENDPOINT_MISMATCH_PENALTY
-        if (word.lastOrNull() != pathSignature.last()) penalty += LOOSE_ENDPOINT_MISMATCH_PENALTY
+        if (wordSignature.firstOrNull() != pathSignature.first()) penalty += LOOSE_ENDPOINT_MISMATCH_PENALTY
+        if (wordSignature.lastOrNull() != pathSignature.last()) penalty += LOOSE_ENDPOINT_MISMATCH_PENALTY
         return penalty
     }
 
@@ -114,4 +126,12 @@ class FrequencyContextGlidePredictionEngine(
         const val NORMAL_IMPORT_BOOST = 250
         const val HIGH_IMPORT_BOOST = 650
     }
+}
+
+private fun Char.isPredictionWordLetter(): Boolean {
+    return this in 'a'..'z'
+}
+
+private fun Char.isPredictionApostrophe(): Boolean {
+    return this == '\'' || this == '\u2019'
 }

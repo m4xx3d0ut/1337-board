@@ -141,8 +141,9 @@ class GestureTypingEngine(
         options: GlideTypingOptions,
     ): Boolean {
         if (!options.strictFirstLastLetter) return true
-        return word.firstOrNull() == pathSignature.firstOrNull() &&
-            word.lastOrNull() == pathSignature.lastOrNull()
+        val wordSignature = glideWordSignature(word) ?: return false
+        return wordSignature.firstOrNull() == pathSignature.firstOrNull() &&
+            wordSignature.lastOrNull() == pathSignature.lastOrNull()
     }
 
     private fun localCorrectionEndpointPenalty(
@@ -151,9 +152,10 @@ class GestureTypingEngine(
         options: GlideTypingOptions,
     ): Int {
         if (pathSignature.isEmpty() || options.strictFirstLastLetter) return 0
+        val wordSignature = glideWordSignature(word) ?: return 0
         var penalty = 0
-        if (word.firstOrNull() != pathSignature.first()) penalty += LOCAL_CORRECTION_ENDPOINT_MISMATCH_PENALTY
-        if (word.lastOrNull() != pathSignature.last()) penalty += LOCAL_CORRECTION_ENDPOINT_MISMATCH_PENALTY
+        if (wordSignature.firstOrNull() != pathSignature.first()) penalty += LOCAL_CORRECTION_ENDPOINT_MISMATCH_PENALTY
+        if (wordSignature.lastOrNull() != pathSignature.last()) penalty += LOCAL_CORRECTION_ENDPOINT_MISMATCH_PENALTY
         return penalty
     }
 
@@ -164,18 +166,21 @@ class GestureTypingEngine(
         options: GlideTypingOptions,
         traceProfile: GlideTraceProfile?,
     ): Int? {
-        if (word.length < MIN_WORD_LENGTH) return null
-        if (options.strictFirstLastLetter && (word.first() != pathSignature.first() || word.last() != pathSignature.last())) {
+        val wordSignature = glideWordSignature(word) ?: return null
+        if (wordSignature.length < MIN_WORD_LENGTH) return null
+        if (
+            options.strictFirstLastLetter &&
+            (wordSignature.first() != pathSignature.first() || wordSignature.last() != pathSignature.last())
+        ) {
             return null
         }
-        val wordSignature = collapseRepeats(word)
         val priorityPenalty = priorityPenalty(priority, options)
         val shortAnchoredCost = shortAnchoredMatchCost(wordSignature, pathSignature)
         if (shortAnchoredCost != null) {
             return shortAnchoredCost +
                 tracePenalty(wordSignature, traceProfile, options) +
                 priorityPenalty +
-                options.shortWordPenalty(word)
+                options.shortWordPenalty(wordSignature)
         }
         val orderedCost = orderedMatchCost(wordSignature, pathSignature)
         if (orderedCost != null) {
@@ -186,7 +191,7 @@ class GestureTypingEngine(
                 geometryPenalty +
                 tracePenalty(wordSignature, traceProfile, options) +
                 shortPathLengthPenalty(wordSignature, pathSignature) +
-                options.shortWordPenalty(word) +
+                options.shortWordPenalty(wordSignature) +
                 priorityPenalty
         }
         val distance = levenshtein(pathSignature, wordSignature)
@@ -199,7 +204,7 @@ class GestureTypingEngine(
             geometryPenalty +
             tracePenalty(wordSignature, traceProfile, options) +
             shortPathLengthPenalty(wordSignature, pathSignature) +
-            options.shortWordPenalty(word) +
+            options.shortWordPenalty(wordSignature) +
             priorityPenalty
     }
 
@@ -344,10 +349,30 @@ enum class GlideRawFallbackMode {
 }
 
 fun normalizeWord(value: String): String? {
-    val normalized = value.trim().lowercase()
+    val normalized = normalizedWordText(value)
     return normalized.takeIf { word ->
-        word.length in 2..24 && word.all { char -> char in 'a'..'z' }
+        word.length in 2..24 &&
+            word.count { char -> char in 'a'..'z' } >= 2 &&
+            word.firstOrNull()?.let { it in 'a'..'z' } == true &&
+            word.lastOrNull()?.let { it in 'a'..'z' } == true &&
+            word.hasValidWordCharacters(allowTrailingApostrophe = false)
     }
+}
+
+fun normalizeWordPrefix(value: String): String? {
+    val normalized = normalizedWordText(value)
+    return normalized.takeIf { word ->
+        word.length in 1..24 &&
+            word.any { char -> char in 'a'..'z' } &&
+            word.firstOrNull()?.let { it in 'a'..'z' } == true &&
+            word.hasValidWordCharacters(allowTrailingApostrophe = true)
+    }
+}
+
+fun glideWordSignature(value: String): String? {
+    val normalizedWord = normalizeWord(value) ?: return null
+    return collapseRepeats(normalizedWord.filter { char -> char in 'a'..'z' })
+        .takeIf { signature -> signature.length >= MIN_GLIDE_WORD_SIGNATURE_LENGTH }
 }
 
 private fun GlideTypingOptions.maximumDistance(pathLength: Int): Int {
@@ -373,8 +398,8 @@ private fun GlideTypingOptions.priorityBucketSize(): Int {
     }
 }
 
-private fun GlideTypingOptions.shortWordPenalty(word: String): Int {
-    return if (preferShorterWords) word.length * GestureScoring.SHORT_WORD_WEIGHT else 0
+private fun GlideTypingOptions.shortWordPenalty(wordSignature: String): Int {
+    return if (preferShorterWords) wordSignature.length * GestureScoring.SHORT_WORD_WEIGHT else 0
 }
 
 private fun GlideTypingOptions.geometryWeight(): Int {
@@ -490,7 +515,33 @@ fun collapseRepeats(value: String): String {
     }
 }
 
+private fun normalizedWordText(value: String): String {
+    return value.trim().lowercase().replace('\u2019', '\'')
+}
+
+private fun String.hasValidWordCharacters(allowTrailingApostrophe: Boolean): Boolean {
+    return allIndexed { index, char ->
+        when {
+            char in 'a'..'z' -> true
+            char == '\'' -> {
+                val hasLetterBefore = getOrNull(index - 1)?.let { it in 'a'..'z' } == true
+                val hasLetterAfter = getOrNull(index + 1)?.let { it in 'a'..'z' } == true
+                hasLetterBefore && (hasLetterAfter || (allowTrailingApostrophe && index == lastIndex))
+            }
+            else -> false
+        }
+    }
+}
+
+private inline fun String.allIndexed(predicate: (Int, Char) -> Boolean): Boolean {
+    forEachIndexed { index, char ->
+        if (!predicate(index, char)) return false
+    }
+    return true
+}
+
 private const val MIN_KEYS_FOR_GESTURE = 2
+private const val MIN_GLIDE_WORD_SIGNATURE_LENGTH = 2
 private const val MAX_GLIDE_PATH_SIGNATURE_LENGTH = 64
 const val DEFAULT_GLIDE_DWELL_ACTIVATION_THRESHOLD = 0.30214944f
 

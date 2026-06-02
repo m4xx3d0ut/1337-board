@@ -22,4 +22,11 @@ class ModernKeyboardImeServiceTest {
             postPredictionPunctuationAction(action, ".", trimmedPendingSpace = false),
         )
     }
+
+    @Test
+    fun typedTokenScannerKeepsInternalApostrophe() {
+        assertEquals("don't", typedTokenBeforeCursorText("I don't"))
+        assertEquals("bar", typedTokenBeforeCursorText("foo 'bar"))
+        assertEquals("Don\u2019t", typedTokenBeforeCursorText("Don\u2019t"))
+    }
 }
