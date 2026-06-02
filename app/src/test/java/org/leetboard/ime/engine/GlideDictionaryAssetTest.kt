@@ -28,6 +28,16 @@ class GlideDictionaryAssetTest {
     }
 
     @Test
+    fun bundledDictionaryPrefersTheOverThreeForCrossedRPath() {
+        val words = File("src/main/assets/glide_words_en.txt").readLines()
+        val engine = GestureTypingEngine(TextContextPolicy()) { words }
+        val options = GlideTypingOptions(strictFirstLastLetter = false)
+
+        assertEquals("the", engine.decode(listOf("t", "h", "r", "e"), options))
+        assertEquals("the", engine.decode(listOf("t", "y", "h", "t", "r", "e"), options))
+    }
+
+    @Test
     fun timedDwellCanSelectWeirdFromBundledDictionary() {
         val words = File("src/main/assets/glide_words_en.txt").readLines()
         val engine = GestureTypingEngine(TextContextPolicy()) { words }

@@ -91,6 +91,7 @@ class FrequencyContextGlidePredictionEngine(
         var score = candidate.score
         score += frequencyPenalty(candidate.priority)
         score += endpointPenalty(candidate.word, pathSignature, options)
+        score -= commonShortWordBoost(candidate.word, pathSignature, candidate.priority)
         score -= userLanguageModel.wordBoost(candidate.word)
         if (previousWord != null) {
             score -= userLanguageModel.bigramBoost(previousWord, candidate.word)
@@ -120,11 +121,27 @@ class FrequencyContextGlidePredictionEngine(
         return penalty
     }
 
+    private fun commonShortWordBoost(word: String, pathSignature: String, priority: Int): Int {
+        if (priority > COMMON_SHORT_WORD_PRIORITY_MAX) return 0
+        val wordSignature = glideWordSignature(word) ?: return 0
+        if (wordSignature.length !in 2..3 || pathSignature.length <= wordSignature.length) return 0
+        if (wordSignature.firstOrNull() != pathSignature.firstOrNull()) return 0
+        if (wordSignature.lastOrNull() != pathSignature.lastOrNull()) return 0
+        val middleLetters = wordSignature.drop(1).dropLast(1)
+        if (middleLetters.any { char -> char !in pathSignature }) return 0
+        return (COMMON_SHORT_WORD_MAX_BOOST - priority * COMMON_SHORT_WORD_PRIORITY_DECAY)
+            .coerceAtLeast(COMMON_SHORT_WORD_MIN_BOOST)
+    }
+
     private companion object {
         const val FREQUENCY_LOG_WEIGHT = 90
         const val LOOSE_ENDPOINT_MISMATCH_PENALTY = 700
         const val NORMAL_IMPORT_BOOST = 250
         const val HIGH_IMPORT_BOOST = 650
+        const val COMMON_SHORT_WORD_PRIORITY_MAX = 120
+        const val COMMON_SHORT_WORD_MAX_BOOST = 7600
+        const val COMMON_SHORT_WORD_MIN_BOOST = 1600
+        const val COMMON_SHORT_WORD_PRIORITY_DECAY = 12
     }
 }
 

@@ -73,4 +73,42 @@ class GlidePredictionEngineTest {
             GlidePredictionContext(textBeforeCursor = "foo 'bar").previousWord(),
         )
     }
+
+    @Test
+    fun commonShortWordBoostCanBeatLongerExactCrossedPath() {
+        val engine = FrequencyContextGlidePredictionEngine()
+        val candidates = listOf(
+            GlideCandidate("three", score = 90, source = GlideCandidateSource.BUNDLED_WORDLIST, priority = 207),
+            GlideCandidate("the", score = 1420, source = GlideCandidateSource.BUNDLED_WORDLIST, priority = 1),
+        )
+
+        val ranked = engine.rank(
+            candidates = candidates,
+            pathSignature = "thre",
+            context = GlidePredictionContext(),
+            options = GlideTypingOptions(),
+        )
+
+        assertEquals("the", ranked.first().word)
+    }
+
+    @Test
+    fun commonShortWordBoostCoversPad3CrossedTheTrace() {
+        val engine = FrequencyContextGlidePredictionEngine()
+        val candidates = listOf(
+            GlideCandidate("three", score = 2749, source = GlideCandidateSource.BUNDLED_WORDLIST, priority = 251),
+            GlideCandidate("there", score = 4034, source = GlideCandidateSource.BUNDLED_WORDLIST, priority = 80),
+            GlideCandidate("they're", score = 6548, source = GlideCandidateSource.BUNDLED_WORDLIST, priority = 27),
+            GlideCandidate("the", score = 9240, source = GlideCandidateSource.BUNDLED_WORDLIST, priority = 45),
+        )
+
+        val ranked = engine.rank(
+            candidates = candidates,
+            pathSignature = "tyhtre",
+            context = GlidePredictionContext(),
+            options = GlideTypingOptions(),
+        )
+
+        assertEquals("the", ranked.first().word)
+    }
 }
