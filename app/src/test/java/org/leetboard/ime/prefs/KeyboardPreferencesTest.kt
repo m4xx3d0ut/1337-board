@@ -60,10 +60,9 @@ class KeyboardPreferencesTest {
         assertFalse("bt_local" in oneSlot.customizationState().hiddenOptionalKeyIds)
         assertFalse("bt_device_1" in oneSlot.customizationState().hiddenOptionalKeyIds)
         assertTrue("bt_device_2" in oneSlot.customizationState().hiddenOptionalKeyIds)
-        assertTrue("bt_device_next" in oneSlot.customizationState().hiddenOptionalKeyIds)
+        assertFalse("bt_device_next" in oneSlot.customizationState().hiddenOptionalKeyIds)
         assertFalse("bt_trackpad" in oneSlot.customizationState().hiddenOptionalKeyIds)
 
-        assertFalse("bt_device_next" in twoSlots.customizationState().hiddenOptionalKeyIds)
         assertTrue("bt_device_3" in twoSlots.customizationState().hiddenOptionalKeyIds)
     }
 
@@ -116,6 +115,8 @@ class KeyboardPreferencesTest {
         assertEquals(48f, preferences.landscapeGeometry.keyboardHeightPercent, 0.001f)
         assertEquals(24f, preferences.landscapeGeometry.horizontalMarginDp, 0.001f)
         assertEquals(12f, preferences.landscapeGeometry.bottomMarginDp, 0.001f)
+        assertEquals(DEFAULT_BLUETOOTH_TRACKPAD_KEEP_SCREEN_ON_MODE, preferences.bluetoothTrackpadKeepScreenOnMode)
+        assertTrue(preferences.bluetoothTrackpadDimWhenInactiveEnabled)
     }
 
     @Test

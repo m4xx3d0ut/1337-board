@@ -28,6 +28,7 @@ const val DEFAULT_SPEECH_POSSIBLE_SILENCE_MS = 2500
 const val DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT = 28f
 const val DEFAULT_BLUETOOTH_TRACKPAD_SENSITIVITY = 1f
 const val DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY = 1f
+val DEFAULT_BLUETOOTH_TRACKPAD_KEEP_SCREEN_ON_MODE = BluetoothTrackpadKeepScreenOnMode.WHILE_CHARGING
 
 data class KeyboardPreferences(
     val layoutId: String = "qwerty5",
@@ -88,6 +89,8 @@ data class KeyboardPreferences(
     val bluetoothTrackpadSensitivity: Float = DEFAULT_BLUETOOTH_TRACKPAD_SENSITIVITY,
     val bluetoothTrackpadScrollSensitivity: Float = DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY,
     val bluetoothTrackpadTapToClickEnabled: Boolean = true,
+    val bluetoothTrackpadKeepScreenOnMode: BluetoothTrackpadKeepScreenOnMode = DEFAULT_BLUETOOTH_TRACKPAD_KEEP_SCREEN_ON_MODE,
+    val bluetoothTrackpadDimWhenInactiveEnabled: Boolean = true,
 ) {
     fun customizationState(): CustomizationState {
         val hiddenKeys = buildSet {
@@ -155,7 +158,6 @@ data class KeyboardPreferences(
         configuredSlots.forEachIndexed { index, address ->
             if (address == null) add("bt_device_${index + 1}")
         }
-        if (configuredCount < 2) add("bt_device_next")
     }
 
     private fun normalizedBluetoothDeviceSlotAddresses(): List<String?> {
@@ -174,7 +176,6 @@ private val BLUETOOTH_HOTKEY_IDS = setOf(
     "bt_device_1",
     "bt_device_2",
     "bt_device_3",
-    "bt_device_next",
     "bt_trackpad",
 )
 
@@ -229,6 +230,12 @@ enum class CustomThemeOpacityField {
 enum class BluetoothTrackpadPlacement {
     ABOVE_KEYBOARD,
     BELOW_KEYBOARD,
+}
+
+enum class BluetoothTrackpadKeepScreenOnMode {
+    OFF,
+    WHILE_CHARGING,
+    ALWAYS,
 }
 
 data class LayoutOption(

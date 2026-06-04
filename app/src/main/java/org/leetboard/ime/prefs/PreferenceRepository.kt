@@ -159,6 +159,11 @@ class PreferenceRepository(context: Context) {
             ) ?: KeyboardPreferences.defaults().bluetoothTrackpadScrollSensitivity,
             bluetoothTrackpadTapToClickEnabled = values[Keys.bluetoothTrackpadTapToClickEnabled]
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadTapToClickEnabled,
+            bluetoothTrackpadKeepScreenOnMode = values[Keys.bluetoothTrackpadKeepScreenOnMode]
+                ?.let(::bluetoothTrackpadKeepScreenOnModeFromName)
+                ?: KeyboardPreferences.defaults().bluetoothTrackpadKeepScreenOnMode,
+            bluetoothTrackpadDimWhenInactiveEnabled = values[Keys.bluetoothTrackpadDimWhenInactiveEnabled]
+                ?: KeyboardPreferences.defaults().bluetoothTrackpadDimWhenInactiveEnabled,
         )
     }
 
@@ -598,6 +603,14 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.bluetoothTrackpadTapToClickEnabled] = enabled }
     }
 
+    suspend fun setBluetoothTrackpadKeepScreenOnMode(mode: BluetoothTrackpadKeepScreenOnMode) {
+        dataStore.edit { values -> values[Keys.bluetoothTrackpadKeepScreenOnMode] = mode.name }
+    }
+
+    suspend fun setBluetoothTrackpadDimWhenInactiveEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.bluetoothTrackpadDimWhenInactiveEnabled] = enabled }
+    }
+
     suspend fun importGlideWords(reader: Reader): Int {
         val words = reader.useLines { lines ->
             lines
@@ -726,6 +739,10 @@ class PreferenceRepository(context: Context) {
 
     private fun bluetoothTrackpadPlacementFromName(name: String): BluetoothTrackpadPlacement? {
         return BluetoothTrackpadPlacement.entries.firstOrNull { it.name == name }
+    }
+
+    private fun bluetoothTrackpadKeepScreenOnModeFromName(name: String): BluetoothTrackpadKeepScreenOnMode? {
+        return BluetoothTrackpadKeepScreenOnMode.entries.firstOrNull { it.name == name }
     }
 
     private fun bluetoothDeviceSlotAddresses(values: Preferences): List<String?> {
@@ -885,6 +902,8 @@ class PreferenceRepository(context: Context) {
         val bluetoothTrackpadSensitivity = floatPreferencesKey("bluetooth_trackpad_sensitivity")
         val bluetoothTrackpadScrollSensitivity = floatPreferencesKey("bluetooth_trackpad_scroll_sensitivity")
         val bluetoothTrackpadTapToClickEnabled = booleanPreferencesKey("bluetooth_trackpad_tap_to_click_enabled")
+        val bluetoothTrackpadKeepScreenOnMode = stringPreferencesKey("bluetooth_trackpad_keep_screen_on_mode")
+        val bluetoothTrackpadDimWhenInactiveEnabled = booleanPreferencesKey("bluetooth_trackpad_dim_when_inactive_enabled")
 
         val bluetoothDeviceSlotAddressKeys = listOf(
             bluetoothDeviceSlot1Address,
@@ -1021,6 +1040,8 @@ class PreferenceRepository(context: Context) {
             put(Keys.bluetoothTrackpadSensitivity.name, bluetoothTrackpadSensitivity)
             put(Keys.bluetoothTrackpadScrollSensitivity.name, bluetoothTrackpadScrollSensitivity)
             put(Keys.bluetoothTrackpadTapToClickEnabled.name, bluetoothTrackpadTapToClickEnabled)
+            put(Keys.bluetoothTrackpadKeepScreenOnMode.name, bluetoothTrackpadKeepScreenOnMode.name)
+            put(Keys.bluetoothTrackpadDimWhenInactiveEnabled.name, bluetoothTrackpadDimWhenInactiveEnabled)
             Keys.actionSlotKeys.forEach { (slotId, key) ->
                 slotActions[slotId]?.let { action -> put(key.name, action.toPreferenceValue()) }
             }
@@ -1203,6 +1224,12 @@ class PreferenceRepository(context: Context) {
         }
         settings.boolean(Keys.bluetoothTrackpadTapToClickEnabled)?.let {
             this[Keys.bluetoothTrackpadTapToClickEnabled] = it
+        }
+        settings.string(Keys.bluetoothTrackpadKeepScreenOnMode)?.let(::bluetoothTrackpadKeepScreenOnModeFromName)?.let {
+            this[Keys.bluetoothTrackpadKeepScreenOnMode] = it.name
+        }
+        settings.boolean(Keys.bluetoothTrackpadDimWhenInactiveEnabled)?.let {
+            this[Keys.bluetoothTrackpadDimWhenInactiveEnabled] = it
         }
         Keys.actionSlotKeys.forEach { (_, key) ->
             settings.string(key)?.let { encodedAction ->

@@ -3,6 +3,7 @@ package org.leetboard.ime.engine
 import android.content.res.Configuration
 import android.view.KeyEvent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.leetboard.ime.model.KeyIcon
@@ -138,9 +139,9 @@ class LayoutEngineTest {
         assertEquals(KeyActionType.BLUETOOTH_DEVICE_1, keys.first { it.id == "bt_device_1" }.action.type)
         assertEquals(KeyActionType.BLUETOOTH_DEVICE_2, keys.first { it.id == "bt_device_2" }.action.type)
         assertEquals(KeyActionType.BLUETOOTH_DEVICE_3, keys.first { it.id == "bt_device_3" }.action.type)
-        assertEquals(KeyActionType.BLUETOOTH_DEVICE_NEXT, keys.first { it.id == "bt_device_next" }.action.type)
+        assertFalse(keyIds.contains("bt_device_next"))
         assertTrue(keyIds.indexOf("bt_local") < keyIds.indexOf("bt_device_1"))
-        assertTrue(keyIds.indexOf("bt_device_3") < keyIds.indexOf("bt_device_next"))
+        assertTrue(keyIds.indexOf("bt_device_3") < keyIds.indexOf("bt_trackpad"))
     }
 
     @Test
@@ -166,7 +167,7 @@ class LayoutEngineTest {
         assertEquals(KeyActionType.BLUETOOTH_DEVICE_1, bottomKeys.first { it.id == "bt_device_1" }.action.type)
         assertEquals(KeyActionType.BLUETOOTH_DEVICE_2, bottomKeys.first { it.id == "bt_device_2" }.action.type)
         assertEquals(KeyActionType.BLUETOOTH_DEVICE_3, bottomKeys.first { it.id == "bt_device_3" }.action.type)
-        assertEquals(KeyActionType.BLUETOOTH_DEVICE_NEXT, bottomKeys.first { it.id == "bt_device_next" }.action.type)
+        assertFalse(bottomKeys.any { it.id == "bt_device_next" })
         assertEquals(KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD, bottomKeys.first { it.id == "bt_trackpad" }.action.type)
     }
 

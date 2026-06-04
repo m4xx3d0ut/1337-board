@@ -1,14 +1,19 @@
 package org.leetboard.ime.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
 import android.content.res.Configuration
 import android.graphics.Paint
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Vibrator
 import android.provider.Settings
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -60,6 +65,8 @@ import java.io.OutputStreamWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.leetboard.ime.R
+import org.leetboard.ime.RemoteTrackpadActivity
 import org.leetboard.ime.engine.CustomizationEngine
 import org.leetboard.ime.engine.GlideCorrectionEntry
 import org.leetboard.ime.engine.GlideDwellSensitivity
@@ -89,6 +96,7 @@ import org.leetboard.ime.model.opaque
 import org.leetboard.ime.model.resolvedDisplay
 import org.leetboard.ime.prefs.CustomThemeColorField
 import org.leetboard.ime.prefs.CustomThemeOpacityField
+import org.leetboard.ime.prefs.BluetoothTrackpadKeepScreenOnMode
 import org.leetboard.ime.prefs.BluetoothTrackpadPlacement
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY
@@ -1171,9 +1179,15 @@ private fun BluetoothRemoteSection(
                             }
                         },
                     )
+                    OutlinedButton(
+                        onClick = { context.pinBluetoothTrackpadShortcut(index, device) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Add BT${index + 1} trackpad shortcut")
+                    }
                 }
                 Text(
-                    "Fn layer maps Local, assigned BT slots, Next, and Pad. These keys can be rebound in Action Slots.",
+                    "Fn layer maps Local, assigned BT slots, and Pad. These keys can be rebound in Action Slots.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -1228,6 +1242,21 @@ private fun BluetoothRemoteSection(
             checked = preferences.bluetoothTrackpadTapToClickEnabled,
             onCheckedChange = { checked ->
                 scope.launch { repository.setBluetoothTrackpadTapToClickEnabled(checked) }
+            },
+        )
+        Text("Full-screen trackpad", style = MaterialTheme.typography.labelLarge)
+        BluetoothTrackpadKeepScreenOnMode.entries.forEach { mode ->
+            SelectButton(
+                label = mode.label,
+                selected = preferences.bluetoothTrackpadKeepScreenOnMode == mode,
+                onClick = { scope.launch { repository.setBluetoothTrackpadKeepScreenOnMode(mode) } },
+            )
+        }
+        SettingSwitch(
+            label = "Dim when inactive",
+            checked = preferences.bluetoothTrackpadDimWhenInactiveEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setBluetoothTrackpadDimWhenInactiveEnabled(checked) }
             },
         )
     }
@@ -2124,7 +2153,6 @@ private val actionSlots = listOf(
     ActionSlotControl("bt_device_1", "Fn BT1 slot", KeyAction(KeyActionType.BLUETOOTH_DEVICE_1)),
     ActionSlotControl("bt_device_2", "Fn BT2 slot", KeyAction(KeyActionType.BLUETOOTH_DEVICE_2)),
     ActionSlotControl("bt_device_3", "Fn BT3 slot", KeyAction(KeyActionType.BLUETOOTH_DEVICE_3)),
-    ActionSlotControl("bt_device_next", "Fn BT next slot", KeyAction(KeyActionType.BLUETOOTH_DEVICE_NEXT)),
     ActionSlotControl("bt_trackpad", "Fn BT trackpad slot", KeyAction(KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD)),
 )
 
@@ -2150,7 +2178,6 @@ private val actionCycle = listOf(
     KeyAction(KeyActionType.BLUETOOTH_DEVICE_1),
     KeyAction(KeyActionType.BLUETOOTH_DEVICE_2),
     KeyAction(KeyActionType.BLUETOOTH_DEVICE_3),
-    KeyAction(KeyActionType.BLUETOOTH_DEVICE_NEXT),
     KeyAction(KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD),
     KeyAction.keyEvent(KeyEvent.KEYCODE_MOVE_HOME, "Home"),
     KeyAction.keyEvent(KeyEvent.KEYCODE_MOVE_END, "End"),
@@ -2194,7 +2221,6 @@ private val keyDisplayControls = listOf(
     KeyDisplayControl("bt_device_1", "BT1", listOf(KeyIcon.BLUETOOTH)),
     KeyDisplayControl("bt_device_2", "BT2", listOf(KeyIcon.BLUETOOTH)),
     KeyDisplayControl("bt_device_3", "BT3", listOf(KeyIcon.BLUETOOTH)),
-    KeyDisplayControl("bt_device_next", "BT next", listOf(KeyIcon.BLUETOOTH)),
     KeyDisplayControl("bt_trackpad", "BT trackpad", listOf(KeyIcon.TRACKPAD)),
     KeyDisplayControl("left", "Left arrow", listOf(KeyIcon.ARROW_LEFT)),
     KeyDisplayControl("up", "Up arrow", listOf(KeyIcon.ARROW_UP)),
@@ -2253,6 +2279,38 @@ private val BluetoothTrackpadPlacement.label: String
         BluetoothTrackpadPlacement.ABOVE_KEYBOARD -> "Above keyboard"
         BluetoothTrackpadPlacement.BELOW_KEYBOARD -> "Below keyboard"
     }
+
+private val BluetoothTrackpadKeepScreenOnMode.label: String
+    get() = when (this) {
+        BluetoothTrackpadKeepScreenOnMode.OFF -> "Screen timeout: system"
+        BluetoothTrackpadKeepScreenOnMode.WHILE_CHARGING -> "Keep screen on while charging"
+        BluetoothTrackpadKeepScreenOnMode.ALWAYS -> "Always keep screen on"
+    }
+
+private fun Context.pinBluetoothTrackpadShortcut(slotIndex: Int, device: RemoteHidDevice) {
+    val shortcutManager = getSystemService(ShortcutManager::class.java)
+    if (shortcutManager?.isRequestPinShortcutSupported != true) {
+        Toast.makeText(this, "Home screen shortcuts are not supported by this launcher", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val slotLabel = "BT${slotIndex + 1}"
+    val intent = Intent(this, RemoteTrackpadActivity::class.java).apply {
+        action = Intent.ACTION_VIEW
+        putExtra(RemoteTrackpadActivity.EXTRA_DEVICE_ADDRESS, device.address)
+        putExtra(RemoteTrackpadActivity.EXTRA_DEVICE_NAME, device.name)
+    }
+    val shortcut = ShortcutInfo.Builder(this, "bt_trackpad_${slotIndex}_${device.address.hashCode()}")
+        .setShortLabel("$slotLabel Pad")
+        .setLongLabel("$slotLabel trackpad: ${device.name}")
+        .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
+        .setIntent(intent)
+        .build()
+    if (shortcutManager.requestPinShortcut(shortcut, null)) {
+        Toast.makeText(this, "Trackpad shortcut requested", Toast.LENGTH_SHORT).show()
+    } else {
+        Toast.makeText(this, "Unable to request shortcut", Toast.LENGTH_SHORT).show()
+    }
+}
 
 private fun CustomThemeConfig.colorFor(field: CustomThemeColorField): Int {
     return when (field) {

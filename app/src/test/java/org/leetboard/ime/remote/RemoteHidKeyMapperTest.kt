@@ -31,6 +31,34 @@ class RemoteHidKeyMapperTest {
     }
 
     @Test
+    fun textMapsWhitespaceControlsToKeyboardUsages() {
+        assertEquals(
+            listOf(HidKeyChord(0x2B), HidKeyChord(0x28)),
+            RemoteHidKeyMapper.textChords("\t\n", KeyboardState(), HeldModifiers()),
+        )
+    }
+
+    @Test
+    fun outputTextReflectsShiftButIgnoresShortcutModifiers() {
+        assertEquals(
+            "A!",
+            RemoteHidKeyMapper.outputText(
+                "a1",
+                KeyboardState(modifiers = ModifierState(shift = true)),
+                HeldModifiers(),
+            ),
+        )
+        assertEquals(
+            "",
+            RemoteHidKeyMapper.outputText(
+                "a",
+                KeyboardState(modifiers = ModifierState(ctrl = true)),
+                HeldModifiers(),
+            ),
+        )
+    }
+
+    @Test
     fun ctrlNumberMapsToNumericUsageWithCtrlModifier() {
         assertEquals(
             listOf(HidKeyChord(0x1E, RemoteHidKeyMapper.MOD_LEFT_CTRL)),

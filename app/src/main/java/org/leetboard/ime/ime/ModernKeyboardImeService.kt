@@ -32,6 +32,7 @@ import org.leetboard.ime.engine.KeyActionEngine
 import org.leetboard.ime.engine.LayoutEngine
 import org.leetboard.ime.engine.SpeechInputEngineState
 import org.leetboard.ime.engine.SpeechInputEngine
+import org.leetboard.ime.engine.SpeechInsertion
 import org.leetboard.ime.engine.SpeechStartResult
 import org.leetboard.ime.engine.TextContextPolicy
 import org.leetboard.ime.engine.ThemeEngine
@@ -56,8 +57,10 @@ import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.layoutIdForOrientation
 import org.leetboard.ime.remote.BluetoothHidController
+import org.leetboard.ime.remote.BluetoothHidControllerRegistry
 import org.leetboard.ime.remote.BluetoothHidSupport
 import org.leetboard.ime.remote.RemoteHidDevice
+import org.leetboard.ime.remote.RemoteHidKeyMapper
 import org.leetboard.ime.remote.RemoteHidKeyRouter
 import org.leetboard.ime.remote.RemoteHidState
 import org.leetboard.ime.remote.RemoteHidStatus
@@ -96,6 +99,8 @@ class ModernKeyboardImeService : InputMethodService() {
     private var glideSuggestions: List<String> = emptyList()
     private var suggestionMode = SuggestionMode.NONE
     private var remoteHidState = RemoteHidState(status = RemoteHidStatus.DISABLED)
+    private val remoteTextContext = StringBuilder()
+    private var remoteSpeechSendJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -113,7 +118,7 @@ class ModernKeyboardImeService : InputMethodService() {
         speechInputEngine = SpeechInputEngine(this, textContextPolicy)
         preferenceRepository = PreferenceRepository(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            bluetoothHidController = BluetoothHidController(this)
+            bluetoothHidController = BluetoothHidControllerRegistry.acquire(this)
             remoteHidKeyRouter = RemoteHidKeyRouter { chord ->
                 bluetoothHidController?.sendKeyboardChord(chord.modifiers, chord.usage) == true
             }
@@ -165,7 +170,8 @@ class ModernKeyboardImeService : InputMethodService() {
         speechResetJob?.cancel()
         glideSuggestionsJob?.cancel()
         glideCorrectionRecordJob?.cancel()
-        bluetoothHidController?.destroy()
+        remoteSpeechSendJob?.cancel()
+        BluetoothHidControllerRegistry.release(bluetoothHidController)
         speechInputEngine.destroy()
         serviceScope.cancel()
         super.onDestroy()
@@ -336,11 +342,10 @@ class ModernKeyboardImeService : InputMethodService() {
         }
         if (isBluetoothRemoteActive()) {
             val outputWord = formatGlideWord(word, heldModifiers)
-            keyboardState = remoteHidKeyRouter?.handle(
-                KeyAction.text("$outputWord "),
-                keyboardState,
-                HeldModifiers(),
-            ) ?: keyboardState
+            val action = KeyAction.text("$outputWord ")
+            val stateBefore = keyboardState
+            keyboardState = remoteHidKeyRouter?.handle(action, keyboardState, HeldModifiers()) ?: keyboardState
+            appendRemoteTextContext(RemoteHidKeyMapper.outputText(action.text.orEmpty(), stateBefore, HeldModifiers()))
             val learningStatus = recordAcceptedGlideWord(word, predictionContext)
             persistGlideDebugSnapshot(
                 path = path,
@@ -409,7 +414,9 @@ class ModernKeyboardImeService : InputMethodService() {
             pendingSuggestionCommit = null
             clearPendingGlideCorrection()
             clearGlideSuggestions()
+            val stateBefore = keyboardState
             keyboardState = remoteHidKeyRouter?.handle(action, keyboardState, heldModifiers) ?: keyboardState
+            recordRemoteTextContext(action, stateBefore, heldModifiers)
             return
         }
         if (action.type == KeyActionType.TAB && tryAcceptFirstSuggestionWithTab(heldModifiers)) return
@@ -1037,19 +1044,105 @@ class ModernKeyboardImeService : InputMethodService() {
     }
 
     private fun commitSpeechText(text: String) {
-        val beforeCursor = currentInputConnection?.getTextBeforeCursor(SPEECH_CONTEXT_CHARS, 0)
+        val beforeCursor = if (isBluetoothRemoteActive()) {
+            remoteTextBeforeCursor()
+        } else {
+            currentInputConnection?.getTextBeforeCursor(SPEECH_CONTEXT_CHARS, 0)
+        }
         val insertion = formatSpeechInsertion(
             recognizedText = text,
             textBeforeCursor = beforeCursor,
             options = preferences.speechTextAutomationOptions(),
         )
         if (insertion.text.isNotEmpty()) {
+            if (isBluetoothRemoteActive()) {
+                commitSpeechTextToBluetoothRemote(insertion)
+                return
+            }
             val inputConnection = currentInputConnection ?: return
             if (insertion.deleteBeforeChars > 0) {
                 inputConnection.deleteSurroundingText(insertion.deleteBeforeChars, 0)
             }
             inputConnection.commitText(insertion.text, 1)
         }
+    }
+
+    private fun commitSpeechTextToBluetoothRemote(insertion: SpeechInsertion) {
+        val controller = bluetoothHidController ?: return
+        val backspace = RemoteHidKeyMapper.keyCodeChord(KeyEvent.KEYCODE_DEL, KeyboardState(), HeldModifiers())
+        val chords = RemoteHidKeyMapper.textChords(insertion.text, KeyboardState(), HeldModifiers())
+        remoteSpeechSendJob?.cancel()
+        remoteSpeechSendJob = serviceScope.launch {
+            controller.sendKeyboardReport(0, emptyList())
+            delay(BLUETOOTH_SPEECH_CHORD_GAP_MS)
+            repeat(insertion.deleteBeforeChars) {
+                if (backspace != null) {
+                    sendBluetoothChordPaced(controller, backspace.modifiers, backspace.usage)
+                    deleteRemoteTextContext(1)
+                }
+            }
+            chords.forEach { chord ->
+                sendBluetoothChordPaced(controller, chord.modifiers, chord.usage)
+            }
+            controller.sendKeyboardReport(0, emptyList())
+            appendRemoteTextContext(insertion.text)
+        }
+    }
+
+    private suspend fun sendBluetoothChordPaced(
+        controller: BluetoothHidController,
+        modifier: Int,
+        usage: Int,
+    ) {
+        controller.sendKeyboardReport(0, emptyList())
+        delay(BLUETOOTH_SPEECH_KEY_UP_GUARD_MS)
+        controller.sendKeyboardReport(modifier, listOf(usage))
+        delay(BLUETOOTH_SPEECH_KEY_DOWN_MS)
+        controller.sendKeyboardReport(0, emptyList())
+        delay(BLUETOOTH_SPEECH_CHORD_GAP_MS)
+    }
+
+    private fun recordRemoteTextContext(
+        action: KeyAction,
+        stateBeforeAction: KeyboardState,
+        heldModifiers: HeldModifiers,
+    ) {
+        when (action.type) {
+            KeyActionType.COMMIT_TEXT -> {
+                appendRemoteTextContext(
+                    RemoteHidKeyMapper.outputText(action.text.orEmpty(), stateBeforeAction, heldModifiers),
+                )
+            }
+            KeyActionType.SPACE -> appendRemoteTextContext(" ")
+            KeyActionType.ENTER -> appendRemoteTextContext("\n")
+            KeyActionType.TAB -> appendRemoteTextContext("\t")
+            KeyActionType.DELETE -> {
+                if (!heldModifiers.shift && !stateBeforeAction.modifiers.shift) {
+                    deleteRemoteTextContext(1)
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    private fun appendRemoteTextContext(text: String) {
+        if (text.isEmpty()) return
+        remoteTextContext.append(text)
+        if (remoteTextContext.length > REMOTE_TEXT_CONTEXT_CHARS) {
+            remoteTextContext.delete(0, remoteTextContext.length - REMOTE_TEXT_CONTEXT_CHARS)
+        }
+    }
+
+    private fun deleteRemoteTextContext(count: Int) {
+        if (count <= 0 || remoteTextContext.isEmpty()) return
+        remoteTextContext.delete(
+            (remoteTextContext.length - count).coerceAtLeast(0),
+            remoteTextContext.length,
+        )
+    }
+
+    private fun remoteTextBeforeCursor(): CharSequence {
+        return remoteTextContext.takeLast(SPEECH_CONTEXT_CHARS)
     }
 
     private fun String.isBenignPushToTalkStopError(): Boolean {
@@ -1500,7 +1593,11 @@ class ModernKeyboardImeService : InputMethodService() {
     private companion object {
         const val SPEECH_STATUS_RESET_MS = 1600L
         const val SPEECH_CONTEXT_CHARS = 80
+        const val REMOTE_TEXT_CONTEXT_CHARS = 240
         const val MIN_PUSH_TO_TALK_HOLD_MS = 300L
+        const val BLUETOOTH_SPEECH_KEY_UP_GUARD_MS = 6L
+        const val BLUETOOTH_SPEECH_KEY_DOWN_MS = 12L
+        const val BLUETOOTH_SPEECH_CHORD_GAP_MS = 18L
         const val AUTO_CAP_CONTEXT_CHARS = 8
         const val GLIDE_CONTEXT_CHARS = 160
         const val TYPED_CONTEXT_CHARS = 160

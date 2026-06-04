@@ -144,8 +144,6 @@ class LayoutEngine {
                 action("bt_device_1", "BT1", KeyActionType.BLUETOOTH_DEVICE_1, 0.9f, optional = true),
                 action("bt_device_2", "BT2", KeyActionType.BLUETOOTH_DEVICE_2, 0.9f, optional = true),
                 action("bt_device_3", "BT3", KeyActionType.BLUETOOTH_DEVICE_3, 0.9f, optional = true),
-                action("bt_device_next", "Next", KeyActionType.BLUETOOTH_DEVICE_NEXT, 0.9f, optional = true)
-                    .copy(icon = null),
                 action("bt_trackpad", "Pad", KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD, 0.9f, optional = true)
                     .copy(icon = null),
             )
@@ -205,8 +203,6 @@ class LayoutEngine {
                         action("bt_device_1", "BT1", KeyActionType.BLUETOOTH_DEVICE_1, 0.9f, optional = true),
                         action("bt_device_2", "BT2", KeyActionType.BLUETOOTH_DEVICE_2, 0.9f, optional = true),
                         action("bt_device_3", "BT3", KeyActionType.BLUETOOTH_DEVICE_3, 0.9f, optional = true),
-                        action("bt_device_next", "Next", KeyActionType.BLUETOOTH_DEVICE_NEXT, 0.9f, optional = true)
-                            .copy(icon = null),
                         action("bt_trackpad", "Pad", KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD, 0.9f, optional = true)
                             .copy(icon = null),
                         settingsKey(),

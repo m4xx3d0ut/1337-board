@@ -142,6 +142,18 @@ object RemoteHidKeyMapper {
         }
     }
 
+    fun outputText(text: String, state: KeyboardState, heldModifiers: HeldModifiers): String {
+        if (text.isEmpty()) return ""
+        val modifiers = state.modifiers.effectiveWith(heldModifiers)
+        if (modifiers.ctrl || modifiers.alt) return ""
+        return buildString {
+            text.forEach { char ->
+                val outputChar = shiftedTextChar(char, modifiers) ?: char
+                if (chordForChar(outputChar) != null) append(outputChar)
+            }
+        }
+    }
+
     fun spaceChord(state: KeyboardState, heldModifiers: HeldModifiers): HidKeyChord {
         return HidKeyChord(HID_SPACE, state.modifiers.effectiveWith(heldModifiers).toHidModifierByte())
     }
@@ -177,6 +189,8 @@ object RemoteHidKeyMapper {
             lower in 'a'..'z' -> HidKeyChord(HID_A + (lower - 'a'), if (char.isUpperCase()) MOD_LEFT_SHIFT else 0)
             char in '1'..'9' -> HidKeyChord(HID_1 + (char - '1'))
             char == '0' -> HidKeyChord(HID_0)
+            char == '\n' || char == '\r' -> HidKeyChord(HID_ENTER)
+            char == '\t' -> HidKeyChord(HID_TAB)
             else -> punctuationChords[char]
         }
     }
