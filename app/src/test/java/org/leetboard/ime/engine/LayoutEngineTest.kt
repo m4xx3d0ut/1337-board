@@ -129,9 +129,25 @@ class LayoutEngineTest {
     }
 
     @Test
+    fun fnLayerIncludesBluetoothTargetSwitchKeys() {
+        val layout = engine.layoutFor(KeyboardState(fn = true), Configuration.ORIENTATION_PORTRAIT)
+        val keys = layout.rows.flattenKeys()
+        val keyIds = keys.map { it.id }
+
+        assertEquals(KeyActionType.BLUETOOTH_LOCAL_INPUT, keys.first { it.id == "bt_local" }.action.type)
+        assertEquals(KeyActionType.BLUETOOTH_DEVICE_1, keys.first { it.id == "bt_device_1" }.action.type)
+        assertEquals(KeyActionType.BLUETOOTH_DEVICE_2, keys.first { it.id == "bt_device_2" }.action.type)
+        assertEquals(KeyActionType.BLUETOOTH_DEVICE_3, keys.first { it.id == "bt_device_3" }.action.type)
+        assertEquals(KeyActionType.BLUETOOTH_DEVICE_NEXT, keys.first { it.id == "bt_device_next" }.action.type)
+        assertTrue(keyIds.indexOf("bt_local") < keyIds.indexOf("bt_device_1"))
+        assertTrue(keyIds.indexOf("bt_device_3") < keyIds.indexOf("bt_device_next"))
+    }
+
+    @Test
     fun fnHoldShowsFunctionInsertDeleteKeysOnFiveRowTopRow() {
         val layout = engine.layoutFor(KeyboardState(fnHold = true), Configuration.ORIENTATION_PORTRAIT)
         val topRow = layout.rows.first().keys
+        val bottomKeys = layout.rows.last().keys
 
         assertEquals("qwerty5", layout.id)
         assertEquals(15, topRow.size)
@@ -146,6 +162,12 @@ class LayoutEngineTest {
         assertEquals(KeyActionType.DELETE, topRow.last().action.type)
         assertEquals(null, topRow.last().secondaryIcon)
         assertEquals(KeyEvent.KEYCODE_F12, topRow[11].action.keyCode)
+        assertEquals(KeyActionType.BLUETOOTH_LOCAL_INPUT, bottomKeys.first { it.id == "bt_local" }.action.type)
+        assertEquals(KeyActionType.BLUETOOTH_DEVICE_1, bottomKeys.first { it.id == "bt_device_1" }.action.type)
+        assertEquals(KeyActionType.BLUETOOTH_DEVICE_2, bottomKeys.first { it.id == "bt_device_2" }.action.type)
+        assertEquals(KeyActionType.BLUETOOTH_DEVICE_3, bottomKeys.first { it.id == "bt_device_3" }.action.type)
+        assertEquals(KeyActionType.BLUETOOTH_DEVICE_NEXT, bottomKeys.first { it.id == "bt_device_next" }.action.type)
+        assertEquals(KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD, bottomKeys.first { it.id == "bt_trackpad" }.action.type)
     }
 
     @Test

@@ -80,6 +80,13 @@ class KeyActionEngine(
             KeyActionType.MICROPHONE -> state
             KeyActionType.TOGGLE_SPEECH_INPUT -> state
             KeyActionType.TOGGLE_GESTURE_TYPING -> state
+            KeyActionType.TOGGLE_BLUETOOTH_REMOTE -> state
+            KeyActionType.BLUETOOTH_DEVICE_NEXT -> state
+            KeyActionType.BLUETOOTH_LOCAL_INPUT -> state
+            KeyActionType.BLUETOOTH_DEVICE_1 -> state
+            KeyActionType.BLUETOOTH_DEVICE_2 -> state
+            KeyActionType.BLUETOOTH_DEVICE_3 -> state
+            KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD -> state
         }
     }
 

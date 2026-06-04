@@ -26,6 +26,13 @@ enum class KeyActionType {
     MICROPHONE,
     TOGGLE_SPEECH_INPUT,
     TOGGLE_GESTURE_TYPING,
+    TOGGLE_BLUETOOTH_REMOTE,
+    BLUETOOTH_DEVICE_NEXT,
+    BLUETOOTH_LOCAL_INPUT,
+    BLUETOOTH_DEVICE_1,
+    BLUETOOTH_DEVICE_2,
+    BLUETOOTH_DEVICE_3,
+    TOGGLE_BLUETOOTH_TRACKPAD,
 }
 
 data class KeyAction(
@@ -71,6 +78,13 @@ fun KeyAction.displayLabel(): String {
         KeyActionType.MICROPHONE -> "Mic"
         KeyActionType.TOGGLE_SPEECH_INPUT -> "Mic toggle"
         KeyActionType.TOGGLE_GESTURE_TYPING -> "Glide toggle"
+        KeyActionType.TOGGLE_BLUETOOTH_REMOTE -> "BT toggle"
+        KeyActionType.BLUETOOTH_DEVICE_NEXT -> "BT next"
+        KeyActionType.BLUETOOTH_LOCAL_INPUT -> "BT local"
+        KeyActionType.BLUETOOTH_DEVICE_1 -> "BT1"
+        KeyActionType.BLUETOOTH_DEVICE_2 -> "BT2"
+        KeyActionType.BLUETOOTH_DEVICE_3 -> "BT3"
+        KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD -> "Trackpad toggle"
     }
 }
 

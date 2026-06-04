@@ -13,7 +13,10 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.TypedValue
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -47,6 +50,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private var theme: KeyboardTheme = KeyboardTheme.leetGreen
     private var activeKeyIds: Set<String> = emptySet()
     private var keyPreviewEnabled: Boolean = true
+    private var keyHapticsEnabled: Boolean = true
     private var stickyModifiersEnabled: Boolean = true
     private var keyLabelStyle: KeyLabelStyle = KeyLabelStyle()
     private var glideTypingEnabled: Boolean = false
@@ -69,6 +73,8 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     private val handler = Handler(Looper.getMainLooper())
     private val touchSlopSquared = ViewConfiguration.get(context).scaledTouchSlop.toFloat().let { it * it }
     private val rolloverCoordinator = TouchRolloverCoordinator<QueuedKeyTap>(ROLLOVER_WINDOW_MS)
+    private val vibrator = context.getSystemService(Vibrator::class.java)
+    private val hasVibratorHardware = vibrator?.hasVibrator() == true
     private val repeatRunnable = object : Runnable {
         override fun run() {
             val pointerId = repeatPointerId ?: return
@@ -86,6 +92,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         val action = key.longPressAction ?: return@Runnable
         pointerPresses[pointerId] = pointerPresses.getValue(pointerId).copy(longPressConsumed = true)
         previewKey = key.copy(label = action.displayLabel())
+        performKeyHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         onKey?.invoke(action, activeHeldModifiers(excludingPointerId = pointerId))
         invalidate()
     }
@@ -98,6 +105,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             fnHoldActive = true,
         )
         previewKey = key
+        performKeyHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         onFnHoldChanged?.invoke(true)
         invalidate()
     }
@@ -110,6 +118,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             quickNavHoldActive = true,
         )
         previewKey = key.copy(label = "Fn")
+        performKeyHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         onQuickNavHoldChanged?.invoke(true)
         invalidate()
     }
@@ -122,6 +131,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             micHoldActive = true,
         )
         previewKey = key.copy(label = "Talk")
+        performKeyHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         onMicHoldChanged?.invoke(true)
         invalidate()
     }
@@ -140,11 +150,16 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     }
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
+    init {
+        isHapticFeedbackEnabled = true
+    }
+
     fun render(
         layout: KeyboardLayout,
         theme: KeyboardTheme,
         activeKeyIds: Set<String> = emptySet(),
         keyPreviewEnabled: Boolean = true,
+        keyHapticsEnabled: Boolean = true,
         stickyModifiersEnabled: Boolean = true,
         keyLabelStyle: KeyLabelStyle = KeyLabelStyle(),
         glideTypingEnabled: Boolean = false,
@@ -157,6 +172,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         this.theme = theme
         this.activeKeyIds = activeKeyIds
         this.keyPreviewEnabled = keyPreviewEnabled
+        this.keyHapticsEnabled = keyHapticsEnabled
         this.stickyModifiersEnabled = stickyModifiersEnabled
         this.keyLabelStyle = keyLabelStyle
         this.glideTypingEnabled = glideTypingEnabled
@@ -299,6 +315,7 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             glidePoints = listOf(PointF(event.getX(index), event.getY(index))),
             glidePointTimes = listOf(event.eventTime),
         )
+        performKeyHapticFeedback()
         pressedKeyIds = pressedKeyIds + hitKey.key.id
         previewKey = hitKey.key.takeIf { keyPreviewEnabled }
         if (hitKey.key.repeatable) {
@@ -495,6 +512,23 @@ class KeyboardSurfaceView(context: Context) : View(context) {
     override fun performClick(): Boolean {
         super.performClick()
         return true
+    }
+
+    private fun performKeyHapticFeedback(feedbackConstant: Int = HapticFeedbackConstants.KEYBOARD_TAP) {
+        if (!keyHapticsEnabled || !hasVibratorHardware) return
+        val performed = performHapticFeedback(feedbackConstant)
+        if (!performed) {
+            val durationMs = when (feedbackConstant) {
+                HapticFeedbackConstants.LONG_PRESS -> LONG_PRESS_HAPTIC_MS
+                else -> KEY_TAP_HAPTIC_MS
+            }
+            vibrator?.vibrate(
+                VibrationEffect.createOneShot(
+                    durationMs,
+                    VibrationEffect.DEFAULT_AMPLITUDE,
+                ),
+            )
+        }
     }
 
     private fun queueRolloverTap(downOrder: Long, action: KeyAction, heldModifiers: HeldModifiers) {
@@ -740,11 +774,48 @@ class KeyboardSurfaceView(context: Context) : View(context) {
             KeyIcon.CTRL -> drawTextIcon(canvas, iconRect, "Ctrl", primary)
             KeyIcon.ALT -> drawTextIcon(canvas, iconRect, "Alt", primary)
             KeyIcon.FN -> drawTextIcon(canvas, iconRect, "Fn", primary)
+            KeyIcon.BLUETOOTH -> drawBluetoothIcon(canvas, iconRect)
+            KeyIcon.TRACKPAD -> drawTrackpadIcon(canvas, iconRect)
             KeyIcon.ARROW_LEFT -> drawTextIcon(canvas, iconRect, "◀", primary)
             KeyIcon.ARROW_RIGHT -> drawTextIcon(canvas, iconRect, "▶", primary)
             KeyIcon.ARROW_UP -> drawTextIcon(canvas, iconRect, "▲", primary)
             KeyIcon.ARROW_DOWN -> drawTextIcon(canvas, iconRect, "▼", primary)
         }
+    }
+
+    private fun drawBluetoothIcon(canvas: Canvas, rect: RectF) {
+        val cx = rect.centerX()
+        val top = rect.top + rect.height() * 0.08f
+        val mid = rect.centerY()
+        val bottom = rect.bottom - rect.height() * 0.08f
+        val left = rect.left + rect.width() * 0.2f
+        val right = rect.right - rect.width() * 0.16f
+        val path = Path().apply {
+            moveTo(cx, top)
+            lineTo(right, rect.top + rect.height() * 0.32f)
+            lineTo(left, rect.bottom - rect.height() * 0.26f)
+            lineTo(cx, bottom)
+            close()
+            moveTo(cx, top)
+            lineTo(cx, bottom)
+            moveTo(left, rect.top + rect.height() * 0.26f)
+            lineTo(right, rect.bottom - rect.height() * 0.32f)
+        }
+        canvas.drawPath(path, strokePaint)
+    }
+
+    private fun drawTrackpadIcon(canvas: Canvas, rect: RectF) {
+        val radius = rect.width() * 0.14f
+        val padRect = RectF(
+            rect.left + rect.width() * 0.12f,
+            rect.top + rect.height() * 0.1f,
+            rect.right - rect.width() * 0.12f,
+            rect.bottom - rect.height() * 0.08f,
+        )
+        canvas.drawRoundRect(padRect, radius, radius, strokePaint)
+        val buttonY = padRect.bottom - padRect.height() * 0.28f
+        canvas.drawLine(padRect.left, buttonY, padRect.right, buttonY, strokePaint)
+        canvas.drawLine(padRect.centerX(), buttonY, padRect.centerX(), padRect.bottom, strokePaint)
     }
 
     private fun drawBackspaceIcon(canvas: Canvas, rect: RectF, forward: Boolean) {
@@ -1117,6 +1188,8 @@ class KeyboardSurfaceView(context: Context) : View(context) {
         const val GLIDE_TRACE_ALPHA = 190
         const val MIN_GLIDE_KEYS = 2
         const val MIN_HEIGHT_DP = 160f
+        const val KEY_TAP_HAPTIC_MS = 12L
+        const val LONG_PRESS_HAPTIC_MS = 32L
         const val TOP_MARGIN_DP = 4f
         const val BOLD_WEIGHT = 600f
         const val MAX_ROLLOVER_POINTERS = 10

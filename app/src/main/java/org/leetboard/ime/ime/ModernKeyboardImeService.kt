@@ -49,11 +49,18 @@ import org.leetboard.ime.model.KeyActionType
 import org.leetboard.ime.model.KeyIcon
 import org.leetboard.ime.model.KeyboardLayout
 import org.leetboard.ime.model.KeyboardState
+import org.leetboard.ime.model.KeySpec
 import org.leetboard.ime.model.activeKeyIds
 import org.leetboard.ime.model.clearTransientModifiers
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.layoutIdForOrientation
+import org.leetboard.ime.remote.BluetoothHidController
+import org.leetboard.ime.remote.BluetoothHidSupport
+import org.leetboard.ime.remote.RemoteHidDevice
+import org.leetboard.ime.remote.RemoteHidKeyRouter
+import org.leetboard.ime.remote.RemoteHidState
+import org.leetboard.ime.remote.RemoteHidStatus
 import org.leetboard.ime.ui.KeyboardInputView
 
 class ModernKeyboardImeService : InputMethodService() {
@@ -68,6 +75,8 @@ class ModernKeyboardImeService : InputMethodService() {
     private lateinit var keyActionEngine: KeyActionEngine
     private lateinit var speechInputEngine: SpeechInputEngine
     private lateinit var preferenceRepository: PreferenceRepository
+    private var bluetoothHidController: BluetoothHidController? = null
+    private var remoteHidKeyRouter: RemoteHidKeyRouter? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var keyboardInputView: KeyboardInputView? = null
     private var keyboardState = KeyboardState()
@@ -86,6 +95,7 @@ class ModernKeyboardImeService : InputMethodService() {
     private var glideLearningResetRevision: Int? = null
     private var glideSuggestions: List<String> = emptyList()
     private var suggestionMode = SuggestionMode.NONE
+    private var remoteHidState = RemoteHidState(status = RemoteHidStatus.DISABLED)
 
     override fun onCreate() {
         super.onCreate()
@@ -102,6 +112,20 @@ class ModernKeyboardImeService : InputMethodService() {
         keyActionEngine = KeyActionEngine(this)
         speechInputEngine = SpeechInputEngine(this, textContextPolicy)
         preferenceRepository = PreferenceRepository(this)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            bluetoothHidController = BluetoothHidController(this)
+            remoteHidKeyRouter = RemoteHidKeyRouter { chord ->
+                bluetoothHidController?.sendKeyboardChord(chord.modifiers, chord.usage) == true
+            }
+            serviceScope.launch {
+                bluetoothHidController?.state?.collectLatest { nextState ->
+                    remoteHidState = nextState
+                    renderKeyboard()
+                }
+            }
+        } else {
+            remoteHidState = RemoteHidState(status = RemoteHidStatus.API_TOO_OLD)
+        }
         serviceScope.launch {
             preferenceRepository.preferences.collectLatest { nextPreferences ->
                 val previousResetRevision = glideLearningResetRevision
@@ -122,6 +146,10 @@ class ModernKeyboardImeService : InputMethodService() {
                 )
                 if (!nextPreferences.glideCorrectionLearningEnabled) clearPendingGlideCorrection()
                 preferences = nextPreferences
+                bluetoothHidController?.setEnabled(
+                    enabled = nextPreferences.bluetoothRemoteEnabled,
+                    activeDeviceAddress = nextPreferences.bluetoothActiveDeviceAddress,
+                )
                 if (!preferences.speechInputEnabled && speechUiState != SpeechUiState.IDLE) {
                     speechInputEngine.cancel()
                     speechUiState = SpeechUiState.IDLE
@@ -137,9 +165,14 @@ class ModernKeyboardImeService : InputMethodService() {
         speechResetJob?.cancel()
         glideSuggestionsJob?.cancel()
         glideCorrectionRecordJob?.cancel()
+        bluetoothHidController?.destroy()
         speechInputEngine.destroy()
         serviceScope.cancel()
         super.onDestroy()
+    }
+
+    override fun onEvaluateFullscreenMode(): Boolean {
+        return false
     }
 
     override fun onCreateInputView(): View {
@@ -175,6 +208,16 @@ class ModernKeyboardImeService : InputMethodService() {
             view.onQuickModifier = { action ->
                 handleKeyAction(action, HeldModifiers())
                 renderKeyboard()
+            }
+            view.onRemotePointerReport = { report ->
+                if (isBluetoothRemoteActive()) {
+                    bluetoothHidController?.sendMouseReport(
+                        buttons = report.buttons,
+                        dx = report.dx,
+                        dy = report.dy,
+                        wheel = report.wheel,
+                    )
+                }
             }
             renderKeyboard()
         }
@@ -222,6 +265,7 @@ class ModernKeyboardImeService : InputMethodService() {
         )
         val quickModifierBarEnabled = keyboardState.quickNavHold &&
             layoutState.activeLayoutId in QUICK_MODIFIER_BAR_LAYOUTS
+        val remoteTrackpadVisible = isBluetoothRemoteActive() && preferences.bluetoothTrackpadEnabled
         val layout = customizationEngine.apply(
             layout = layoutEngine.layoutFor(layoutState, orientation),
             customization = preferences.customizationState().let { customization ->
@@ -229,7 +273,7 @@ class ModernKeyboardImeService : InputMethodService() {
                     hiddenOptionalKeyIds = customization.hiddenOptionalKeyIds + contextHiddenKeyIds,
                 )
             },
-        ).withSpeechUiState().withFeatureUiState()
+        ).withSpeechUiState().withFeatureUiState().withBluetoothUiState()
         keyboardInputView?.render(
             layout,
             themeEngine.resolve(
@@ -238,8 +282,9 @@ class ModernKeyboardImeService : InputMethodService() {
                 landscape = preferences.landscapeGeometry,
                 customTheme = preferences.customTheme,
             ),
-            layoutState.activeKeyIds() + featureActiveKeyIds(layoutState),
+            layoutState.activeKeyIds() + featureActiveKeyIds(layoutState, layout),
             preferences.keyPreviewEnabled,
+            preferences.keyHapticsEnabled,
             preferences.stickyModifiersEnabled,
             preferences.keyLabelStyle,
             gestureTypingAllowed,
@@ -252,6 +297,12 @@ class ModernKeyboardImeService : InputMethodService() {
             quickModifierBarEnabled,
             activeQuickModifierIds = activeQuickModifierIds(),
             quickFunctionRowEnabled = layoutState.activeLayoutId == "qwerty4",
+            remoteTrackpadEnabled = remoteTrackpadVisible,
+            remoteTrackpadPlacement = preferences.bluetoothTrackpadPlacement,
+            remoteTrackpadHeightPercent = preferences.bluetoothTrackpadHeightPercent,
+            remoteTrackpadSensitivity = preferences.bluetoothTrackpadSensitivity,
+            remoteTrackpadScrollSensitivity = preferences.bluetoothTrackpadScrollSensitivity,
+            remoteTrackpadTapToClickEnabled = preferences.bluetoothTrackpadTapToClickEnabled,
         )
         hideSystemImeSwitcher()
     }
@@ -280,6 +331,23 @@ class ModernKeyboardImeService : InputMethodService() {
                 candidates = candidates,
                 committedWord = null,
                 learningStatus = "not recorded: no candidate",
+            )
+            return
+        }
+        if (isBluetoothRemoteActive()) {
+            val outputWord = formatGlideWord(word, heldModifiers)
+            keyboardState = remoteHidKeyRouter?.handle(
+                KeyAction.text("$outputWord "),
+                keyboardState,
+                HeldModifiers(),
+            ) ?: keyboardState
+            val learningStatus = recordAcceptedGlideWord(word, predictionContext)
+            persistGlideDebugSnapshot(
+                path = path,
+                touchTrace = touchTrace,
+                candidates = candidates,
+                committedWord = word,
+                learningStatus = learningStatus,
             )
             return
         }
@@ -335,6 +403,15 @@ class ModernKeyboardImeService : InputMethodService() {
     }
 
     private fun handleKeyAction(action: KeyAction, heldModifiers: HeldModifiers) {
+        if (handleBluetoothControlAction(action)) return
+        if (isBluetoothRemoteActive() && shouldRouteToBluetoothRemote(action)) {
+            pendingGlideUndo = null
+            pendingSuggestionCommit = null
+            clearPendingGlideCorrection()
+            clearGlideSuggestions()
+            keyboardState = remoteHidKeyRouter?.handle(action, keyboardState, heldModifiers) ?: keyboardState
+            return
+        }
         if (action.type == KeyActionType.TAB && tryAcceptFirstSuggestionWithTab(heldModifiers)) return
         if (action.type == KeyActionType.DELETE && tryUndoLastGlide(heldModifiers)) return
         val actionToHandle = action.withPostPredictionPunctuationSpacing(heldModifiers)
@@ -380,6 +457,124 @@ class ModernKeyboardImeService : InputMethodService() {
             refreshTypedSuggestions()
         } else if (suggestionMode == SuggestionMode.TYPED) {
             clearGlideSuggestions()
+        }
+    }
+
+    private fun handleBluetoothControlAction(action: KeyAction): Boolean {
+        when (action.type) {
+            KeyActionType.TOGGLE_BLUETOOTH_REMOTE -> {
+                serviceScope.launch {
+                    preferenceRepository.setBluetoothRemoteEnabled(!preferences.bluetoothRemoteEnabled)
+                }
+                showToast(if (preferences.bluetoothRemoteEnabled) "Bluetooth remote off" else "Bluetooth remote on")
+                return true
+            }
+            KeyActionType.BLUETOOTH_DEVICE_NEXT -> {
+                selectNextBluetoothDevice()
+                return true
+            }
+            KeyActionType.BLUETOOTH_LOCAL_INPUT -> {
+                serviceScope.launch {
+                    preferenceRepository.setBluetoothRemoteEnabled(false)
+                }
+                showToast("Local Android input")
+                return true
+            }
+            KeyActionType.BLUETOOTH_DEVICE_1 -> {
+                selectBluetoothDeviceSlot(0)
+                return true
+            }
+            KeyActionType.BLUETOOTH_DEVICE_2 -> {
+                selectBluetoothDeviceSlot(1)
+                return true
+            }
+            KeyActionType.BLUETOOTH_DEVICE_3 -> {
+                selectBluetoothDeviceSlot(2)
+                return true
+            }
+            KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD -> {
+                serviceScope.launch {
+                    preferenceRepository.setBluetoothTrackpadEnabled(!preferences.bluetoothTrackpadEnabled)
+                }
+                showToast(if (preferences.bluetoothTrackpadEnabled) "Trackpad off" else "Trackpad on")
+                return true
+            }
+            else -> return false
+        }
+    }
+
+    private fun selectNextBluetoothDevice() {
+        val devices = configuredBluetoothSlotDevices()
+        if (devices.isEmpty()) {
+            showToast(
+                if (BluetoothHidSupport.hasConnectPermission(this)) {
+                    "Assign a BT hotkey slot in settings"
+                } else {
+                    "Grant Nearby devices in settings"
+                },
+            )
+            return
+        }
+        val currentIndex = devices.indexOfFirst { device -> device.address == preferences.bluetoothActiveDeviceAddress }
+        val next = devices[(currentIndex + 1).floorMod(devices.size)]
+        serviceScope.launch {
+            preferenceRepository.setBluetoothActiveDeviceAddress(next.address)
+            preferenceRepository.setBluetoothRemoteEnabled(true)
+        }
+        bluetoothHidController?.selectDevice(next.address)
+        showToast("Bluetooth host: ${next.name}")
+    }
+
+    private fun selectBluetoothDeviceSlot(slotIndex: Int) {
+        val slotName = "BT${slotIndex + 1}"
+        val address = preferences.bluetoothDeviceSlotAddress(slotIndex)
+        if (address == null) {
+            showToast("Assign $slotName in settings")
+            return
+        }
+        val device = BluetoothHidSupport.bondedDevices(this).firstOrNull { it.address == address }
+        if (device == null) {
+            showToast(
+                if (BluetoothHidSupport.hasConnectPermission(this)) {
+                    "$slotName host is not paired"
+                } else {
+                    "Grant Nearby devices in settings"
+                },
+            )
+            return
+        }
+        serviceScope.launch {
+            preferenceRepository.setBluetoothActiveDeviceAddress(device.address)
+            preferenceRepository.setBluetoothRemoteEnabled(true)
+        }
+        bluetoothHidController?.selectDevice(device.address)
+        showToast("$slotName: ${device.name}")
+    }
+
+    private fun configuredBluetoothSlotDevices(): List<RemoteHidDevice> {
+        val bondedByAddress = BluetoothHidSupport.bondedDevices(this).associateBy { device -> device.address }
+        return preferences.configuredBluetoothSlotAddresses().mapNotNull { address -> bondedByAddress[address] }
+    }
+
+    private fun isBluetoothRemoteActive(): Boolean {
+        return preferences.bluetoothRemoteEnabled && remoteHidState.connected
+    }
+
+    private fun shouldRouteToBluetoothRemote(action: KeyAction): Boolean {
+        return when (action.type) {
+            KeyActionType.SETTINGS,
+            KeyActionType.LANGUAGE_SWITCH,
+            KeyActionType.MICROPHONE,
+            KeyActionType.TOGGLE_SPEECH_INPUT,
+            KeyActionType.TOGGLE_GESTURE_TYPING,
+            KeyActionType.TOGGLE_BLUETOOTH_REMOTE,
+            KeyActionType.BLUETOOTH_DEVICE_NEXT,
+            KeyActionType.BLUETOOTH_LOCAL_INPUT,
+            KeyActionType.BLUETOOTH_DEVICE_1,
+            KeyActionType.BLUETOOTH_DEVICE_2,
+            KeyActionType.BLUETOOTH_DEVICE_3,
+            KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD -> false
+            else -> true
         }
     }
 
@@ -692,14 +887,40 @@ class ModernKeyboardImeService : InputMethodService() {
         return GlidePredictionContext(textBeforeCursor = contextText)
     }
 
-    private fun featureActiveKeyIds(layoutState: KeyboardState): Set<String> = buildSet {
-        if (speechUiState == SpeechUiState.LISTENING || speechUiState == SpeechUiState.PROCESSING) add("mic")
-        if (preferences.gestureTypingEnabled) add("settings")
+    private fun featureActiveKeyIds(layoutState: KeyboardState, layout: KeyboardLayout): Set<String> = buildSet {
+        if (speechUiState == SpeechUiState.LISTENING || speechUiState == SpeechUiState.PROCESSING) {
+            addAll(layout.keyIdsForAction(KeyActionType.MICROPHONE))
+        }
+        if (preferences.gestureTypingEnabled) addAll(layout.keyIdsForAction(KeyActionType.SETTINGS))
+        if (preferences.bluetoothRemoteEnabled) addAll(layout.keyIdsForAction(KeyActionType.TOGGLE_BLUETOOTH_REMOTE))
+        addAll(activeBluetoothTargetKeyIds(layout))
+        if (isBluetoothRemoteActive() && preferences.bluetoothTrackpadEnabled) {
+            addAll(layout.keyIdsForAction(KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD))
+        }
         if (
             layoutState.activeLayoutId in QUICK_NAV_STICKY_INDICATOR_LAYOUTS &&
             (keyboardState.modifiers.ctrl || keyboardState.modifiers.alt || keyboardState.modifiers.fn)
         ) {
             add("num_toggle")
+        }
+    }
+
+    private fun activeBluetoothTargetKeyIds(layout: KeyboardLayout): Set<String> {
+        val slotAddresses = (0 until BLUETOOTH_DEVICE_SLOT_COUNT).map { index ->
+            preferences.bluetoothDeviceSlotAddress(index)
+        }
+        if (!preferences.bluetoothRemoteEnabled) {
+            return if (slotAddresses.any { it != null }) {
+                layout.keyIdsForAction(KeyActionType.BLUETOOTH_LOCAL_INPUT)
+            } else {
+                emptySet()
+            }
+        }
+        return when (slotAddresses.indexOf(preferences.bluetoothActiveDeviceAddress)) {
+            0 -> layout.keyIdsForAction(KeyActionType.BLUETOOTH_DEVICE_1)
+            1 -> layout.keyIdsForAction(KeyActionType.BLUETOOTH_DEVICE_2)
+            2 -> layout.keyIdsForAction(KeyActionType.BLUETOOTH_DEVICE_3)
+            else -> emptySet()
         }
     }
 
@@ -849,11 +1070,26 @@ class ModernKeyboardImeService : InputMethodService() {
             rows = rows.map { row ->
                 row.copy(
                     keys = row.keys.map { key ->
-                        if (key.id == "mic") key.copy(secondaryLabel = secondaryLabel) else key
+                        if (key.action.type == KeyActionType.MICROPHONE) {
+                            key.copy(secondaryLabel = secondaryLabel)
+                        } else {
+                            key
+                        }
                     },
                 )
             },
         )
+    }
+
+    private fun KeyboardLayout.keyIdsForAction(type: KeyActionType): Set<String> {
+        return rows.flatMap { row -> row.keys }
+            .filter { key ->
+                key.action.type == type ||
+                    key.longPressAction?.type == type ||
+                    key.swipeUpAction?.type == type
+            }
+            .map { key -> key.id }
+            .toSet()
     }
 
     private fun KeyboardLayout.withFeatureUiState(): KeyboardLayout {
@@ -862,11 +1098,94 @@ class ModernKeyboardImeService : InputMethodService() {
             rows = rows.map { row ->
                 row.copy(
                     keys = row.keys.map { key ->
-                        if (key.id == "settings") key.copy(secondaryIcon = glideIcon) else key
+                        if (key.action.type == KeyActionType.SETTINGS) {
+                            key.copy(secondaryIcon = glideIcon)
+                        } else {
+                            key
+                        }
                     },
                 )
             },
         )
+    }
+
+    private fun KeyboardLayout.withBluetoothUiState(): KeyboardLayout {
+        val bondedByAddress = BluetoothHidSupport.bondedDevices(this@ModernKeyboardImeService)
+            .associateBy { device -> device.address }
+        val remoteLabel = when {
+            !preferences.bluetoothRemoteEnabled -> "Off"
+            remoteHidState.status == RemoteHidStatus.PERMISSION_MISSING -> "Perm"
+            remoteHidState.status == RemoteHidStatus.NO_DEVICE_SELECTED -> "Pick"
+            remoteHidState.status == RemoteHidStatus.CONNECTED -> "On"
+            remoteHidState.status == RemoteHidStatus.CONNECTING ||
+                remoteHidState.status == RemoteHidStatus.REGISTERING ||
+                remoteHidState.status == RemoteHidStatus.PROFILE_CONNECTING -> "..."
+            remoteHidState.status == RemoteHidStatus.API_TOO_OLD -> "API"
+            remoteHidState.status == RemoteHidStatus.BLUETOOTH_OFF -> "Off"
+            remoteHidState.status == RemoteHidStatus.BLUETOOTH_UNAVAILABLE -> "No"
+            remoteHidState.status == RemoteHidStatus.ERROR -> "Err"
+            else -> "Ready"
+        }
+        val trackpadLabel = if (preferences.bluetoothTrackpadEnabled) "Pad" else "NoPad"
+        val deviceLabel = remoteHidState.activeDeviceName?.shortBluetoothDeviceLabel() ?: "Next"
+        return copy(
+            rows = rows.map { row ->
+                row.copy(
+                    keys = row.keys.map { key ->
+                        when (key.action.type) {
+                            KeyActionType.TOGGLE_BLUETOOTH_REMOTE -> key.copy(
+                                secondaryLabel = remoteLabel,
+                                secondaryIcon = null,
+                            )
+                            KeyActionType.BLUETOOTH_DEVICE_NEXT -> key.copy(
+                                secondaryLabel = deviceLabel,
+                                secondaryIcon = null,
+                            )
+                            KeyActionType.BLUETOOTH_LOCAL_INPUT -> key.copy(
+                                label = "Local",
+                                secondaryLabel = if (preferences.bluetoothRemoteEnabled) "Here" else "On",
+                                secondaryIcon = null,
+                            )
+                            KeyActionType.BLUETOOTH_DEVICE_1 -> bluetoothDeviceSlotKey(key, 0, bondedByAddress)
+                            KeyActionType.BLUETOOTH_DEVICE_2 -> bluetoothDeviceSlotKey(key, 1, bondedByAddress)
+                            KeyActionType.BLUETOOTH_DEVICE_3 -> bluetoothDeviceSlotKey(key, 2, bondedByAddress)
+                            KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD -> key.copy(
+                                secondaryLabel = trackpadLabel,
+                                secondaryIcon = null,
+                            )
+                            else -> key
+                        }
+                    },
+                )
+            },
+        )
+    }
+
+    private fun bluetoothDeviceSlotKey(
+        key: KeySpec,
+        slotIndex: Int,
+        bondedByAddress: Map<String, RemoteHidDevice>,
+    ): KeySpec {
+        val address = preferences.bluetoothDeviceSlotAddress(slotIndex)
+        val device = address?.let { bondedByAddress[it] }
+        return key.copy(
+            label = "BT${slotIndex + 1}",
+            secondaryLabel = when {
+                device != null -> device.name.shortBluetoothDeviceLabel()
+                address != null -> "Missing"
+                else -> "Pair"
+            },
+            secondaryIcon = null,
+        )
+    }
+
+    private fun String.shortBluetoothDeviceLabel(): String {
+        val cleaned = trim()
+        return if (cleaned.length <= BLUETOOTH_KEY_SECONDARY_LABEL_MAX_CHARS) {
+            cleaned
+        } else {
+            cleaned.take(BLUETOOTH_KEY_SECONDARY_LABEL_MAX_CHARS)
+        }
     }
 
     private fun updateSpeechUiState(nextState: SpeechUiState, resetAfter: Boolean = false) {
@@ -1143,6 +1462,10 @@ class ModernKeyboardImeService : InputMethodService() {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
+    private fun Int.floorMod(modulus: Int): Int {
+        return ((this % modulus) + modulus) % modulus
+    }
+
     private enum class SpeechUiState {
         IDLE,
         LISTENING,
@@ -1188,6 +1511,8 @@ class ModernKeyboardImeService : InputMethodService() {
         const val MAX_GLIDE_MANUAL_CORRECTION_LENGTH = 24
         const val MAX_GLIDE_CORRECTION_LENGTH_DELTA = 4
         const val MIN_TYPED_SUGGESTION_LENGTH = 2
+        const val BLUETOOTH_KEY_SECONDARY_LABEL_MAX_CHARS = 6
+        const val BLUETOOTH_DEVICE_SLOT_COUNT = 3
         const val GLIDE_DEBUG_SNAPSHOT_FILE = "glide_debug_snapshot.txt"
         const val TERMUX_PACKAGE_PREFIX = "com.termux"
         val PUNCTUATION_THAT_TRIMS_GLIDE_SPACE = setOf(".", ",", "!", "?", ";", ":")

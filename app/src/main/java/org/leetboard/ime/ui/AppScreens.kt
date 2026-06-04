@@ -5,6 +5,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Paint
+import android.os.Build
+import android.os.Vibrator
+import android.provider.Settings
 import android.view.KeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -86,6 +89,10 @@ import org.leetboard.ime.model.opaque
 import org.leetboard.ime.model.resolvedDisplay
 import org.leetboard.ime.prefs.CustomThemeColorField
 import org.leetboard.ime.prefs.CustomThemeOpacityField
+import org.leetboard.ime.prefs.BluetoothTrackpadPlacement
+import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
+import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY
+import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.DEFAULT_KEY_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.DEFAULT_SPEECH_COMPLETE_SILENCE_MS
 import org.leetboard.ime.prefs.DEFAULT_SPEECH_POSSIBLE_SILENCE_MS
@@ -94,9 +101,13 @@ import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
 import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
+import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
+import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.MAX_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.MAX_SPEECH_SILENCE_MS
+import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
+import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.MIN_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.MIN_SPEECH_SILENCE_MS
@@ -104,6 +115,8 @@ import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.SettingsExportFormat
 import org.leetboard.ime.prefs.defaultLayoutOptions
 import org.leetboard.ime.prefs.layoutIdForOrientation
+import org.leetboard.ime.remote.BluetoothHidSupport
+import org.leetboard.ime.remote.RemoteHidDevice
 
 @Composable
 fun InfoScreen(
@@ -560,6 +573,8 @@ private fun InteractionSection(
     repository: PreferenceRepository,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val hapticHardwareAvailable = context.hasVibratorHardware()
     SettingsGroup(
         title = "Touch Behavior",
         body = "Tune Esc handling, modifier stickiness, and long-press timing.",
@@ -588,6 +603,20 @@ private fun InteractionSection(
                 scope.launch { repository.setShiftCapsLockEnabled(checked) }
             },
         )
+        SettingSwitch(
+            label = "Key haptic feedback",
+            checked = preferences.keyHapticsEnabled,
+            enabled = hapticHardwareAvailable,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setKeyHapticsEnabled(checked) }
+            },
+        )
+        if (!hapticHardwareAvailable) {
+            Text(
+                "No vibration hardware detected on this device.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         LongPressDelaySlider(
             label = "Regular key long press",
             detail = "Letter, number, and punctuation alternates.",
@@ -759,6 +788,11 @@ private fun FeatureSection(
     ) { granted ->
         scope.launch { repository.setSpeechInputEnabled(granted) }
     }
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) scope.launch { repository.setBluetoothRemoteEnabled(true) }
+    }
     val wordImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             scope.launch {
@@ -819,6 +853,11 @@ private fun FeatureSection(
             },
         )
     }
+    BluetoothRemoteSection(
+        preferences = preferences,
+        repository = repository,
+        bluetoothPermissionLauncher = { bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) },
+    )
     SettingsGroup(
         title = "Speech Text Automation",
         body = "Smart cleanup keeps dictated prose spaced and capitalized. Disable it when dictating code or exact text.",
@@ -1040,6 +1079,179 @@ private fun FeatureSection(
             names = preferences.speechCustomNames,
             repository = repository,
             onDismiss = { showSpeechNames = false },
+        )
+    }
+}
+
+@Composable
+private fun BluetoothRemoteSection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+    bluetoothPermissionLauncher: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val apiReady = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+    val hasPermission = BluetoothHidSupport.hasConnectPermission(context)
+    val bondedDevices = if (apiReady && hasPermission) BluetoothHidSupport.bondedDevices(context) else emptyList()
+    SettingsGroup(
+        title = "Bluetooth Remote",
+        body = "Use this device as a local Bluetooth keyboard and trackpad for one selected paired host.",
+    ) {
+        Text(BluetoothHidSupport.diagnosticSummary(context), style = MaterialTheme.typography.bodySmall)
+        SettingSwitch(
+            label = "Enable Bluetooth remote mode",
+            checked = preferences.bluetoothRemoteEnabled,
+            onCheckedChange = { checked ->
+                when {
+                    !checked -> scope.launch { repository.setBluetoothRemoteEnabled(false) }
+                    !apiReady -> Unit
+                    !hasPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> bluetoothPermissionLauncher()
+                    else -> scope.launch { repository.setBluetoothRemoteEnabled(true) }
+                }
+            },
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission) {
+            OutlinedButton(onClick = bluetoothPermissionLauncher, modifier = Modifier.fillMaxWidth()) {
+                Text("Grant Nearby devices")
+            }
+        }
+        OutlinedButton(
+            onClick = { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Pair/manage Bluetooth hosts")
+        }
+        if (apiReady && hasPermission) {
+            Text("Fn hotkey slots", style = MaterialTheme.typography.labelLarge)
+            if (bondedDevices.isEmpty()) {
+                Text("No paired hosts found. Pair a desktop first, then return here.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                repeat(MAX_BLUETOOTH_FN_DEVICE_SLOTS) { slotIndex ->
+                    BluetoothHotkeySlotControl(
+                        slotIndex = slotIndex,
+                        selectedAddress = preferences.bluetoothDeviceSlotAddress(slotIndex),
+                        bondedDevices = bondedDevices,
+                        onSelect = { address ->
+                            scope.launch { repository.setBluetoothDeviceSlotAddress(slotIndex, address) }
+                        },
+                    )
+                }
+                Text(
+                    "Only assigned slots appear as Fn BT hotkeys. Unassigned slots stay hidden.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text("Connection target", style = MaterialTheme.typography.labelLarge)
+            SelectButton(
+                label = "Local Android input",
+                selected = !preferences.bluetoothRemoteEnabled,
+                onClick = {
+                    scope.launch { repository.setBluetoothRemoteEnabled(false) }
+                },
+            )
+            val bondedByAddress = bondedDevices.associateBy { device -> device.address }
+            val configuredSlots = (0 until MAX_BLUETOOTH_FN_DEVICE_SLOTS).mapNotNull { slotIndex ->
+                val address = preferences.bluetoothDeviceSlotAddress(slotIndex) ?: return@mapNotNull null
+                val device = bondedByAddress[address] ?: return@mapNotNull null
+                slotIndex to device
+            }
+            if (configuredSlots.isEmpty()) {
+                Text("Assign at least one BT hotkey slot to enable remote target keys.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                configuredSlots.forEach { (index, device) ->
+                    SelectButton(
+                        label = "BT${index + 1}: ${device.name}",
+                        selected = preferences.bluetoothRemoteEnabled &&
+                            preferences.bluetoothActiveDeviceAddress == device.address,
+                        onClick = {
+                            scope.launch {
+                                repository.setBluetoothActiveDeviceAddress(device.address)
+                                repository.setBluetoothRemoteEnabled(true)
+                            }
+                        },
+                    )
+                }
+                Text(
+                    "Fn layer maps Local, assigned BT slots, Next, and Pad. These keys can be rebound in Action Slots.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        SettingSwitch(
+            label = "Show trackpad when connected",
+            checked = preferences.bluetoothTrackpadEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setBluetoothTrackpadEnabled(checked) }
+            },
+        )
+        Text("Trackpad placement", style = MaterialTheme.typography.labelLarge)
+        BluetoothTrackpadPlacement.entries.forEach { placement ->
+            SelectButton(
+                label = placement.label,
+                selected = preferences.bluetoothTrackpadPlacement == placement,
+                onClick = { scope.launch { repository.setBluetoothTrackpadPlacement(placement) } },
+            )
+        }
+        BluetoothTrackpadSlider(
+            label = "Trackpad height",
+            value = preferences.bluetoothTrackpadHeightPercent,
+            minimum = MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
+            maximum = MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
+            resetValue = DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
+            suffix = "%",
+        ) { value ->
+            scope.launch { repository.setBluetoothTrackpadHeightPercent(value) }
+        }
+        BluetoothTrackpadSlider(
+            label = "Pointer sensitivity",
+            value = preferences.bluetoothTrackpadSensitivity,
+            minimum = MIN_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            maximum = MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            resetValue = DEFAULT_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            suffix = "x",
+        ) { value ->
+            scope.launch { repository.setBluetoothTrackpadSensitivity(value) }
+        }
+        BluetoothTrackpadSlider(
+            label = "Scroll sensitivity",
+            value = preferences.bluetoothTrackpadScrollSensitivity,
+            minimum = MIN_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            maximum = MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            resetValue = DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY,
+            suffix = "x",
+        ) { value ->
+            scope.launch { repository.setBluetoothTrackpadScrollSensitivity(value) }
+        }
+        SettingSwitch(
+            label = "Tap trackpad to left click",
+            checked = preferences.bluetoothTrackpadTapToClickEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setBluetoothTrackpadTapToClickEnabled(checked) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun BluetoothHotkeySlotControl(
+    slotIndex: Int,
+    selectedAddress: String?,
+    bondedDevices: List<RemoteHidDevice>,
+    onSelect: (String?) -> Unit,
+) {
+    val slotLabel = "BT${slotIndex + 1}"
+    Text("$slotLabel hotkey", style = MaterialTheme.typography.bodyMedium)
+    SelectButton(
+        label = "$slotLabel hidden",
+        selected = selectedAddress == null,
+        onClick = { onSelect(null) },
+    )
+    bondedDevices.forEach { device ->
+        SelectButton(
+            label = device.name,
+            selected = selectedAddress == device.address,
+            onClick = { onSelect(device.address) },
         )
     }
 }
@@ -1464,6 +1676,7 @@ private fun SettingsSection(title: String, body: String) {
 private fun SettingSwitch(
     label: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
@@ -1472,8 +1685,16 @@ private fun SettingSwitch(
     ) {
         Text(label, style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.width(16.dp))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange,
+        )
     }
+}
+
+private fun android.content.Context.hasVibratorHardware(): Boolean {
+    return getSystemService(Vibrator::class.java)?.hasVibrator() == true
 }
 
 @Composable
@@ -1751,6 +1972,34 @@ private fun GlideDwellThresholdSlider(
 }
 
 @Composable
+private fun BluetoothTrackpadSlider(
+    label: String,
+    value: Float,
+    minimum: Float,
+    maximum: Float,
+    resetValue: Float,
+    suffix: String,
+    onChange: (Float) -> Unit,
+) {
+    val boundedValue = value.coerceIn(minimum, maximum)
+    val displayValue = if (suffix == "%") boundedValue.toInt().toString() else "%.2f".format(boundedValue)
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("$label: $displayValue$suffix")
+        Slider(
+            value = boundedValue,
+            onValueChange = onChange,
+            valueRange = minimum..maximum,
+        )
+        OutlinedButton(
+            onClick = { onChange(resetValue.coerceIn(minimum, maximum)) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Reset $label")
+        }
+    }
+}
+
+@Composable
 private fun GeometrySlider(
     label: String,
     value: Float,
@@ -1871,6 +2120,12 @@ private val actionSlots = listOf(
     ActionSlotControl("delete", "Delete slot", KeyAction(KeyActionType.DELETE)),
     ActionSlotControl("mic", "Mic slot", KeyAction(KeyActionType.MICROPHONE)),
     ActionSlotControl("num_toggle", "Numpad slot", KeyAction(KeyActionType.NUMPAD_TOGGLE)),
+    ActionSlotControl("bt_local", "Fn BT local slot", KeyAction(KeyActionType.BLUETOOTH_LOCAL_INPUT)),
+    ActionSlotControl("bt_device_1", "Fn BT1 slot", KeyAction(KeyActionType.BLUETOOTH_DEVICE_1)),
+    ActionSlotControl("bt_device_2", "Fn BT2 slot", KeyAction(KeyActionType.BLUETOOTH_DEVICE_2)),
+    ActionSlotControl("bt_device_3", "Fn BT3 slot", KeyAction(KeyActionType.BLUETOOTH_DEVICE_3)),
+    ActionSlotControl("bt_device_next", "Fn BT next slot", KeyAction(KeyActionType.BLUETOOTH_DEVICE_NEXT)),
+    ActionSlotControl("bt_trackpad", "Fn BT trackpad slot", KeyAction(KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD)),
 )
 
 private val actionCycle = listOf(
@@ -1890,6 +2145,13 @@ private val actionCycle = listOf(
     KeyAction(KeyActionType.SWITCH_EMOJI),
     KeyAction(KeyActionType.SETTINGS),
     KeyAction(KeyActionType.MICROPHONE),
+    KeyAction(KeyActionType.TOGGLE_BLUETOOTH_REMOTE),
+    KeyAction(KeyActionType.BLUETOOTH_LOCAL_INPUT),
+    KeyAction(KeyActionType.BLUETOOTH_DEVICE_1),
+    KeyAction(KeyActionType.BLUETOOTH_DEVICE_2),
+    KeyAction(KeyActionType.BLUETOOTH_DEVICE_3),
+    KeyAction(KeyActionType.BLUETOOTH_DEVICE_NEXT),
+    KeyAction(KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD),
     KeyAction.keyEvent(KeyEvent.KEYCODE_MOVE_HOME, "Home"),
     KeyAction.keyEvent(KeyEvent.KEYCODE_MOVE_END, "End"),
     KeyAction.keyEvent(KeyEvent.KEYCODE_PAGE_UP, "PgUp"),
@@ -1928,6 +2190,12 @@ private val keyDisplayControls = listOf(
     KeyDisplayControl("enter", "Enter", listOf(KeyIcon.ENTER)),
     KeyDisplayControl("mic", "Mic", listOf(KeyIcon.MIC)),
     KeyDisplayControl("num_toggle", "Numpad", listOf(KeyIcon.NUMPAD, KeyIcon.QUICK_NAV)),
+    KeyDisplayControl("bt_local", "BT local", listOf(KeyIcon.BLUETOOTH)),
+    KeyDisplayControl("bt_device_1", "BT1", listOf(KeyIcon.BLUETOOTH)),
+    KeyDisplayControl("bt_device_2", "BT2", listOf(KeyIcon.BLUETOOTH)),
+    KeyDisplayControl("bt_device_3", "BT3", listOf(KeyIcon.BLUETOOTH)),
+    KeyDisplayControl("bt_device_next", "BT next", listOf(KeyIcon.BLUETOOTH)),
+    KeyDisplayControl("bt_trackpad", "BT trackpad", listOf(KeyIcon.TRACKPAD)),
     KeyDisplayControl("left", "Left arrow", listOf(KeyIcon.ARROW_LEFT)),
     KeyDisplayControl("up", "Up arrow", listOf(KeyIcon.ARROW_UP)),
     KeyDisplayControl("down", "Down arrow", listOf(KeyIcon.ARROW_DOWN)),
@@ -1941,6 +2209,7 @@ private const val PREVIEW_TEXT_FIT_ITERATIONS = 7
 private const val PREVIEW_MIN_PRIMARY_TEXT_SIZE_SP = 7f
 private const val PREVIEW_MIN_SECONDARY_TEXT_SIZE_SP = 5f
 private const val SPEECH_TIMEOUT_STEP_MS = 250
+private const val MAX_BLUETOOTH_FN_DEVICE_SLOTS = 3
 
 private fun nextAction(current: KeyAction): KeyAction {
     val index = actionCycle.indexOfFirst { action ->
@@ -1977,6 +2246,12 @@ private val CustomThemeOpacityField.label: String
         CustomThemeOpacityField.KEY_FILL -> "Key background opacity"
         CustomThemeOpacityField.KEY_STROKE -> "Key border opacity"
         CustomThemeOpacityField.KEY_TEXT -> "Key label opacity"
+    }
+
+private val BluetoothTrackpadPlacement.label: String
+    get() = when (this) {
+        BluetoothTrackpadPlacement.ABOVE_KEYBOARD -> "Above keyboard"
+        BluetoothTrackpadPlacement.BELOW_KEYBOARD -> "Below keyboard"
     }
 
 private fun CustomThemeConfig.colorFor(field: CustomThemeColorField): Int {

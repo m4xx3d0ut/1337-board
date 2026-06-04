@@ -11,9 +11,11 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import org.leetboard.ime.remote.BluetoothHidSupport
 
 class DiagnosticsActivity : ComponentActivity() {
     private lateinit var glideSnapshot: TextView
+    private lateinit var bluetoothSnapshot: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,6 +43,21 @@ class DiagnosticsActivity : ComponentActivity() {
         content.addView(Button(this).apply {
             text = "Share glide debug"
             setOnClickListener { shareGlideDebug() }
+        })
+
+        content.addView(label("Bluetooth remote debug"))
+        bluetoothSnapshot = TextView(this).apply {
+            text = BluetoothHidSupport.diagnosticSummary(this@DiagnosticsActivity)
+            textSize = 13f
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 6, 0, 6)
+        }
+        content.addView(bluetoothSnapshot)
+        content.addView(Button(this).apply {
+            text = "Refresh Bluetooth debug"
+            setOnClickListener {
+                bluetoothSnapshot.text = BluetoothHidSupport.diagnosticSummary(this@DiagnosticsActivity)
+            }
         })
 
         content.addView(label("Normal text"))

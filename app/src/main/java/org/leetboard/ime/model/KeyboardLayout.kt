@@ -35,6 +35,8 @@ enum class KeyIcon {
     CTRL,
     ALT,
     FN,
+    BLUETOOTH,
+    TRACKPAD,
     ARROW_LEFT,
     ARROW_RIGHT,
     ARROW_UP,

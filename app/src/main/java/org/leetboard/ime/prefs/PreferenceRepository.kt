@@ -78,6 +78,8 @@ class PreferenceRepository(context: Context) {
             keyPreviewEnabled = values[Keys.keyPreviewEnabled] ?: true,
             stickyModifiersEnabled = values[Keys.stickyModifiersEnabled] ?: true,
             shiftCapsLockEnabled = values[Keys.shiftCapsLockEnabled] ?: true,
+            keyHapticsEnabled = values[Keys.keyHapticsEnabled]
+                ?: KeyboardPreferences.defaults().keyHapticsEnabled,
             keyLongPressDelayMs = values[Keys.keyLongPressDelayMs]
                 ?: KeyboardPreferences.defaults().keyLongPressDelayMs,
             specialLongPressDelayMs = values[Keys.specialLongPressDelayMs]
@@ -135,6 +137,28 @@ class PreferenceRepository(context: Context) {
             glideLearningResetRevision = values[Keys.glideLearningResetRevision]
                 ?: KeyboardPreferences.defaults().glideLearningResetRevision,
             customTheme = customTheme(values),
+            bluetoothRemoteEnabled = values[Keys.bluetoothRemoteEnabled]
+                ?: KeyboardPreferences.defaults().bluetoothRemoteEnabled,
+            bluetoothActiveDeviceAddress = values[Keys.bluetoothActiveDeviceAddress]?.takeIf { it.isNotBlank() },
+            bluetoothDeviceSlotAddresses = bluetoothDeviceSlotAddresses(values),
+            bluetoothTrackpadEnabled = values[Keys.bluetoothTrackpadEnabled]
+                ?: KeyboardPreferences.defaults().bluetoothTrackpadEnabled,
+            bluetoothTrackpadPlacement = values[Keys.bluetoothTrackpadPlacement]?.let(::bluetoothTrackpadPlacementFromName)
+                ?: KeyboardPreferences.defaults().bluetoothTrackpadPlacement,
+            bluetoothTrackpadHeightPercent = values[Keys.bluetoothTrackpadHeightPercent]?.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
+                MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
+            ) ?: KeyboardPreferences.defaults().bluetoothTrackpadHeightPercent,
+            bluetoothTrackpadSensitivity = values[Keys.bluetoothTrackpadSensitivity]?.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_SENSITIVITY,
+                MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            ) ?: KeyboardPreferences.defaults().bluetoothTrackpadSensitivity,
+            bluetoothTrackpadScrollSensitivity = values[Keys.bluetoothTrackpadScrollSensitivity]?.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_SENSITIVITY,
+                MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            ) ?: KeyboardPreferences.defaults().bluetoothTrackpadScrollSensitivity,
+            bluetoothTrackpadTapToClickEnabled = values[Keys.bluetoothTrackpadTapToClickEnabled]
+                ?: KeyboardPreferences.defaults().bluetoothTrackpadTapToClickEnabled,
         )
     }
 
@@ -300,6 +324,10 @@ class PreferenceRepository(context: Context) {
 
     suspend fun setKeyPreviewEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.keyPreviewEnabled] = enabled }
+    }
+
+    suspend fun setKeyHapticsEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.keyHapticsEnabled] = enabled }
     }
 
     suspend fun setGestureTypingEnabled(enabled: Boolean) {
@@ -496,6 +524,80 @@ class PreferenceRepository(context: Context) {
         }
     }
 
+    suspend fun setBluetoothRemoteEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.bluetoothRemoteEnabled] = enabled }
+    }
+
+    suspend fun setBluetoothActiveDeviceAddress(address: String?) {
+        dataStore.edit { values ->
+            if (address.isNullOrBlank()) {
+                values.remove(Keys.bluetoothActiveDeviceAddress)
+            } else {
+                values[Keys.bluetoothActiveDeviceAddress] = address
+            }
+        }
+    }
+
+    suspend fun setBluetoothDeviceSlotAddress(slotIndex: Int, address: String?) {
+        val key = Keys.bluetoothDeviceSlotAddressKeys.getOrNull(slotIndex) ?: return
+        dataStore.edit { values ->
+            if (address.isNullOrBlank()) {
+                values.remove(key)
+            } else {
+                Keys.bluetoothDeviceSlotAddressKeys
+                    .filter { slotKey -> slotKey != key && values[slotKey] == address }
+                    .forEach { slotKey -> values.remove(slotKey) }
+                values[key] = address
+            }
+            val configuredAddresses = Keys.bluetoothDeviceSlotAddressKeys
+                .mapNotNull { slotKey -> values[slotKey]?.takeIf { it.isNotBlank() } }
+            val activeAddress = values[Keys.bluetoothActiveDeviceAddress]?.takeIf { it.isNotBlank() }
+            if (activeAddress != null && activeAddress !in configuredAddresses) {
+                values.remove(Keys.bluetoothActiveDeviceAddress)
+                values[Keys.bluetoothRemoteEnabled] = false
+            }
+        }
+    }
+
+    suspend fun setBluetoothTrackpadEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.bluetoothTrackpadEnabled] = enabled }
+    }
+
+    suspend fun setBluetoothTrackpadPlacement(placement: BluetoothTrackpadPlacement) {
+        dataStore.edit { values -> values[Keys.bluetoothTrackpadPlacement] = placement.name }
+    }
+
+    suspend fun setBluetoothTrackpadHeightPercent(value: Float) {
+        dataStore.edit { values ->
+            values[Keys.bluetoothTrackpadHeightPercent] = value.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
+                MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
+            )
+        }
+    }
+
+    suspend fun setBluetoothTrackpadSensitivity(value: Float) {
+        dataStore.edit { values ->
+            values[Keys.bluetoothTrackpadSensitivity] = value.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_SENSITIVITY,
+                MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            )
+        }
+    }
+
+    suspend fun setBluetoothTrackpadScrollSensitivity(value: Float) {
+        dataStore.edit { values ->
+            values[Keys.bluetoothTrackpadScrollSensitivity] = value.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_SENSITIVITY,
+                MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            )
+        }
+    }
+
+    suspend fun setBluetoothTrackpadTapToClickEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.bluetoothTrackpadTapToClickEnabled] = enabled }
+    }
+
     suspend fun importGlideWords(reader: Reader): Int {
         val words = reader.useLines { lines ->
             lines
@@ -622,6 +724,17 @@ class PreferenceRepository(context: Context) {
         return GlideRawFallbackMode.entries.firstOrNull { it.name == name }
     }
 
+    private fun bluetoothTrackpadPlacementFromName(name: String): BluetoothTrackpadPlacement? {
+        return BluetoothTrackpadPlacement.entries.firstOrNull { it.name == name }
+    }
+
+    private fun bluetoothDeviceSlotAddresses(values: Preferences): List<String?> {
+        val savedSlots = Keys.bluetoothDeviceSlotAddressKeys.map { key -> values[key]?.takeIf { it.isNotBlank() } }
+        if (savedSlots.any { it != null }) return savedSlots
+        val migratedActiveAddress = values[Keys.bluetoothActiveDeviceAddress]?.takeIf { it.isNotBlank() }
+        return listOf(migratedActiveAddress, null, null)
+    }
+
     private fun customTheme(values: Preferences): CustomThemeConfig {
         val defaults = CustomThemeConfig()
         return CustomThemeConfig(
@@ -712,6 +825,7 @@ class PreferenceRepository(context: Context) {
         val uppercaseOnShift = booleanPreferencesKey("uppercase_on_shift")
         val numpadToggleEnabled = booleanPreferencesKey("numpad_toggle_enabled")
         val keyPreviewEnabled = booleanPreferencesKey("key_preview_enabled")
+        val keyHapticsEnabled = booleanPreferencesKey("key_haptics_enabled")
         val stickyModifiersEnabled = booleanPreferencesKey("sticky_modifiers_enabled")
         val shiftCapsLockEnabled = booleanPreferencesKey("shift_caps_lock_enabled")
         val keyLongPressDelayMs = intPreferencesKey("key_long_press_delay_ms")
@@ -760,6 +874,23 @@ class PreferenceRepository(context: Context) {
         val customKeyFillOpacity = floatPreferencesKey("custom_key_fill_opacity")
         val customKeyStrokeOpacity = floatPreferencesKey("custom_key_stroke_opacity")
         val customKeyTextOpacity = floatPreferencesKey("custom_key_text_opacity")
+        val bluetoothRemoteEnabled = booleanPreferencesKey("bluetooth_remote_enabled")
+        val bluetoothActiveDeviceAddress = stringPreferencesKey("bluetooth_active_device_address")
+        val bluetoothDeviceSlot1Address = stringPreferencesKey("bluetooth_device_slot_1_address")
+        val bluetoothDeviceSlot2Address = stringPreferencesKey("bluetooth_device_slot_2_address")
+        val bluetoothDeviceSlot3Address = stringPreferencesKey("bluetooth_device_slot_3_address")
+        val bluetoothTrackpadEnabled = booleanPreferencesKey("bluetooth_trackpad_enabled")
+        val bluetoothTrackpadPlacement = stringPreferencesKey("bluetooth_trackpad_placement")
+        val bluetoothTrackpadHeightPercent = floatPreferencesKey("bluetooth_trackpad_height_percent")
+        val bluetoothTrackpadSensitivity = floatPreferencesKey("bluetooth_trackpad_sensitivity")
+        val bluetoothTrackpadScrollSensitivity = floatPreferencesKey("bluetooth_trackpad_scroll_sensitivity")
+        val bluetoothTrackpadTapToClickEnabled = booleanPreferencesKey("bluetooth_trackpad_tap_to_click_enabled")
+
+        val bluetoothDeviceSlotAddressKeys = listOf(
+            bluetoothDeviceSlot1Address,
+            bluetoothDeviceSlot2Address,
+            bluetoothDeviceSlot3Address,
+        )
 
         val actionSlotKeys = mapOf(
             "esc" to stringPreferencesKey("slot_esc_action"),
@@ -777,6 +908,12 @@ class PreferenceRepository(context: Context) {
             "delete" to stringPreferencesKey("slot_delete_action"),
             "mic" to stringPreferencesKey("slot_mic_action"),
             "num_toggle" to stringPreferencesKey("slot_num_toggle_action"),
+            "bt_local" to stringPreferencesKey("slot_bt_local_action"),
+            "bt_device_1" to stringPreferencesKey("slot_bt_device_1_action"),
+            "bt_device_2" to stringPreferencesKey("slot_bt_device_2_action"),
+            "bt_device_3" to stringPreferencesKey("slot_bt_device_3_action"),
+            "bt_device_next" to stringPreferencesKey("slot_bt_device_next_action"),
+            "bt_trackpad" to stringPreferencesKey("slot_bt_trackpad_action"),
         )
 
         fun geometryKey(prefix: String, field: GeometryField): Preferences.Key<Float> {
@@ -826,6 +963,7 @@ class PreferenceRepository(context: Context) {
             put(Keys.uppercaseOnShift.name, keyLabelStyle.uppercaseOnShift)
             put(Keys.numpadToggleEnabled.name, numpadToggleEnabled)
             put(Keys.keyPreviewEnabled.name, keyPreviewEnabled)
+            put(Keys.keyHapticsEnabled.name, keyHapticsEnabled)
             put(Keys.stickyModifiersEnabled.name, stickyModifiersEnabled)
             put(Keys.shiftCapsLockEnabled.name, shiftCapsLockEnabled)
             put(Keys.keyLongPressDelayMs.name, keyLongPressDelayMs)
@@ -872,6 +1010,17 @@ class PreferenceRepository(context: Context) {
             put(Keys.customKeyFillOpacity.name, customTheme.keyFillOpacity)
             put(Keys.customKeyStrokeOpacity.name, customTheme.keyStrokeOpacity)
             put(Keys.customKeyTextOpacity.name, customTheme.keyTextOpacity)
+            put(Keys.bluetoothRemoteEnabled.name, bluetoothRemoteEnabled)
+            put(Keys.bluetoothActiveDeviceAddress.name, bluetoothActiveDeviceAddress.orEmpty())
+            Keys.bluetoothDeviceSlotAddressKeys.forEachIndexed { index, key ->
+                put(key.name, bluetoothDeviceSlotAddresses.getOrNull(index).orEmpty())
+            }
+            put(Keys.bluetoothTrackpadEnabled.name, bluetoothTrackpadEnabled)
+            put(Keys.bluetoothTrackpadPlacement.name, bluetoothTrackpadPlacement.name)
+            put(Keys.bluetoothTrackpadHeightPercent.name, bluetoothTrackpadHeightPercent)
+            put(Keys.bluetoothTrackpadSensitivity.name, bluetoothTrackpadSensitivity)
+            put(Keys.bluetoothTrackpadScrollSensitivity.name, bluetoothTrackpadScrollSensitivity)
+            put(Keys.bluetoothTrackpadTapToClickEnabled.name, bluetoothTrackpadTapToClickEnabled)
             Keys.actionSlotKeys.forEach { (slotId, key) ->
                 slotActions[slotId]?.let { action -> put(key.name, action.toPreferenceValue()) }
             }
@@ -925,6 +1074,7 @@ class PreferenceRepository(context: Context) {
         settings.boolean(Keys.uppercaseOnShift)?.let { this[Keys.uppercaseOnShift] = it }
         settings.boolean(Keys.numpadToggleEnabled)?.let { this[Keys.numpadToggleEnabled] = it }
         settings.boolean(Keys.keyPreviewEnabled)?.let { this[Keys.keyPreviewEnabled] = it }
+        settings.boolean(Keys.keyHapticsEnabled)?.let { this[Keys.keyHapticsEnabled] = it }
         settings.boolean(Keys.stickyModifiersEnabled)?.let { this[Keys.stickyModifiersEnabled] = it }
         settings.boolean(Keys.shiftCapsLockEnabled)?.let { this[Keys.shiftCapsLockEnabled] = it }
         settings.int(Keys.keyLongPressDelayMs)?.let {
@@ -1020,6 +1170,40 @@ class PreferenceRepository(context: Context) {
         settings.float(Keys.customKeyFillOpacity)?.let { this[Keys.customKeyFillOpacity] = it.coerceIn(0f, 1f) }
         settings.float(Keys.customKeyStrokeOpacity)?.let { this[Keys.customKeyStrokeOpacity] = it.coerceIn(0f, 1f) }
         settings.float(Keys.customKeyTextOpacity)?.let { this[Keys.customKeyTextOpacity] = it.coerceIn(0f, 1f) }
+        settings.boolean(Keys.bluetoothRemoteEnabled)?.let { this[Keys.bluetoothRemoteEnabled] = it }
+        settings.string(Keys.bluetoothActiveDeviceAddress)?.takeIf { it.isNotBlank() }?.let {
+            this[Keys.bluetoothActiveDeviceAddress] = it
+        }
+        Keys.bluetoothDeviceSlotAddressKeys.forEach { key ->
+            settings.string(key)?.let { address ->
+                if (address.isNotBlank()) this[key] = address
+            }
+        }
+        settings.boolean(Keys.bluetoothTrackpadEnabled)?.let { this[Keys.bluetoothTrackpadEnabled] = it }
+        settings.string(Keys.bluetoothTrackpadPlacement)?.let(::bluetoothTrackpadPlacementFromName)?.let {
+            this[Keys.bluetoothTrackpadPlacement] = it.name
+        }
+        settings.float(Keys.bluetoothTrackpadHeightPercent)?.let {
+            this[Keys.bluetoothTrackpadHeightPercent] = it.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
+                MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
+            )
+        }
+        settings.float(Keys.bluetoothTrackpadSensitivity)?.let {
+            this[Keys.bluetoothTrackpadSensitivity] = it.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_SENSITIVITY,
+                MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            )
+        }
+        settings.float(Keys.bluetoothTrackpadScrollSensitivity)?.let {
+            this[Keys.bluetoothTrackpadScrollSensitivity] = it.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_SENSITIVITY,
+                MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
+            )
+        }
+        settings.boolean(Keys.bluetoothTrackpadTapToClickEnabled)?.let {
+            this[Keys.bluetoothTrackpadTapToClickEnabled] = it
+        }
         Keys.actionSlotKeys.forEach { (_, key) ->
             settings.string(key)?.let { encodedAction ->
                 keyActionFromPreferenceValue(encodedAction)?.let { action -> this[key] = action.toPreferenceValue() }
@@ -1069,6 +1253,10 @@ const val MIN_FN_LONG_PRESS_DELAY_MS = MIN_LONG_PRESS_DELAY_MS
 const val MAX_FN_LONG_PRESS_DELAY_MS = MAX_LONG_PRESS_DELAY_MS
 const val MIN_SPEECH_SILENCE_MS = 1000
 const val MAX_SPEECH_SILENCE_MS = 8000
+const val MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT = 18f
+const val MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT = 55f
+const val MIN_BLUETOOTH_TRACKPAD_SENSITIVITY = 0.35f
+const val MAX_BLUETOOTH_TRACKPAD_SENSITIVITY = 2.5f
 
 fun glideCorrectionsFromPreferenceValue(value: String?): Map<String, GlideCorrectionEntry> {
     if (value.isNullOrBlank()) return emptyMap()

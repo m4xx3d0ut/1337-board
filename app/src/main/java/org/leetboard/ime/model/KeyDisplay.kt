@@ -54,6 +54,8 @@ fun KeyIcon.fallbackLabel(): String {
         KeyIcon.CTRL -> "Ctrl"
         KeyIcon.ALT -> "Alt"
         KeyIcon.FN -> "Fn"
+        KeyIcon.BLUETOOTH -> "Bluetooth"
+        KeyIcon.TRACKPAD -> "Trackpad"
         KeyIcon.ARROW_LEFT -> "Left"
         KeyIcon.ARROW_RIGHT -> "Right"
         KeyIcon.ARROW_UP -> "Up"

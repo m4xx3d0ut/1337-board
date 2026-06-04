@@ -97,19 +97,7 @@ class LayoutEngine {
                     layoutWeight = FULL_GRID_WEIGHT,
                 ),
                 KeyRow(
-                    listOf(
-                        action("esc", "Esc", KeyActionType.ESCAPE, 1.2f, optional = true, preserveSpaceWhenHidden = true),
-                        action("alt", "Alt", KeyActionType.ALT, optional = true),
-                        fnKey(optional = true),
-                        symbolsKey(),
-                        action("space", "Space", KeyActionType.SPACE, 5f),
-                        settingsKey(),
-                        micKey(),
-                        quickNavNumToggle(),
-                        action("left", "◀", KeyActionType.ARROW_LEFT, optional = true, repeatable = true),
-                        action("down", "▼", KeyActionType.ARROW_DOWN, optional = true, repeatable = true),
-                        action("right", "▶", KeyActionType.ARROW_RIGHT, optional = true, repeatable = true),
-                    ),
+                    qwertyFiveBottomRow(fnHold),
                     layoutWeight = FULL_GRID_WEIGHT,
                 ),
             ),
@@ -142,6 +130,39 @@ class LayoutEngine {
                 layoutWeight = FULL_GRID_WEIGHT,
             )
         }
+    }
+
+    private fun qwertyFiveBottomRow(fnHold: Boolean): List<KeySpec> {
+        if (fnHold) {
+            return listOf(
+                action("esc", "Esc", KeyActionType.ESCAPE, 1.2f, optional = true, preserveSpaceWhenHidden = true),
+                action("alt", "Alt", KeyActionType.ALT, optional = true),
+                fnKey(optional = true),
+                symbolsKey(),
+                action("space", "Space", KeyActionType.SPACE, 4.2f),
+                action("bt_local", "Local", KeyActionType.BLUETOOTH_LOCAL_INPUT, 1.1f, optional = true),
+                action("bt_device_1", "BT1", KeyActionType.BLUETOOTH_DEVICE_1, 0.9f, optional = true),
+                action("bt_device_2", "BT2", KeyActionType.BLUETOOTH_DEVICE_2, 0.9f, optional = true),
+                action("bt_device_3", "BT3", KeyActionType.BLUETOOTH_DEVICE_3, 0.9f, optional = true),
+                action("bt_device_next", "Next", KeyActionType.BLUETOOTH_DEVICE_NEXT, 0.9f, optional = true)
+                    .copy(icon = null),
+                action("bt_trackpad", "Pad", KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD, 0.9f, optional = true)
+                    .copy(icon = null),
+            )
+        }
+        return listOf(
+            action("esc", "Esc", KeyActionType.ESCAPE, 1.2f, optional = true, preserveSpaceWhenHidden = true),
+            action("alt", "Alt", KeyActionType.ALT, optional = true),
+            fnKey(optional = true),
+            symbolsKey(),
+            action("space", "Space", KeyActionType.SPACE, 5f),
+            settingsKey(),
+            micKey(),
+            quickNavNumToggle(),
+            action("left", "◀", KeyActionType.ARROW_LEFT, optional = true, repeatable = true),
+            action("down", "▼", KeyActionType.ARROW_DOWN, optional = true, repeatable = true),
+            action("right", "▶", KeyActionType.ARROW_RIGHT, optional = true, repeatable = true),
+        )
     }
 
     private fun fullFiveRowFunctionTopKeys(): List<KeySpec> {
@@ -180,12 +201,20 @@ class LayoutEngine {
                     listOf(
                         action("ctrl", "Ctrl", KeyActionType.CTRL, optional = true),
                         action("alt", "Alt", KeyActionType.ALT, optional = true),
+                        action("bt_local", "Local", KeyActionType.BLUETOOTH_LOCAL_INPUT, 1.1f, optional = true),
+                        action("bt_device_1", "BT1", KeyActionType.BLUETOOTH_DEVICE_1, 0.9f, optional = true),
+                        action("bt_device_2", "BT2", KeyActionType.BLUETOOTH_DEVICE_2, 0.9f, optional = true),
+                        action("bt_device_3", "BT3", KeyActionType.BLUETOOTH_DEVICE_3, 0.9f, optional = true),
+                        action("bt_device_next", "Next", KeyActionType.BLUETOOTH_DEVICE_NEXT, 0.9f, optional = true)
+                            .copy(icon = null),
+                        action("bt_trackpad", "Pad", KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD, 0.9f, optional = true)
+                            .copy(icon = null),
                         settingsKey(),
                         micKey(),
-                        action("delete", "Backspace", KeyActionType.DELETE, 1.5f, repeatable = true),
-                        action("enter", "Enter", KeyActionType.ENTER, 1.5f),
+                        action("delete", "Backspace", KeyActionType.DELETE, 1.4f, repeatable = true),
+                        action("enter", "Enter", KeyActionType.ENTER, 1.3f),
                     ),
-                    layoutWeight = 7f,
+                    layoutWeight = 12.2f,
                     alignment = RowAlignment.CENTER,
                 ),
                 KeyRow(
@@ -737,6 +766,9 @@ class LayoutEngine {
             KeyActionType.MICROPHONE,
             KeyActionType.TOGGLE_SPEECH_INPUT -> KeyIcon.MIC
             KeyActionType.TOGGLE_GESTURE_TYPING -> KeyIcon.SWIPE
+            KeyActionType.TOGGLE_BLUETOOTH_REMOTE,
+            KeyActionType.BLUETOOTH_DEVICE_NEXT -> KeyIcon.BLUETOOTH
+            KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD -> KeyIcon.TRACKPAD
             KeyActionType.NUMPAD_TOGGLE -> KeyIcon.NUMPAD
             KeyActionType.ENTER -> KeyIcon.ENTER
             KeyActionType.TAB -> KeyIcon.TAB

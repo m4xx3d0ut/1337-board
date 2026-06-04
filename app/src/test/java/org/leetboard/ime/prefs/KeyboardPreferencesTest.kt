@@ -48,6 +48,26 @@ class KeyboardPreferencesTest {
     }
 
     @Test
+    fun customizationStateShowsOnlyAssignedBluetoothHotkeySlots() {
+        val unassigned = KeyboardPreferences()
+        val oneSlot = KeyboardPreferences(bluetoothDeviceSlotAddresses = listOf("AA:BB", null, null))
+        val twoSlots = KeyboardPreferences(bluetoothDeviceSlotAddresses = listOf("AA:BB", "CC:DD", null))
+
+        assertTrue("bt_local" in unassigned.customizationState().hiddenOptionalKeyIds)
+        assertTrue("bt_device_1" in unassigned.customizationState().hiddenOptionalKeyIds)
+        assertTrue("bt_trackpad" in unassigned.customizationState().hiddenOptionalKeyIds)
+
+        assertFalse("bt_local" in oneSlot.customizationState().hiddenOptionalKeyIds)
+        assertFalse("bt_device_1" in oneSlot.customizationState().hiddenOptionalKeyIds)
+        assertTrue("bt_device_2" in oneSlot.customizationState().hiddenOptionalKeyIds)
+        assertTrue("bt_device_next" in oneSlot.customizationState().hiddenOptionalKeyIds)
+        assertFalse("bt_trackpad" in oneSlot.customizationState().hiddenOptionalKeyIds)
+
+        assertFalse("bt_device_next" in twoSlots.customizationState().hiddenOptionalKeyIds)
+        assertTrue("bt_device_3" in twoSlots.customizationState().hiddenOptionalKeyIds)
+    }
+
+    @Test
     fun defaultsUseFiveRowLayoutAndKeyPreview() {
         val preferences = KeyboardPreferences.defaults()
 
@@ -55,6 +75,7 @@ class KeyboardPreferencesTest {
         assertEquals("qwerty5", preferences.portraitLayoutId)
         assertEquals("qwerty5", preferences.landscapeLayoutId)
         assertTrue(preferences.keyPreviewEnabled)
+        assertTrue(preferences.keyHapticsEnabled)
         assertTrue(preferences.stickyModifiersEnabled)
         assertTrue(preferences.shiftCapsLockEnabled)
         assertEquals(DEFAULT_KEY_LONG_PRESS_DELAY_MS, preferences.keyLongPressDelayMs)
