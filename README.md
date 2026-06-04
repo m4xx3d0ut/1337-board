@@ -19,6 +19,7 @@
 - Configurable optional keys, preset action slots, key labels/icons, sticky modifiers, and key preview behavior.
 - Local glide typing with a bundled word list, ranked suggestions, optional imported word lists, private on-device prediction, and tunable accuracy controls for path tolerance, spatial precision, and dwell sensitivity.
 - Mic input through Android speech recognition, with offline preference requested when supported by the device recognizer.
+- Bluetooth remote mode can send keyboard, speech, and touchpad input to assigned paired hosts, with Fn-layer target keys and pinned full-screen trackpad shortcuts.
 - Theme presets and a custom theme slot including light, dark, alternate dark, cyberpunk, terminal, high contrast, 1337 green-on-black, background images, and transparency controls.
 - Separate portrait and landscape controls for keyboard height, margins, gaps, borders, radius, label styling, and long-press timing.
 
@@ -44,6 +45,18 @@ Mic input is off on a fresh install. The current release uses Android's system s
 
 Recognizer availability and offline behavior vary by ROM, OEM, and installed speech package. A future privacy-first speech path is planned around optional local model packs.
 
+## Bluetooth Remote And Trackpad
+
+Bluetooth remote mode lets the Android device act as a local Bluetooth HID keyboard and trackpad for an assigned paired host. Assign BT1-BT3 hotkey slots in 1337 Board Settings, then use the Fn layer to switch between Local Android input, assigned Bluetooth targets, and the trackpad toggle. Only assigned target slots are shown on the keyboard.
+
+The full-screen trackpad keeps the user-selected portrait or landscape keyboard height and fills the remaining screen with a touchpad surface. Settings include trackpad placement, height, pointer and scroll sensitivity, tap-to-click, keep-screen-on behavior, and dim-when-inactive behavior. Each assigned Bluetooth target can also request a pinned home-screen shortcut for direct full-screen trackpad access.
+
+![Pad3 full-screen Bluetooth trackpad mode](docs/images/pad3-fullscreen-trackpad-on.png)
+
+![Pad3 Bluetooth Fn hotkeys](docs/images/pad3-bluetooth-hotkeys-fn-layer.png)
+
+Detailed setup, screenshots, and troubleshooting are in [docs/bluetooth-remote.md](docs/bluetooth-remote.md).
+
 ## Release Channels
 
 GitHub APK releases are the current distribution target. F-Droid packaging is planned after metadata, licensing, and reproducible-build checks. Google Play distribution is possible later, but not planned for this release.
@@ -62,7 +75,7 @@ Production signing setup is documented in [docs/release-signing.md](docs/release
 
 ## Status
 
-This project is an active prototype. Core keyboard entry, terminal keys, layout customization, themes, glide typing, speech input, and settings are available for testing, but the app should still be treated as pre-release software.
+This project is an active prototype. Core keyboard entry, terminal keys, layout customization, themes, glide typing, speech input, Bluetooth remote mode, full-screen trackpad mode, and settings are available for testing, but the app should still be treated as pre-release software.
 
 ## Build And Install
 
@@ -100,4 +113,4 @@ After installing, open 1337 Board, open input settings, enable the IME, then cho
 
 ## Project Direction
 
-The near-term goal is a reliable, customizable Android keyboard for shell, code, remote access, and tablet workflows. Planned follow-up work includes stronger local speech packs, expanded layout packs, richer language support, improved autocorrect, and deeper non-alphanumeric key placement controls.
+The near-term goal is a reliable, customizable Android keyboard for shell, code, remote access, Bluetooth HID control, and tablet workflows. Planned follow-up work includes stronger local speech packs, expanded layout packs, richer language support, improved autocorrect, and deeper non-alphanumeric key placement controls.
