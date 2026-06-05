@@ -6,6 +6,27 @@ All notable changes to 1337 Board are documented here.
 
 No unreleased changes.
 
+## [0.1.7] - 2026-06-05
+
+### Added
+
+- Added Bluetooth HID remote input mode for sending keyboard and pointer input to paired hosts.
+- Added a full-screen Bluetooth trackpad workflow with target-specific home-screen shortcuts.
+- Added Bluetooth target hotkeys, a local input hotkey, and a trackpad toggle in Fn/remote layers.
+- Added Bluetooth trackpad controls for placement, sensitivity, scroll sensitivity, scroll inversion, tap-to-click, dedicated mouse buttons, keep-screen-on, and dim-when-inactive behavior.
+- Added Bluetooth workflow documentation and Pad3 screenshots for app, settings, hotkey, and full-screen trackpad flows.
+
+### Changed
+
+- Improved glide ranking for common short words, apostrophe words, imported word priority, and local predictive context.
+- Improved Bluetooth remote modifier handling so Fn overlays and sticky Ctrl/Alt/Fn behavior work with remote HID output.
+- Refined full-screen trackpad visuals and top-row controls for dark-mode use.
+
+### Fixed
+
+- Fixed fullscreen Bluetooth touchscreen mode so the settings-key glide toggle enables real glide input and sends decoded words to the selected Bluetooth host.
+- Fixed Fn overlay remote modifier routing for Ctrl combinations and PgDn availability.
+
 ## [0.1.6] - 2026-05-31
 
 ### Added
