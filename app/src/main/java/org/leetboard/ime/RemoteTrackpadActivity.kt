@@ -92,6 +92,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
     private lateinit var headerLayout: LinearLayout
     private lateinit var statusLabel: TextView
     private lateinit var localButton: Button
+    private lateinit var keyboardButton: Button
     private lateinit var padButton: Button
     private lateinit var keyboardInputView: KeyboardInputView
     private var preferences = KeyboardPreferences.defaults()
@@ -101,6 +102,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
     private var targetName: String? = null
     private var preferencesLoaded = false
     private var autoConnectEnabled = true
+    private var remoteKeyboardVisible = true
     private var speechUiState = RemoteSpeechUiState.IDLE
     private var speechPushToTalkActive = false
     private var speechPushToTalkStartedAtMs = 0L
@@ -239,6 +241,15 @@ class RemoteTrackpadActivity : ComponentActivity() {
             setPadding(dp(10), 0, dp(10), 0)
             setOnClickListener { toggleTrackpad() }
         }
+        keyboardButton = Button(this).apply {
+            isAllCaps = false
+            minHeight = 0
+            minWidth = 0
+            minimumHeight = 0
+            minimumWidth = 0
+            setPadding(dp(10), 0, dp(10), 0)
+            setOnClickListener { toggleKeyboardVisibility() }
+        }
         keyboardInputView = KeyboardInputView(this).also { view ->
             view.keyboardView.onKey = { action, heldModifiers ->
                 handleKeyAction(action, heldModifiers)
@@ -290,6 +301,13 @@ class RemoteTrackpadActivity : ComponentActivity() {
                         0,
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         1f,
+                    ),
+                )
+                addView(
+                    keyboardButton,
+                    headerButtonLayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
                     ),
                 )
                 addView(
@@ -400,6 +418,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
         )
         applyWindowTheme(theme)
         applyDisplayPowerPolicy()
+        val effectiveTrackpadEnabled = preferences.bluetoothTrackpadEnabled || !remoteKeyboardVisible
         keyboardInputView.render(
             layout = layout,
             theme = theme,
@@ -423,7 +442,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
                 layoutState.activeLayoutId in QUICK_MODIFIER_BAR_LAYOUTS,
             activeQuickModifierIds = activeQuickModifierIds(),
             quickFunctionRowEnabled = layoutState.activeLayoutId == "qwerty4",
-            remoteTrackpadEnabled = preferences.bluetoothTrackpadEnabled,
+            remoteTrackpadEnabled = effectiveTrackpadEnabled,
             remoteTrackpadFillRemaining = true,
             remoteTrackpadPlacement = preferences.bluetoothTrackpadPlacement,
             remoteTrackpadHeightPercent = preferences.bluetoothTrackpadHeightPercent,
@@ -432,6 +451,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
             remoteTrackpadInvertScrollEnabled = preferences.bluetoothTrackpadInvertScrollEnabled,
             remoteTrackpadTapToClickEnabled = preferences.bluetoothTrackpadTapToClickEnabled,
             remoteTrackpadDedicatedButtonsEnabled = preferences.bluetoothTrackpadDedicatedButtonsEnabled,
+            keyboardSurfaceVisible = remoteKeyboardVisible,
         )
         updateStatus()
     }
@@ -601,9 +621,26 @@ class RemoteTrackpadActivity : ComponentActivity() {
     }
 
     private fun toggleTrackpad() {
-        activityScope.launch {
-            preferenceRepository.setBluetoothTrackpadEnabled(!preferences.bluetoothTrackpadEnabled)
+        val nextEnabled = !preferences.bluetoothTrackpadEnabled
+        if (!remoteKeyboardVisible && !nextEnabled) {
+            remoteKeyboardVisible = true
         }
+        preferences = preferences.copy(bluetoothTrackpadEnabled = nextEnabled)
+        activityScope.launch {
+            preferenceRepository.setBluetoothTrackpadEnabled(nextEnabled)
+        }
+        renderRemoteSurface()
+    }
+
+    private fun toggleKeyboardVisibility() {
+        remoteKeyboardVisible = !remoteKeyboardVisible
+        if (!remoteKeyboardVisible && !preferences.bluetoothTrackpadEnabled) {
+            preferences = preferences.copy(bluetoothTrackpadEnabled = true)
+            activityScope.launch {
+                preferenceRepository.setBluetoothTrackpadEnabled(true)
+            }
+        }
+        renderRemoteSurface()
     }
 
     private fun configuredBluetoothSlotDevices(): List<RemoteHidDevice> {
@@ -924,6 +961,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
             ?: "No host"
         val stateText = message ?: remoteHidState.message ?: remoteHidState.status.displayLabel()
         statusLabel.text = "$label - $stateText"
+        keyboardButton.text = if (remoteKeyboardVisible) "KB ON" else "KB OFF"
         padButton.text = if (preferences.bluetoothTrackpadEnabled) "PAD ON" else "PAD OFF"
     }
 
@@ -955,6 +993,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
         rootLayout.setBackgroundColor(backgroundColor)
         headerLayout.setBackgroundColor(backgroundColor)
         statusLabel.setTextColor(theme.colors.keyText)
+        styleHeaderButton(keyboardButton, theme, active = remoteKeyboardVisible)
         styleHeaderButton(padButton, theme, active = preferences.bluetoothTrackpadEnabled)
         styleHeaderButton(localButton, theme, active = false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

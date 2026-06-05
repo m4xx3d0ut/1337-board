@@ -33,6 +33,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
     private var remoteTrackpadPlacement: BluetoothTrackpadPlacement = BluetoothTrackpadPlacement.ABOVE_KEYBOARD
     private var remoteTrackpadHeightPercent: Float = 0f
     private var remoteTrackpadFillRemaining: Boolean = false
+    private var keyboardSurfaceVisible: Boolean = true
 
     init {
         addView(suggestionBar)
@@ -67,6 +68,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         remoteTrackpadInvertScrollEnabled: Boolean = false,
         remoteTrackpadTapToClickEnabled: Boolean = true,
         remoteTrackpadDedicatedButtonsEnabled: Boolean = true,
+        keyboardSurfaceVisible: Boolean = true,
     ) {
         this.theme = theme
         this.suggestionBarEnabled = suggestionBarEnabled
@@ -75,6 +77,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         this.remoteTrackpadPlacement = remoteTrackpadPlacement
         this.remoteTrackpadHeightPercent = remoteTrackpadHeightPercent
         this.remoteTrackpadFillRemaining = remoteTrackpadFillRemaining
+        this.keyboardSurfaceVisible = keyboardSurfaceVisible
         suggestionBar.render(
             theme = theme,
             enabled = suggestionBarEnabled || quickModifierBarEnabled,
@@ -109,6 +112,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             keyLongPressDelayMs = keyLongPressDelayMs,
             specialLongPressDelayMs = specialLongPressDelayMs,
         )
+        keyboardView.visibility = if (keyboardSurfaceVisible) VISIBLE else GONE
         requestLayout()
     }
 
@@ -120,7 +124,11 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         val desiredHeight = desiredKeyboardHeight + suggestionHeight + desiredTrackpadHeight
         val measuredHeight = resolveSize(desiredHeight, heightMeasureSpec)
         val availableHeight = (measuredHeight - suggestionHeight).coerceAtLeast(0)
-        val keyboardHeight = desiredKeyboardHeight.coerceAtMost(availableHeight)
+        val keyboardHeight = if (keyboardSurfaceVisible) {
+            desiredKeyboardHeight.coerceAtMost(availableHeight)
+        } else {
+            0
+        }
         val fillTrackpadSpace = remoteTrackpadEnabled && remoteTrackpadFillRemaining
         val trackpadHeight = if (fillTrackpadSpace) {
             (availableHeight - keyboardHeight).coerceAtLeast(0)
