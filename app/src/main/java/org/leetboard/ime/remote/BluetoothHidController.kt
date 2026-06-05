@@ -91,6 +91,10 @@ class BluetoothHidController(context: Context) {
             val remoteDevice = device ?: return
             Log.i(TAG, "HID connection state changed: state=$state device=${remoteDevice.debugName()}")
             activeDevice = if (state == BluetoothProfile.STATE_CONNECTED) remoteDevice else activeDevice
+            if (!enabled) {
+                updateState(RemoteHidStatus.DISABLED, "Bluetooth remote idle", remoteDevice)
+                return
+            }
             val status = when (state) {
                 BluetoothProfile.STATE_CONNECTING -> RemoteHidStatus.CONNECTING
                 BluetoothProfile.STATE_CONNECTED -> RemoteHidStatus.CONNECTED
@@ -114,7 +118,11 @@ class BluetoothHidController(context: Context) {
         this.enabled = enabled
         targetAddress = activeDeviceAddress
         if (!enabled) {
-            stop()
+            if (activeDeviceAddress.isNullOrBlank()) {
+                stop()
+            } else {
+                suspendInput()
+            }
             return
         }
         start()
@@ -137,12 +145,16 @@ class BluetoothHidController(context: Context) {
     }
 
     fun sendKeyboardReport(modifier: Int, usages: List<Int>): Boolean {
+        return sendKeyboardReport(modifier, usages, allowWhenDisabled = false)
+    }
+
+    private fun sendKeyboardReport(modifier: Int, usages: List<Int>, allowWhenDisabled: Boolean): Boolean {
         val report = ByteArray(KEYBOARD_REPORT_SIZE)
         report[0] = modifier.coerceIn(0, 0xFF).toByte()
         usages.take(KEYBOARD_USAGE_SLOTS).forEachIndexed { index, usage ->
             report[index + 2] = usage.coerceIn(0, 0xFF).toByte()
         }
-        return sendReport(KEYBOARD_REPORT_ID, report)
+        return sendReport(KEYBOARD_REPORT_ID, report, allowWhenDisabled)
     }
 
     fun sendKeyboardChord(modifier: Int, usage: Int): Boolean {
@@ -152,13 +164,23 @@ class BluetoothHidController(context: Context) {
     }
 
     fun sendMouseReport(buttons: Int, dx: Int, dy: Int, wheel: Int = 0): Boolean {
+        return sendMouseReport(buttons, dx, dy, wheel, allowWhenDisabled = false)
+    }
+
+    private fun sendMouseReport(
+        buttons: Int,
+        dx: Int,
+        dy: Int,
+        wheel: Int,
+        allowWhenDisabled: Boolean,
+    ): Boolean {
         val report = byteArrayOf(
             buttons.coerceIn(0, 0x07).toByte(),
             dx.coerceIn(MOUSE_AXIS_MIN, MOUSE_AXIS_MAX).toByte(),
             dy.coerceIn(MOUSE_AXIS_MIN, MOUSE_AXIS_MAX).toByte(),
             wheel.coerceIn(MOUSE_AXIS_MIN, MOUSE_AXIS_MAX).toByte(),
         )
-        return sendReport(MOUSE_REPORT_ID, report)
+        return sendReport(MOUSE_REPORT_ID, report, allowWhenDisabled)
     }
 
     private fun start() {
@@ -241,8 +263,15 @@ class BluetoothHidController(context: Context) {
     }
 
     @SuppressLint("MissingPermission")
+    private fun suspendInput() {
+        releaseReports()
+        updateState(RemoteHidStatus.DISABLED, "Bluetooth remote idle")
+    }
+
+    @SuppressLint("MissingPermission")
     private fun stop() {
         val hid = hidDevice
+        releaseReports()
         activeDevice?.let { device ->
             if (BluetoothHidSupport.hasConnectPermission(appContext)) {
                 hid?.disconnect(device)
@@ -256,16 +285,21 @@ class BluetoothHidController(context: Context) {
         updateState(RemoteHidStatus.DISABLED, "Bluetooth remote disabled")
     }
 
+    private fun releaseReports() {
+        sendKeyboardReport(0, emptyList(), allowWhenDisabled = true)
+        sendMouseReport(buttons = 0, dx = 0, dy = 0, wheel = 0, allowWhenDisabled = true)
+    }
+
     @SuppressLint("MissingPermission")
-    private fun sendReport(reportId: Int, report: ByteArray): Boolean {
+    private fun sendReport(reportId: Int, report: ByteArray, allowWhenDisabled: Boolean = false): Boolean {
         if (!BluetoothHidSupport.hasConnectPermission(appContext)) {
             updateState(RemoteHidStatus.PERMISSION_MISSING)
             return false
         }
         val device = activeDevice ?: return false
         val hid = hidDevice ?: return false
-        if (_state.value.status != RemoteHidStatus.CONNECTED) {
-            Log.w(TAG, "sendReport blocked: status=${_state.value.status}")
+        if (!allowWhenDisabled && (!enabled || _state.value.status != RemoteHidStatus.CONNECTED)) {
+            Log.w(TAG, "sendReport blocked: enabled=$enabled status=${_state.value.status}")
             return false
         }
         val sent = hid.sendReport(device, reportId, report)

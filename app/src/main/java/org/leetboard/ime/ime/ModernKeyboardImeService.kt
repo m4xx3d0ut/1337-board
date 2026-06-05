@@ -101,6 +101,7 @@ class ModernKeyboardImeService : InputMethodService() {
     private var remoteHidState = RemoteHidState(status = RemoteHidStatus.DISABLED)
     private val remoteTextContext = StringBuilder()
     private var remoteSpeechSendJob: Job? = null
+    private var bluetoothRemoteLocalFocusIgnoreUntilMs = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -150,6 +151,15 @@ class ModernKeyboardImeService : InputMethodService() {
                     },
                 )
                 if (!nextPreferences.glideCorrectionLearningEnabled) clearPendingGlideCorrection()
+                if (
+                    nextPreferences.bluetoothRemoteEnabled &&
+                    (
+                        !preferences.bluetoothRemoteEnabled ||
+                            nextPreferences.bluetoothActiveDeviceAddress != preferences.bluetoothActiveDeviceAddress
+                    )
+                ) {
+                    markBluetoothRemoteUserActivation()
+                }
                 preferences = nextPreferences
                 bluetoothHidController?.setEnabled(
                     enabled = nextPreferences.bluetoothRemoteEnabled,
@@ -236,11 +246,26 @@ class ModernKeyboardImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        switchBluetoothRemoteToLocalForAndroidFocus()
         val speechAllowed = speechInputEngine.isAvailable(attribute)
         contextHiddenKeyIds = buildSet {
             if (!speechAllowed) add("mic")
         }
         renderKeyboard()
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        if (oldSelStart != newSelStart || oldSelEnd != newSelEnd) {
+            switchBluetoothRemoteToLocalForAndroidFocus()
+        }
     }
 
     override fun onFinishInput() {
@@ -472,8 +497,10 @@ class ModernKeyboardImeService : InputMethodService() {
     private fun handleBluetoothControlAction(action: KeyAction): Boolean {
         when (action.type) {
             KeyActionType.TOGGLE_BLUETOOTH_REMOTE -> {
+                val nextEnabled = !preferences.bluetoothRemoteEnabled
+                if (nextEnabled) markBluetoothRemoteUserActivation()
                 serviceScope.launch {
-                    preferenceRepository.setBluetoothRemoteEnabled(!preferences.bluetoothRemoteEnabled)
+                    preferenceRepository.setBluetoothRemoteEnabled(nextEnabled)
                 }
                 showToast(if (preferences.bluetoothRemoteEnabled) "Bluetooth remote off" else "Bluetooth remote on")
                 return true
@@ -526,6 +553,7 @@ class ModernKeyboardImeService : InputMethodService() {
         }
         val currentIndex = devices.indexOfFirst { device -> device.address == preferences.bluetoothActiveDeviceAddress }
         val next = devices[(currentIndex + 1).floorMod(devices.size)]
+        markBluetoothRemoteUserActivation()
         serviceScope.launch {
             preferenceRepository.setBluetoothActiveDeviceAddress(next.address)
             preferenceRepository.setBluetoothRemoteEnabled(true)
@@ -552,6 +580,7 @@ class ModernKeyboardImeService : InputMethodService() {
             )
             return
         }
+        markBluetoothRemoteUserActivation()
         serviceScope.launch {
             preferenceRepository.setBluetoothActiveDeviceAddress(device.address)
             preferenceRepository.setBluetoothRemoteEnabled(true)
@@ -567,6 +596,22 @@ class ModernKeyboardImeService : InputMethodService() {
 
     private fun isBluetoothRemoteActive(): Boolean {
         return preferences.bluetoothRemoteEnabled && remoteHidState.connected
+    }
+
+    private fun markBluetoothRemoteUserActivation() {
+        bluetoothRemoteLocalFocusIgnoreUntilMs = SystemClock.uptimeMillis() + BLUETOOTH_REMOTE_LOCAL_FOCUS_GRACE_MS
+    }
+
+    private fun switchBluetoothRemoteToLocalForAndroidFocus() {
+        if (!preferences.bluetoothRemoteEnabled) return
+        if (SystemClock.uptimeMillis() < bluetoothRemoteLocalFocusIgnoreUntilMs) return
+        preferences = preferences.copy(bluetoothRemoteEnabled = false)
+        bluetoothHidController?.setEnabled(false, preferences.bluetoothActiveDeviceAddress)
+        serviceScope.launch {
+            preferenceRepository.setBluetoothRemoteEnabled(false)
+        }
+        showToast("Local Android input")
+        renderKeyboard()
     }
 
     private fun shouldRouteToBluetoothRemote(action: KeyAction): Boolean {
@@ -1612,6 +1657,7 @@ class ModernKeyboardImeService : InputMethodService() {
         const val MIN_TYPED_SUGGESTION_LENGTH = 2
         const val BLUETOOTH_KEY_SECONDARY_LABEL_MAX_CHARS = 6
         const val BLUETOOTH_DEVICE_SLOT_COUNT = 3
+        const val BLUETOOTH_REMOTE_LOCAL_FOCUS_GRACE_MS = 800L
         const val GLIDE_DEBUG_SNAPSHOT_FILE = "glide_debug_snapshot.txt"
         const val TERMUX_PACKAGE_PREFIX = "com.termux"
         val PUNCTUATION_THAT_TRIMS_GLIDE_SPACE = setOf(".", ",", "!", "?", ";", ":")
