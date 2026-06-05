@@ -37,6 +37,12 @@ class RemoteTrackpadView(context: Context) : View(context) {
     private var scrollAccumulator = 0f
     private var moved = false
     private var activeButton = 0
+    private var dragButtonHeld = false
+    private var lastTapUpTimeMs = 0L
+    private var lastTapX = 0f
+    private var lastTapY = 0f
+    private val doubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong()
+    private val doubleTapSlopSquared = ViewConfiguration.get(context).scaledDoubleTapSlop.toFloat().let { it * it }
 
     fun render(
         theme: KeyboardTheme,
@@ -48,13 +54,17 @@ class RemoteTrackpadView(context: Context) : View(context) {
         dedicatedButtonsEnabled: Boolean,
         onReport: (RemotePointerReport) -> Unit,
     ) {
+        this.onReport = onReport
+        if (!enabled || !tapToClickEnabled || dedicatedButtonsEnabled) {
+            releaseDragButtonIfNeeded()
+            clearDoubleTapCandidate()
+        }
         this.theme = theme
         this.sensitivity = sensitivity
         this.scrollSensitivity = scrollSensitivity
         this.invertScrollEnabled = invertScrollEnabled
         this.tapToClickEnabled = tapToClickEnabled
         this.dedicatedButtonsEnabled = dedicatedButtonsEnabled
-        this.onReport = onReport
         visibility = if (enabled) VISIBLE else GONE
         invalidate()
     }
@@ -68,8 +78,12 @@ class RemoteTrackpadView(context: Context) : View(context) {
             height - resources.displayMetrics.density * TRACKPAD_MARGIN_DP,
         )
         fillPaint.color = theme.colors.keyFill
-        strokePaint.color = theme.colors.keyStroke
-        strokePaint.strokeWidth = resources.displayMetrics.density * 1.2f
+        strokePaint.color = if (dragButtonHeld) theme.colors.activeModifierFill else theme.colors.keyStroke
+        strokePaint.strokeWidth = resources.displayMetrics.density * (if (dragButtonHeld) {
+            2.2f
+        } else {
+            1.2f
+        })
         linePaint.color = theme.colors.keyText.withCombinedAlpha(110)
         linePaint.strokeWidth = resources.displayMetrics.density * 1f
         val radius = resources.displayMetrics.density * 10f
@@ -110,10 +124,18 @@ class RemoteTrackpadView(context: Context) : View(context) {
                 scrollAccumulator = 0f
                 moved = false
                 activeButton = buttonFor(event.x, event.y)
-                if (activeButton != 0) onReport?.invoke(RemotePointerReport(buttons = activeButton))
+                dragButtonHeld = isDoubleTapDragStart(event) && activeButton == 0
+                if (dragButtonHeld) {
+                    clearDoubleTapCandidate()
+                    onReport?.invoke(RemotePointerReport(buttons = LEFT_BUTTON))
+                    invalidate()
+                } else if (activeButton != 0) {
+                    onReport?.invoke(RemotePointerReport(buttons = activeButton))
+                }
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
+                releaseDragButtonIfNeeded()
                 lastX = event.averageX()
                 lastY = event.averageY()
                 tapAnchorX = lastX
@@ -142,7 +164,9 @@ class RemoteTrackpadView(context: Context) : View(context) {
                     moved = true
                 }
                 if (activeButton == 0) {
-                    if (event.pointerCount >= 2) {
+                    if (dragButtonHeld && event.pointerCount == 1 && maxPointerCount == 1) {
+                        sendPointerMove(dx, dy, buttons = LEFT_BUTTON)
+                    } else if (event.pointerCount >= 2) {
                         val scrollDirection = if (invertScrollEnabled) 1f else -1f
                         scrollAccumulator += dy * scrollDirection * scrollSensitivity / SCROLL_DIVISOR
                         val wheel = scrollAccumulator.toInt()
@@ -152,11 +176,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
                             onReport?.invoke(RemotePointerReport(wheel = wheel))
                         }
                     } else if (maxPointerCount == 1) {
-                        val reportDx = (dx * sensitivity).toInt().coerceIn(MOUSE_AXIS_MIN, MOUSE_AXIS_MAX)
-                        val reportDy = (dy * sensitivity).toInt().coerceIn(MOUSE_AXIS_MIN, MOUSE_AXIS_MAX)
-                        if (reportDx != 0 || reportDy != 0) {
-                            onReport?.invoke(RemotePointerReport(dx = reportDx, dy = reportDy))
-                        }
+                        sendPointerMove(dx, dy)
                     }
                 }
                 lastX = currentX
@@ -164,7 +184,10 @@ class RemoteTrackpadView(context: Context) : View(context) {
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (activeButton != 0) {
+                if (dragButtonHeld) {
+                    releaseDragButtonIfNeeded()
+                    clearDoubleTapCandidate()
+                } else if (activeButton != 0) {
                     onReport?.invoke(RemotePointerReport(buttons = 0))
                 } else if (tapToClickEnabled && !moved) {
                     val tapButton = when {
@@ -176,6 +199,13 @@ class RemoteTrackpadView(context: Context) : View(context) {
                         onReport?.invoke(RemotePointerReport(buttons = tapButton))
                         onReport?.invoke(RemotePointerReport(buttons = 0))
                     }
+                    if (!dedicatedButtonsEnabled && maxPointerCount == 1) {
+                        rememberTapCandidate(event)
+                    } else {
+                        clearDoubleTapCandidate()
+                    }
+                } else {
+                    clearDoubleTapCandidate()
                 }
                 resetGesture()
                 parent.requestDisallowInterceptTouchEvent(false)
@@ -184,6 +214,8 @@ class RemoteTrackpadView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_CANCEL -> {
                 if (activeButton != 0) onReport?.invoke(RemotePointerReport(buttons = 0))
+                releaseDragButtonIfNeeded()
+                clearDoubleTapCandidate()
                 resetGesture()
                 parent.requestDisallowInterceptTouchEvent(false)
                 return true
@@ -205,9 +237,46 @@ class RemoteTrackpadView(context: Context) : View(context) {
 
     private fun resetGesture() {
         activeButton = 0
+        dragButtonHeld = false
         maxPointerCount = 0
         scrollAccumulator = 0f
         moved = false
+        invalidate()
+    }
+
+    private fun sendPointerMove(dx: Float, dy: Float, buttons: Int = 0) {
+        val reportDx = (dx * sensitivity).toInt().coerceIn(MOUSE_AXIS_MIN, MOUSE_AXIS_MAX)
+        val reportDy = (dy * sensitivity).toInt().coerceIn(MOUSE_AXIS_MIN, MOUSE_AXIS_MAX)
+        if (reportDx != 0 || reportDy != 0) {
+            onReport?.invoke(RemotePointerReport(buttons = buttons, dx = reportDx, dy = reportDy))
+        }
+    }
+
+    private fun isDoubleTapDragStart(event: MotionEvent): Boolean {
+        if (dedicatedButtonsEnabled || !tapToClickEnabled || event.pointerCount != 1) return false
+        if (lastTapUpTimeMs <= 0L) return false
+        val elapsedMs = event.eventTime - lastTapUpTimeMs
+        if (elapsedMs !in 0L..doubleTapTimeoutMs) return false
+        val dx = event.x - lastTapX
+        val dy = event.y - lastTapY
+        return dx * dx + dy * dy <= doubleTapSlopSquared
+    }
+
+    private fun rememberTapCandidate(event: MotionEvent) {
+        lastTapUpTimeMs = event.eventTime
+        lastTapX = event.x
+        lastTapY = event.y
+    }
+
+    private fun clearDoubleTapCandidate() {
+        lastTapUpTimeMs = 0L
+    }
+
+    private fun releaseDragButtonIfNeeded() {
+        if (!dragButtonHeld) return
+        onReport?.invoke(RemotePointerReport(buttons = 0))
+        dragButtonHeld = false
+        invalidate()
     }
 
     private fun MotionEvent.averageX(excludingIndex: Int = -1): Float {
