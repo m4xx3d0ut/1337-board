@@ -157,8 +157,12 @@ class PreferenceRepository(context: Context) {
                 MIN_BLUETOOTH_TRACKPAD_SENSITIVITY,
                 MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
             ) ?: KeyboardPreferences.defaults().bluetoothTrackpadScrollSensitivity,
+            bluetoothTrackpadInvertScrollEnabled = values[Keys.bluetoothTrackpadInvertScrollEnabled]
+                ?: KeyboardPreferences.defaults().bluetoothTrackpadInvertScrollEnabled,
             bluetoothTrackpadTapToClickEnabled = values[Keys.bluetoothTrackpadTapToClickEnabled]
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadTapToClickEnabled,
+            bluetoothTrackpadDedicatedButtonsEnabled = values[Keys.bluetoothTrackpadDedicatedButtonsEnabled]
+                ?: KeyboardPreferences.defaults().bluetoothTrackpadDedicatedButtonsEnabled,
             bluetoothTrackpadKeepScreenOnMode = values[Keys.bluetoothTrackpadKeepScreenOnMode]
                 ?.let(::bluetoothTrackpadKeepScreenOnModeFromName)
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadKeepScreenOnMode,
@@ -599,8 +603,16 @@ class PreferenceRepository(context: Context) {
         }
     }
 
+    suspend fun setBluetoothTrackpadInvertScrollEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.bluetoothTrackpadInvertScrollEnabled] = enabled }
+    }
+
     suspend fun setBluetoothTrackpadTapToClickEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.bluetoothTrackpadTapToClickEnabled] = enabled }
+    }
+
+    suspend fun setBluetoothTrackpadDedicatedButtonsEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.bluetoothTrackpadDedicatedButtonsEnabled] = enabled }
     }
 
     suspend fun setBluetoothTrackpadKeepScreenOnMode(mode: BluetoothTrackpadKeepScreenOnMode) {
@@ -901,7 +913,9 @@ class PreferenceRepository(context: Context) {
         val bluetoothTrackpadHeightPercent = floatPreferencesKey("bluetooth_trackpad_height_percent")
         val bluetoothTrackpadSensitivity = floatPreferencesKey("bluetooth_trackpad_sensitivity")
         val bluetoothTrackpadScrollSensitivity = floatPreferencesKey("bluetooth_trackpad_scroll_sensitivity")
+        val bluetoothTrackpadInvertScrollEnabled = booleanPreferencesKey("bluetooth_trackpad_invert_scroll_enabled")
         val bluetoothTrackpadTapToClickEnabled = booleanPreferencesKey("bluetooth_trackpad_tap_to_click_enabled")
+        val bluetoothTrackpadDedicatedButtonsEnabled = booleanPreferencesKey("bluetooth_trackpad_dedicated_buttons_enabled")
         val bluetoothTrackpadKeepScreenOnMode = stringPreferencesKey("bluetooth_trackpad_keep_screen_on_mode")
         val bluetoothTrackpadDimWhenInactiveEnabled = booleanPreferencesKey("bluetooth_trackpad_dim_when_inactive_enabled")
 
@@ -1039,7 +1053,9 @@ class PreferenceRepository(context: Context) {
             put(Keys.bluetoothTrackpadHeightPercent.name, bluetoothTrackpadHeightPercent)
             put(Keys.bluetoothTrackpadSensitivity.name, bluetoothTrackpadSensitivity)
             put(Keys.bluetoothTrackpadScrollSensitivity.name, bluetoothTrackpadScrollSensitivity)
+            put(Keys.bluetoothTrackpadInvertScrollEnabled.name, bluetoothTrackpadInvertScrollEnabled)
             put(Keys.bluetoothTrackpadTapToClickEnabled.name, bluetoothTrackpadTapToClickEnabled)
+            put(Keys.bluetoothTrackpadDedicatedButtonsEnabled.name, bluetoothTrackpadDedicatedButtonsEnabled)
             put(Keys.bluetoothTrackpadKeepScreenOnMode.name, bluetoothTrackpadKeepScreenOnMode.name)
             put(Keys.bluetoothTrackpadDimWhenInactiveEnabled.name, bluetoothTrackpadDimWhenInactiveEnabled)
             Keys.actionSlotKeys.forEach { (slotId, key) ->
@@ -1222,8 +1238,14 @@ class PreferenceRepository(context: Context) {
                 MAX_BLUETOOTH_TRACKPAD_SENSITIVITY,
             )
         }
+        settings.boolean(Keys.bluetoothTrackpadInvertScrollEnabled)?.let {
+            this[Keys.bluetoothTrackpadInvertScrollEnabled] = it
+        }
         settings.boolean(Keys.bluetoothTrackpadTapToClickEnabled)?.let {
             this[Keys.bluetoothTrackpadTapToClickEnabled] = it
+        }
+        settings.boolean(Keys.bluetoothTrackpadDedicatedButtonsEnabled)?.let {
+            this[Keys.bluetoothTrackpadDedicatedButtonsEnabled] = it
         }
         settings.string(Keys.bluetoothTrackpadKeepScreenOnMode)?.let(::bluetoothTrackpadKeepScreenOnModeFromName)?.let {
             this[Keys.bluetoothTrackpadKeepScreenOnMode] = it.name

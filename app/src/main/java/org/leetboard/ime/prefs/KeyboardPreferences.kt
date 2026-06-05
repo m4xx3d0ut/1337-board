@@ -88,7 +88,9 @@ data class KeyboardPreferences(
     val bluetoothTrackpadHeightPercent: Float = DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT,
     val bluetoothTrackpadSensitivity: Float = DEFAULT_BLUETOOTH_TRACKPAD_SENSITIVITY,
     val bluetoothTrackpadScrollSensitivity: Float = DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY,
+    val bluetoothTrackpadInvertScrollEnabled: Boolean = false,
     val bluetoothTrackpadTapToClickEnabled: Boolean = true,
+    val bluetoothTrackpadDedicatedButtonsEnabled: Boolean = true,
     val bluetoothTrackpadKeepScreenOnMode: BluetoothTrackpadKeepScreenOnMode = DEFAULT_BLUETOOTH_TRACKPAD_KEEP_SCREEN_ON_MODE,
     val bluetoothTrackpadDimWhenInactiveEnabled: Boolean = true,
 ) {

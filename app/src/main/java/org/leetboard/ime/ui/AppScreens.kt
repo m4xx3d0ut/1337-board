@@ -1238,10 +1238,24 @@ private fun BluetoothRemoteSection(
             scope.launch { repository.setBluetoothTrackpadScrollSensitivity(value) }
         }
         SettingSwitch(
+            label = "Invert two-finger scroll",
+            checked = preferences.bluetoothTrackpadInvertScrollEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setBluetoothTrackpadInvertScrollEnabled(checked) }
+            },
+        )
+        SettingSwitch(
             label = "Tap trackpad to left click",
             checked = preferences.bluetoothTrackpadTapToClickEnabled,
             onCheckedChange = { checked ->
                 scope.launch { repository.setBluetoothTrackpadTapToClickEnabled(checked) }
+            },
+        )
+        SettingSwitch(
+            label = "Show dedicated mouse buttons",
+            checked = preferences.bluetoothTrackpadDedicatedButtonsEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setBluetoothTrackpadDedicatedButtonsEnabled(checked) }
             },
         )
         Text("Full-screen trackpad", style = MaterialTheme.typography.labelLarge)

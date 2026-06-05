@@ -64,7 +64,9 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         remoteTrackpadFillRemaining: Boolean = false,
         remoteTrackpadSensitivity: Float = 1f,
         remoteTrackpadScrollSensitivity: Float = 1f,
+        remoteTrackpadInvertScrollEnabled: Boolean = false,
         remoteTrackpadTapToClickEnabled: Boolean = true,
+        remoteTrackpadDedicatedButtonsEnabled: Boolean = true,
     ) {
         this.theme = theme
         this.suggestionBarEnabled = suggestionBarEnabled
@@ -88,7 +90,9 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             enabled = remoteTrackpadEnabled,
             sensitivity = remoteTrackpadSensitivity,
             scrollSensitivity = remoteTrackpadScrollSensitivity,
+            invertScrollEnabled = remoteTrackpadInvertScrollEnabled,
             tapToClickEnabled = remoteTrackpadTapToClickEnabled,
+            dedicatedButtonsEnabled = remoteTrackpadDedicatedButtonsEnabled,
             onReport = { report -> onRemotePointerReport?.invoke(report) },
         )
         keyboardView.render(

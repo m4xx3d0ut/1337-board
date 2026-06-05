@@ -308,7 +308,9 @@ class ModernKeyboardImeService : InputMethodService() {
             remoteTrackpadHeightPercent = preferences.bluetoothTrackpadHeightPercent,
             remoteTrackpadSensitivity = preferences.bluetoothTrackpadSensitivity,
             remoteTrackpadScrollSensitivity = preferences.bluetoothTrackpadScrollSensitivity,
+            remoteTrackpadInvertScrollEnabled = preferences.bluetoothTrackpadInvertScrollEnabled,
             remoteTrackpadTapToClickEnabled = preferences.bluetoothTrackpadTapToClickEnabled,
+            remoteTrackpadDedicatedButtonsEnabled = preferences.bluetoothTrackpadDedicatedButtonsEnabled,
         )
         hideSystemImeSwitcher()
     }
