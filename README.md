@@ -20,6 +20,7 @@
 - Local glide typing with a bundled word list, ranked suggestions, optional imported word lists, private on-device prediction, and tunable accuracy controls for path tolerance, spatial precision, and dwell sensitivity.
 - Mic input through Android speech recognition, with offline preference requested when supported by the device recognizer.
 - Bluetooth remote mode can send keyboard, speech, and touchpad input to assigned paired hosts, with Fn-layer target keys and pinned full-screen trackpad shortcuts.
+- Full-screen Bluetooth trackpad mode supports optional left/right macro key stacks with custom labels and single-key, combo, text, or multi-step actions.
 - Theme presets and a custom theme slot including light, dark, alternate dark, cyberpunk, terminal, high contrast, 1337 green-on-black, background images, and transparency controls.
 - Separate portrait and landscape controls for keyboard height, margins, gaps, borders, radius, label styling, and long-press timing.
 
@@ -52,6 +53,8 @@ Bluetooth remote mode lets the Android device act as a local Bluetooth HID keybo
 The full-screen trackpad keeps the user-selected portrait or landscape keyboard height and fills the remaining screen with a touchpad surface. Settings include trackpad placement, height, pointer and scroll sensitivity, tap-to-click, keep-screen-on behavior, and dim-when-inactive behavior. Each assigned Bluetooth target can also request a pinned home-screen shortcut for direct full-screen trackpad access.
 
 ![Pad3 full-screen Bluetooth trackpad mode](docs/images/pad3-fullscreen-trackpad-on.png)
+
+![Pad3 full-screen Bluetooth trackpad with macro side keys](docs/images/pad3-fullscreen-trackpad-macro-stacks.png)
 
 ![Pad3 Bluetooth Fn hotkeys](docs/images/pad3-bluetooth-hotkeys-fn-layer.png)
 

@@ -39,6 +39,7 @@ From any Android text field, tap `Fn`, then an assigned target such as `BT1` to 
 
 The full-screen trackpad keeps the configured portrait or landscape keyboard height and fills the remaining screen with the touchpad surface. The header shows connection status plus quick controls:
 
+- **KB ON / KB OFF** hides or restores the keyboard surface. When hidden, the touchpad fills the content area below the header.
 - **PAD ON / PAD OFF** toggles the touchpad surface while keeping the keyboard available.
 - **LOCAL** switches back to Android-local input.
 - The window follows the current app theme, including dark mode.
@@ -46,6 +47,29 @@ The full-screen trackpad keeps the configured portrait or landscape keyboard hei
 ![Pad3 full-screen Bluetooth trackpad mode](images/pad3-fullscreen-trackpad-on.png)
 
 ![Pad3 keyboard-only Bluetooth remote mode](images/pad3-fullscreen-trackpad-off.png)
+
+## Macro Side Keys
+
+Full-screen trackpad mode can show optional macro key stacks on the left side, right side, or both sides of the touchpad. These are meant for repeated remote-host actions such as copy/paste, terminal navigation, function keys, and common app shortcuts.
+
+![Pad3 full-screen trackpad macro side keys](images/pad3-fullscreen-trackpad-macro-stacks.png)
+
+Configure them in **1337 Board Settings > Bluetooth Remote > Trackpad macro side keys**:
+
+1. Choose **Off**, **Left**, **Right**, or **Both**.
+2. For each visible side, fill a **Button label** such as `Copy`, `F1`, or `PgDn`.
+3. Fill **Macro actions** with one step per line or comma-separated steps.
+4. Leave either field blank to hide that slot.
+
+Macro actions support single keys, modifier combos, text insertion, and multi-step sequences:
+
+- `f1` sends `F1`.
+- `shift+tab` sends one `Shift+Tab` combo.
+- `f3, shift+tab` sends `F3`, then `Shift+Tab`.
+- `ctrl+c, ctrl+v` sends copy, then paste.
+- `text:git status, enter` types `git status`, then presses Enter.
+
+Supported modifiers are `ctrl`, `control`, `alt`, `shift`, and `fn`. Supported named keys include `f1` through `f12`, `esc`, `tab`, `enter`, `space`, `backspace`, `del`, arrows, `home`, `end`, `pgup`, `pgdn`, and `ins`. Each step can combine modifiers with one non-modifier key; use commas or new lines for longer sequences.
 
 ## Trackpad Settings
 
@@ -57,6 +81,7 @@ The Bluetooth Remote settings include:
 - **Tap trackpad to left click** and **Show dedicated mouse buttons**. When dedicated buttons are hidden, one-finger tap sends left click and two-finger tap sends right click.
 - **Full-screen trackpad** screen-timeout modes: system timeout, keep on while charging, or always keep on.
 - **Dim when inactive** for long remote-control sessions.
+- **Trackpad macro side keys** to place custom macro stacks around the touchpad.
 
 ![Pad3 full-screen trackpad display settings](images/pad3-bluetooth-trackpad-display-settings.png)
 
