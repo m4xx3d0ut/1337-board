@@ -93,6 +93,8 @@ data class KeyboardPreferences(
     val bluetoothTrackpadDedicatedButtonsEnabled: Boolean = true,
     val bluetoothTrackpadKeepScreenOnMode: BluetoothTrackpadKeepScreenOnMode = DEFAULT_BLUETOOTH_TRACKPAD_KEEP_SCREEN_ON_MODE,
     val bluetoothTrackpadDimWhenInactiveEnabled: Boolean = true,
+    val bluetoothTrackpadMacroPlacement: BluetoothTrackpadMacroPlacement = BluetoothTrackpadMacroPlacement.OFF,
+    val bluetoothTrackpadMacros: List<BluetoothTrackpadMacroKey> = emptyList(),
 ) {
     fun customizationState(): CustomizationState {
         val hiddenKeys = buildSet {

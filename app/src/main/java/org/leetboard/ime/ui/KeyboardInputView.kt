@@ -3,6 +3,7 @@ package org.leetboard.ime.ui
 import android.content.Context
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -16,16 +17,24 @@ import org.leetboard.ime.model.KeyLabelStyle
 import org.leetboard.ime.model.KeyboardGeometry
 import org.leetboard.ime.model.KeyboardLayout
 import org.leetboard.ime.model.KeyboardTheme
+import org.leetboard.ime.prefs.BluetoothTrackpadMacroKey
+import org.leetboard.ime.prefs.BluetoothTrackpadMacroPlacement
+import org.leetboard.ime.prefs.BluetoothTrackpadMacroSide
 import org.leetboard.ime.prefs.BluetoothTrackpadPlacement
+import org.leetboard.ime.prefs.forSide
+import org.leetboard.ime.prefs.shows
 
 class KeyboardInputView(context: Context) : ViewGroup(context) {
     val keyboardView = KeyboardSurfaceView(context)
     var onSuggestion: ((String) -> Unit)? = null
     var onQuickModifier: ((KeyAction) -> Unit)? = null
     var onRemotePointerReport: ((RemotePointerReport) -> Unit)? = null
+    var onRemoteMacro: ((BluetoothTrackpadMacroKey) -> Unit)? = null
 
     private val suggestionBar = GlideSuggestionBar(context)
+    private val leftMacroStack = MacroStackView(context)
     private val remoteTrackpad = RemoteTrackpadView(context)
+    private val rightMacroStack = MacroStackView(context)
     private var theme: KeyboardTheme = KeyboardTheme.leetGreen
     private var suggestionBarEnabled: Boolean = false
     private var quickModifierBarEnabled: Boolean = false
@@ -33,11 +42,15 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
     private var remoteTrackpadPlacement: BluetoothTrackpadPlacement = BluetoothTrackpadPlacement.ABOVE_KEYBOARD
     private var remoteTrackpadHeightPercent: Float = 0f
     private var remoteTrackpadFillRemaining: Boolean = false
+    private var remoteTrackpadMacroPlacement: BluetoothTrackpadMacroPlacement = BluetoothTrackpadMacroPlacement.OFF
+    private var remoteTrackpadMacros: List<BluetoothTrackpadMacroKey> = emptyList()
     private var keyboardSurfaceVisible: Boolean = true
 
     init {
         addView(suggestionBar)
+        addView(leftMacroStack)
         addView(remoteTrackpad)
+        addView(rightMacroStack)
         addView(keyboardView)
     }
 
@@ -69,6 +82,8 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         remoteTrackpadTapToClickEnabled: Boolean = true,
         remoteTrackpadDedicatedButtonsEnabled: Boolean = true,
         keyboardSurfaceVisible: Boolean = true,
+        remoteTrackpadMacroPlacement: BluetoothTrackpadMacroPlacement = BluetoothTrackpadMacroPlacement.OFF,
+        remoteTrackpadMacros: List<BluetoothTrackpadMacroKey> = emptyList(),
     ) {
         this.theme = theme
         this.suggestionBarEnabled = suggestionBarEnabled
@@ -78,6 +93,8 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         this.remoteTrackpadHeightPercent = remoteTrackpadHeightPercent
         this.remoteTrackpadFillRemaining = remoteTrackpadFillRemaining
         this.keyboardSurfaceVisible = keyboardSurfaceVisible
+        this.remoteTrackpadMacroPlacement = remoteTrackpadMacroPlacement
+        this.remoteTrackpadMacros = remoteTrackpadMacros
         suggestionBar.render(
             theme = theme,
             enabled = suggestionBarEnabled || quickModifierBarEnabled,
@@ -97,6 +114,16 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             tapToClickEnabled = remoteTrackpadTapToClickEnabled,
             dedicatedButtonsEnabled = remoteTrackpadDedicatedButtonsEnabled,
             onReport = { report -> onRemotePointerReport?.invoke(report) },
+        )
+        leftMacroStack.render(
+            theme = theme,
+            macros = visibleMacrosFor(BluetoothTrackpadMacroSide.LEFT),
+            onMacro = { macro -> onRemoteMacro?.invoke(macro) },
+        )
+        rightMacroStack.render(
+            theme = theme,
+            macros = visibleMacrosFor(BluetoothTrackpadMacroSide.RIGHT),
+            onMacro = { macro -> onRemoteMacro?.invoke(macro) },
         )
         keyboardView.render(
             layout = layout,
@@ -137,12 +164,22 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
                 (availableHeight - keyboardHeight).coerceAtLeast(0),
             )
         }
+        val leftMacroWidth = macroStackWidthPx(BluetoothTrackpadMacroSide.LEFT, trackpadHeight)
+        val rightMacroWidth = macroStackWidthPx(BluetoothTrackpadMacroSide.RIGHT, trackpadHeight)
         suggestionBar.measure(
             MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(suggestionHeight, MeasureSpec.EXACTLY),
         )
+        leftMacroStack.measure(
+            MeasureSpec.makeMeasureSpec(leftMacroWidth, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(trackpadHeight, MeasureSpec.EXACTLY),
+        )
         remoteTrackpad.measure(
-            MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec((width - leftMacroWidth - rightMacroWidth).coerceAtLeast(0), MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(trackpadHeight, MeasureSpec.EXACTLY),
+        )
+        rightMacroStack.measure(
+            MeasureSpec.makeMeasureSpec(rightMacroWidth, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(trackpadHeight, MeasureSpec.EXACTLY),
         )
         keyboardView.measure(
@@ -156,6 +193,8 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         val suggestionHeight = suggestionBar.measuredHeight
         val trackpadHeight = remoteTrackpad.measuredHeight
         val keyboardHeight = keyboardView.measuredHeight
+        val leftMacroWidth = leftMacroStack.measuredWidth
+        val rightMacroWidth = rightMacroStack.measuredWidth
         val fillTrackpadSpace = remoteTrackpadEnabled && remoteTrackpadFillRemaining
         val contentTop = if (fillTrackpadSpace) {
             0
@@ -166,14 +205,25 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         if (remoteTrackpadPlacement == BluetoothTrackpadPlacement.ABOVE_KEYBOARD) {
             val trackpadTop = contentTop + suggestionHeight
             val keyboardTop = trackpadTop + trackpadHeight
-            remoteTrackpad.layout(0, trackpadTop, width, keyboardTop)
+            layoutTrackpadRow(trackpadTop, keyboardTop, leftMacroWidth, rightMacroWidth)
             keyboardView.layout(0, keyboardTop, width, keyboardTop + keyboardHeight)
         } else {
             val keyboardTop = contentTop + suggestionHeight
             val trackpadTop = keyboardTop + keyboardHeight
             keyboardView.layout(0, keyboardTop, width, trackpadTop)
-            remoteTrackpad.layout(0, trackpadTop, width, trackpadTop + trackpadHeight)
+            layoutTrackpadRow(trackpadTop, trackpadTop + trackpadHeight, leftMacroWidth, rightMacroWidth)
         }
+    }
+
+    private fun layoutTrackpadRow(
+        top: Int,
+        bottom: Int,
+        leftMacroWidth: Int,
+        rightMacroWidth: Int,
+    ) {
+        leftMacroStack.layout(0, top, leftMacroWidth, bottom)
+        remoteTrackpad.layout(leftMacroWidth, top, width - rightMacroWidth, bottom)
+        rightMacroStack.layout(width - rightMacroWidth, top, width, bottom)
     }
 
     private fun desiredKeyboardHeight(): Int {
@@ -205,6 +255,16 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             .toInt()
             .coerceAtLeast((resources.displayMetrics.density * MIN_TRACKPAD_HEIGHT_DP).toInt())
             .coerceAtMost((keyboardHeight * MAX_TRACKPAD_TO_KEYBOARD_FRACTION).toInt())
+    }
+
+    private fun macroStackWidthPx(side: BluetoothTrackpadMacroSide, trackpadHeight: Int): Int {
+        if (trackpadHeight <= 0 || visibleMacrosFor(side).isEmpty()) return 0
+        return (resources.displayMetrics.density * MACRO_STACK_WIDTH_DP).toInt()
+    }
+
+    private fun visibleMacrosFor(side: BluetoothTrackpadMacroSide): List<BluetoothTrackpadMacroKey> {
+        if (!remoteTrackpadEnabled || !remoteTrackpadMacroPlacement.shows(side)) return emptyList()
+        return remoteTrackpadMacros.forSide(side)
     }
 
     private class GlideSuggestionBar(context: Context) : LinearLayout(context) {
@@ -382,6 +442,56 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         }
     }
 
+    private class MacroStackView(context: Context) : LinearLayout(context) {
+        init {
+            orientation = VERTICAL
+            gravity = Gravity.CENTER
+            isClickable = false
+        }
+
+        fun render(
+            theme: KeyboardTheme,
+            macros: List<BluetoothTrackpadMacroKey>,
+            onMacro: (BluetoothTrackpadMacroKey) -> Unit,
+        ) {
+            removeAllViews()
+            visibility = if (macros.isEmpty()) GONE else VISIBLE
+            setBackgroundColor(theme.colors.background)
+            macros.forEach { macro ->
+                addView(
+                    TextView(context).apply {
+                        text = macro.label
+                        gravity = Gravity.CENTER
+                        includeFontPadding = false
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, MACRO_TEXT_SP)
+                        setTextColor(theme.colors.keyText)
+                        typeface = Typeface.DEFAULT_BOLD
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener { onMacro(macro) }
+                        background = macroBackground(theme)
+                    },
+                    LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f).apply {
+                        val margin = (resources.displayMetrics.density * MACRO_GAP_DP / 2f).toInt()
+                        setMargins(margin, margin, margin, margin)
+                    },
+                )
+            }
+        }
+
+        private fun macroBackground(theme: KeyboardTheme): GradientDrawable {
+            val density = resources.displayMetrics.density
+            return GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = density * 6f
+                setColor(theme.colors.keyFill)
+                setStroke(density.toInt().coerceAtLeast(1), theme.colors.keyStroke)
+            }
+        }
+    }
+
     companion object {
         const val SUGGESTION_STRIP_HEIGHT_DP = 42f
         const val SUGGESTION_VERTICAL_PADDING_DP = 5f
@@ -393,5 +503,8 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         const val MIN_HEIGHT_DP = 160f
         const val MIN_TRACKPAD_HEIGHT_DP = 76f
         const val MAX_TRACKPAD_TO_KEYBOARD_FRACTION = 0.55f
+        const val MACRO_STACK_WIDTH_DP = 84f
+        const val MACRO_GAP_DP = 6f
+        const val MACRO_TEXT_SP = 12f
     }
 }

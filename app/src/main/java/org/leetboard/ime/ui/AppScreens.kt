@@ -42,6 +42,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -97,6 +99,8 @@ import org.leetboard.ime.model.resolvedDisplay
 import org.leetboard.ime.prefs.CustomThemeColorField
 import org.leetboard.ime.prefs.CustomThemeOpacityField
 import org.leetboard.ime.prefs.BluetoothTrackpadKeepScreenOnMode
+import org.leetboard.ime.prefs.BluetoothTrackpadMacroPlacement
+import org.leetboard.ime.prefs.BluetoothTrackpadMacroSide
 import org.leetboard.ime.prefs.BluetoothTrackpadPlacement
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY
@@ -109,6 +113,7 @@ import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
 import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
+import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_MACRO_KEYS_PER_SIDE
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.MAX_LONG_PRESS_DELAY_MS
@@ -122,7 +127,11 @@ import org.leetboard.ime.prefs.MIN_SPEECH_SILENCE_MS
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.SettingsExportFormat
 import org.leetboard.ime.prefs.defaultLayoutOptions
+import org.leetboard.ime.prefs.label
 import org.leetboard.ime.prefs.layoutIdForOrientation
+import org.leetboard.ime.prefs.macroAt
+import org.leetboard.ime.prefs.parseBluetoothTrackpadMacroSteps
+import org.leetboard.ime.prefs.shows
 import org.leetboard.ime.remote.BluetoothHidSupport
 import org.leetboard.ime.remote.RemoteHidDevice
 
@@ -685,10 +694,16 @@ private fun KeyDisplaySection(
         keyDisplayControls.forEach { control ->
             val override = preferences.keyDisplayOverrides[control.id]
             val label = override?.label.orEmpty()
+            var labelText by remember(control.id) { mutableStateOf(label) }
+            var labelFocused by remember(control.id) { mutableStateOf(false) }
+            LaunchedEffect(label, labelFocused) {
+                if (!labelFocused && labelText != label) labelText = label
+            }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(
-                    value = label,
+                    value = labelText,
                     onValueChange = { nextLabel ->
+                        labelText = nextLabel
                         scope.launch {
                             repository.setKeyDisplayOverride(
                                 control.id,
@@ -700,7 +715,9 @@ private fun KeyDisplaySection(
                         }
                     },
                     label = { Text("${control.label} label") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { focusState -> labelFocused = focusState.isFocused },
                     singleLine = true,
                 )
                 Row(
@@ -714,7 +731,7 @@ private fun KeyDisplaySection(
                                 repository.setKeyDisplayOverride(
                                     control.id,
                                     KeyDisplayOverride(
-                                        label = override?.label,
+                                        label = labelText.takeIf { it.isNotBlank() },
                                         icon = nextIcon,
                                     ),
                                 )
@@ -726,6 +743,7 @@ private fun KeyDisplaySection(
                     }
                     OutlinedButton(
                         onClick = {
+                            labelText = ""
                             scope.launch { repository.setKeyDisplayOverride(control.id, null) }
                         },
                         modifier = Modifier.weight(1f),
@@ -1273,6 +1291,126 @@ private fun BluetoothRemoteSection(
                 scope.launch { repository.setBluetoothTrackpadDimWhenInactiveEnabled(checked) }
             },
         )
+        BluetoothTrackpadMacroSettings(preferences, repository)
+    }
+}
+
+@Composable
+private fun BluetoothTrackpadMacroSettings(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    Text("Trackpad macro side keys", style = MaterialTheme.typography.labelLarge)
+    BluetoothTrackpadMacroPlacement.entries.forEach { placement ->
+        SelectButton(
+            label = placement.label,
+            selected = preferences.bluetoothTrackpadMacroPlacement == placement,
+            onClick = { scope.launch { repository.setBluetoothTrackpadMacroPlacement(placement) } },
+        )
+    }
+    Text(
+        "Macro steps use commas or new lines. Examples: ctrl+c, alt+tab, f5, home, text:git status.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    val activeSides = BluetoothTrackpadMacroSide.entries.filter { side ->
+        preferences.bluetoothTrackpadMacroPlacement.shows(side)
+    }
+    if (activeSides.isEmpty()) return
+    activeSides.forEach { side ->
+        Text("${side.label} stack", style = MaterialTheme.typography.bodyMedium)
+        repeat(MAX_BLUETOOTH_TRACKPAD_MACRO_KEYS_PER_SIDE) { index ->
+            BluetoothTrackpadMacroSlotEditor(
+                side = side,
+                index = index,
+                preferences = preferences,
+                repository = repository,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BluetoothTrackpadMacroSlotEditor(
+    side: BluetoothTrackpadMacroSide,
+    index: Int,
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    val macro = preferences.bluetoothTrackpadMacros.macroAt(side, index)
+    val savedLabel = macro?.label.orEmpty()
+    val savedActionText = macro?.actionText.orEmpty()
+    var labelText by remember(side, index) { mutableStateOf(savedLabel) }
+    var actionText by remember(side, index) { mutableStateOf(savedActionText) }
+    var labelFocused by remember(side, index) { mutableStateOf(false) }
+    var actionFocused by remember(side, index) { mutableStateOf(false) }
+    LaunchedEffect(savedLabel, labelFocused) {
+        if (!labelFocused && labelText != savedLabel) labelText = savedLabel
+    }
+    LaunchedEffect(savedActionText, actionFocused) {
+        if (!actionFocused && actionText != savedActionText) actionText = savedActionText
+    }
+    val parsedStepCount = parseBluetoothTrackpadMacroSteps(actionText).size
+    val hasInvalidMacro = actionText.isNotBlank() && parsedStepCount == 0
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("${side.label} ${index + 1}", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(
+            value = labelText,
+            onValueChange = { nextLabel ->
+                labelText = nextLabel
+                scope.launch {
+                    repository.setBluetoothTrackpadMacro(side, index, nextLabel, actionText)
+                }
+            },
+            label = { Text("Button label") },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focusState -> labelFocused = focusState.isFocused },
+        )
+        OutlinedTextField(
+            value = actionText,
+            onValueChange = { nextActions ->
+                actionText = nextActions
+                scope.launch {
+                    repository.setBluetoothTrackpadMacro(side, index, labelText, nextActions)
+                }
+            },
+            label = { Text("Macro actions") },
+            minLines = 1,
+            maxLines = 3,
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focusState -> actionFocused = focusState.isFocused },
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = {
+                    labelText = ""
+                    actionText = ""
+                    scope.launch {
+                        repository.setBluetoothTrackpadMacro(side, index, "", "")
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Clear")
+            }
+            Text(
+                text = when {
+                    labelText.isBlank() && actionText.isBlank() -> "Hidden"
+                    labelText.isBlank() -> "Add a label"
+                    hasInvalidMacro -> "No valid steps"
+                    else -> "$parsedStepCount step(s)"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 

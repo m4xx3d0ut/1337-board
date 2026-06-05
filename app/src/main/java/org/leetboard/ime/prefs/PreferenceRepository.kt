@@ -168,6 +168,10 @@ class PreferenceRepository(context: Context) {
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadKeepScreenOnMode,
             bluetoothTrackpadDimWhenInactiveEnabled = values[Keys.bluetoothTrackpadDimWhenInactiveEnabled]
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadDimWhenInactiveEnabled,
+            bluetoothTrackpadMacroPlacement = values[Keys.bluetoothTrackpadMacroPlacement]
+                ?.let(::bluetoothTrackpadMacroPlacementFromName)
+                ?: KeyboardPreferences.defaults().bluetoothTrackpadMacroPlacement,
+            bluetoothTrackpadMacros = bluetoothTrackpadMacros(values),
         )
     }
 
@@ -623,6 +627,35 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.bluetoothTrackpadDimWhenInactiveEnabled] = enabled }
     }
 
+    suspend fun setBluetoothTrackpadMacroPlacement(placement: BluetoothTrackpadMacroPlacement) {
+        dataStore.edit { values -> values[Keys.bluetoothTrackpadMacroPlacement] = placement.name }
+    }
+
+    suspend fun setBluetoothTrackpadMacro(
+        side: BluetoothTrackpadMacroSide,
+        index: Int,
+        label: String,
+        actionText: String,
+    ) {
+        if (index !in 0 until MAX_BLUETOOTH_TRACKPAD_MACRO_KEYS_PER_SIDE) return
+        dataStore.edit { values ->
+            val next = bluetoothTrackpadMacros(values).toMutableList()
+            next.removeAll { macro -> macro.side == side && macro.index == index }
+            if (label.isNotBlank() || actionText.isNotBlank()) {
+                next += BluetoothTrackpadMacroKey(
+                    side = side,
+                    index = index,
+                    label = label.trim(),
+                    actionText = actionText.trim(),
+                )
+            }
+            values[Keys.bluetoothTrackpadMacros] = next
+                .sortedWith(compareBy<BluetoothTrackpadMacroKey> { it.side.name }.thenBy { it.index })
+                .map { macro -> macro.toPreferenceValue() }
+                .toSet()
+        }
+    }
+
     suspend fun importGlideWords(reader: Reader): Int {
         val words = reader.useLines { lines ->
             lines
@@ -757,11 +790,23 @@ class PreferenceRepository(context: Context) {
         return BluetoothTrackpadKeepScreenOnMode.entries.firstOrNull { it.name == name }
     }
 
+    private fun bluetoothTrackpadMacroPlacementFromName(name: String): BluetoothTrackpadMacroPlacement? {
+        return BluetoothTrackpadMacroPlacement.entries.firstOrNull { it.name == name }
+    }
+
     private fun bluetoothDeviceSlotAddresses(values: Preferences): List<String?> {
         val savedSlots = Keys.bluetoothDeviceSlotAddressKeys.map { key -> values[key]?.takeIf { it.isNotBlank() } }
         if (savedSlots.any { it != null }) return savedSlots
         val migratedActiveAddress = values[Keys.bluetoothActiveDeviceAddress]?.takeIf { it.isNotBlank() }
         return listOf(migratedActiveAddress, null, null)
+    }
+
+    private fun bluetoothTrackpadMacros(values: Preferences): List<BluetoothTrackpadMacroKey> {
+        return values[Keys.bluetoothTrackpadMacros]
+            .orEmpty()
+            .mapNotNull(::bluetoothTrackpadMacroFromPreferenceValue)
+            .distinctBy { macro -> macro.side to macro.index }
+            .sortedWith(compareBy<BluetoothTrackpadMacroKey> { it.side.name }.thenBy { it.index })
     }
 
     private fun customTheme(values: Preferences): CustomThemeConfig {
@@ -918,6 +963,8 @@ class PreferenceRepository(context: Context) {
         val bluetoothTrackpadDedicatedButtonsEnabled = booleanPreferencesKey("bluetooth_trackpad_dedicated_buttons_enabled")
         val bluetoothTrackpadKeepScreenOnMode = stringPreferencesKey("bluetooth_trackpad_keep_screen_on_mode")
         val bluetoothTrackpadDimWhenInactiveEnabled = booleanPreferencesKey("bluetooth_trackpad_dim_when_inactive_enabled")
+        val bluetoothTrackpadMacroPlacement = stringPreferencesKey("bluetooth_trackpad_macro_placement")
+        val bluetoothTrackpadMacros = stringSetPreferencesKey("bluetooth_trackpad_macros")
 
         val bluetoothDeviceSlotAddressKeys = listOf(
             bluetoothDeviceSlot1Address,
@@ -1058,6 +1105,11 @@ class PreferenceRepository(context: Context) {
             put(Keys.bluetoothTrackpadDedicatedButtonsEnabled.name, bluetoothTrackpadDedicatedButtonsEnabled)
             put(Keys.bluetoothTrackpadKeepScreenOnMode.name, bluetoothTrackpadKeepScreenOnMode.name)
             put(Keys.bluetoothTrackpadDimWhenInactiveEnabled.name, bluetoothTrackpadDimWhenInactiveEnabled)
+            put(Keys.bluetoothTrackpadMacroPlacement.name, bluetoothTrackpadMacroPlacement.name)
+            put(
+                Keys.bluetoothTrackpadMacros.name,
+                bluetoothTrackpadMacros.map { macro -> macro.toPreferenceValue() },
+            )
             Keys.actionSlotKeys.forEach { (slotId, key) ->
                 slotActions[slotId]?.let { action -> put(key.name, action.toPreferenceValue()) }
             }
@@ -1252,6 +1304,15 @@ class PreferenceRepository(context: Context) {
         }
         settings.boolean(Keys.bluetoothTrackpadDimWhenInactiveEnabled)?.let {
             this[Keys.bluetoothTrackpadDimWhenInactiveEnabled] = it
+        }
+        settings.string(Keys.bluetoothTrackpadMacroPlacement)?.let(::bluetoothTrackpadMacroPlacementFromName)?.let {
+            this[Keys.bluetoothTrackpadMacroPlacement] = it.name
+        }
+        settings.stringSet(Keys.bluetoothTrackpadMacros)?.let { macros ->
+            val normalized = macros.mapNotNull(::bluetoothTrackpadMacroFromPreferenceValue)
+                .map { macro -> macro.toPreferenceValue() }
+                .toSet()
+            if (normalized.isNotEmpty()) this[Keys.bluetoothTrackpadMacros] = normalized
         }
         Keys.actionSlotKeys.forEach { (_, key) ->
             settings.string(key)?.let { encodedAction ->

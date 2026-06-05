@@ -64,6 +64,7 @@ import org.leetboard.ime.model.KeyboardState
 import org.leetboard.ime.model.KeyboardTheme
 import org.leetboard.ime.model.activeKeyIds
 import org.leetboard.ime.prefs.BluetoothTrackpadKeepScreenOnMode
+import org.leetboard.ime.prefs.BluetoothTrackpadMacroKey
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.layoutIdForOrientation
@@ -288,6 +289,9 @@ class RemoteTrackpadActivity : ComponentActivity() {
                     )
                 }
             }
+            view.onRemoteMacro = { macro ->
+                handleTrackpadMacro(macro)
+            }
         }
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -452,6 +456,8 @@ class RemoteTrackpadActivity : ComponentActivity() {
             remoteTrackpadTapToClickEnabled = preferences.bluetoothTrackpadTapToClickEnabled,
             remoteTrackpadDedicatedButtonsEnabled = preferences.bluetoothTrackpadDedicatedButtonsEnabled,
             keyboardSurfaceVisible = remoteKeyboardVisible,
+            remoteTrackpadMacroPlacement = preferences.bluetoothTrackpadMacroPlacement,
+            remoteTrackpadMacros = preferences.bluetoothTrackpadMacros,
         )
         updateStatus()
     }
@@ -511,6 +517,19 @@ class RemoteTrackpadActivity : ComponentActivity() {
                 glideUserLanguageModel.saveTo(GlideUserLanguageModel.storageFile(filesDir))
             }
         }
+    }
+
+    private fun handleTrackpadMacro(macro: BluetoothTrackpadMacroKey) {
+        if (!remoteHidState.connected) {
+            showToast(remoteHidState.message ?: "Bluetooth host is not connected")
+            return
+        }
+        macro.steps.forEach { step ->
+            val stateBeforeAction = keyboardState
+            keyboardState = remoteHidKeyRouter.handle(step.action, keyboardState, step.heldModifiers)
+            recordRemoteTextContext(step.action, stateBeforeAction, step.heldModifiers)
+        }
+        renderRemoteSurface()
     }
 
     private fun formatRemoteGlideCommitText(word: String): String {
