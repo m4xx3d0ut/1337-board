@@ -39,6 +39,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.leetboard.ime.engine.CustomizationEngine
+import org.leetboard.ime.engine.FrequencyContextGlidePredictionEngine
+import org.leetboard.ime.engine.GestureTypingEngine
+import org.leetboard.ime.engine.GlideDictionaryLoader
+import org.leetboard.ime.engine.GlidePredictionContext
+import org.leetboard.ime.engine.GlideTouchTrace
+import org.leetboard.ime.engine.GlideUserLanguageModel
 import org.leetboard.ime.engine.LayoutEngine
 import org.leetboard.ime.engine.SpeechInputEngine
 import org.leetboard.ime.engine.SpeechInputEngineState
@@ -46,10 +52,13 @@ import org.leetboard.ime.engine.SpeechInsertion
 import org.leetboard.ime.engine.SpeechStartResult
 import org.leetboard.ime.engine.TextContextPolicy
 import org.leetboard.ime.engine.ThemeEngine
+import org.leetboard.ime.engine.applyKeyboardCapitalization
 import org.leetboard.ime.engine.formatSpeechInsertion
+import org.leetboard.ime.engine.shouldInsertLeadingSpaceBeforeText
 import org.leetboard.ime.model.HeldModifiers
 import org.leetboard.ime.model.KeyAction
 import org.leetboard.ime.model.KeyActionType
+import org.leetboard.ime.model.KeyIcon
 import org.leetboard.ime.model.KeyboardLayout
 import org.leetboard.ime.model.KeyboardState
 import org.leetboard.ime.model.KeyboardTheme
@@ -78,6 +87,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
     private lateinit var bluetoothHidController: BluetoothHidController
     private lateinit var remoteHidKeyRouter: RemoteHidKeyRouter
     private lateinit var speechInputEngine: SpeechInputEngine
+    private lateinit var gestureTypingEngine: GestureTypingEngine
     private lateinit var rootLayout: LinearLayout
     private lateinit var headerLayout: LinearLayout
     private lateinit var statusLabel: TextView
@@ -99,6 +109,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
     private var remoteSpeechSendJob: Job? = null
     private var inactiveDimJob: Job? = null
     private var powerReceiverRegistered = false
+    private val glideUserLanguageModel = GlideUserLanguageModel()
     private val remoteTextContext = StringBuilder()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -136,6 +147,15 @@ class RemoteTrackpadActivity : ComponentActivity() {
         targetName = intent.getStringExtra(EXTRA_DEVICE_NAME)
         preferenceRepository = PreferenceRepository(applicationContext)
         bluetoothHidController = BluetoothHidControllerRegistry.acquire(applicationContext)
+        val glideDictionaryLoader = GlideDictionaryLoader(this)
+        activityScope.launch(Dispatchers.IO) {
+            glideUserLanguageModel.loadFrom(GlideUserLanguageModel.storageFile(filesDir))
+        }
+        gestureTypingEngine = GestureTypingEngine(
+            textContextPolicy = textContextPolicy,
+            predictionEngine = FrequencyContextGlidePredictionEngine(glideUserLanguageModel),
+            wordsProvider = glideDictionaryLoader::loadWords,
+        )
         speechInputEngine = SpeechInputEngine(this, textContextPolicy)
         remoteHidKeyRouter = RemoteHidKeyRouter { chord ->
             bluetoothHidController.sendKeyboardChord(chord.modifiers, chord.usage)
@@ -224,6 +244,10 @@ class RemoteTrackpadActivity : ComponentActivity() {
                 handleKeyAction(action, heldModifiers)
                 renderRemoteSurface()
             }
+            view.keyboardView.onGlide = { path, touchTrace, heldModifiers ->
+                handleGlide(path, touchTrace, heldModifiers)
+                renderRemoteSurface()
+            }
             view.keyboardView.onFnHoldChanged = { active ->
                 keyboardState = keyboardState.copy(fnHold = active, fn = if (active) false else keyboardState.fn)
                 renderRemoteSurface()
@@ -306,6 +330,13 @@ class RemoteTrackpadActivity : ComponentActivity() {
         activityScope.launch {
             preferenceRepository.preferences.collectLatest { nextPreferences ->
                 val firstPreferences = !preferencesLoaded
+                gestureTypingEngine.setCorrections(
+                    if (nextPreferences.glideCorrectionLearningEnabled) {
+                        nextPreferences.glideCorrections
+                    } else {
+                        emptyMap()
+                    },
+                )
                 preferences = nextPreferences
                 preferencesLoaded = true
                 renderRemoteSurface()
@@ -356,7 +387,9 @@ class RemoteTrackpadActivity : ComponentActivity() {
             compactBottomControlsRightHandEnabled = preferences.compactBottomControlsRightHandEnabled,
         )
         val layout = customizationEngine.apply(
-            layout = layoutEngine.layoutFor(layoutState, orientation).withSpeechUiState(),
+            layout = layoutEngine.layoutFor(layoutState, orientation)
+                .withSpeechUiState()
+                .withFeatureUiState(),
             customization = preferences.customizationState(),
         )
         val theme = themeEngine.resolve(
@@ -372,13 +405,14 @@ class RemoteTrackpadActivity : ComponentActivity() {
             theme = theme,
             activeKeyIds = layoutState.activeKeyIds() +
                 activeSpeechKeyIds(layout) +
+                activeFeatureKeyIds(layout) +
                 activeQuickModifierIds() +
                 activeBluetoothTargetKeyIds(layout),
             keyPreviewEnabled = preferences.keyPreviewEnabled,
             keyHapticsEnabled = preferences.keyHapticsEnabled,
             stickyModifiersEnabled = preferences.stickyModifiersEnabled,
             keyLabelStyle = preferences.keyLabelStyle,
-            glideTypingEnabled = false,
+            glideTypingEnabled = preferences.gestureTypingEnabled,
             swipeUpActionsEnabled = preferences.swipeUpActionsEnabled,
             speechPushToTalkEnabled = preferences.speechPushToTalkEnabled,
             keyLongPressDelayMs = preferences.keyLongPressDelayMs,
@@ -417,6 +451,52 @@ class RemoteTrackpadActivity : ComponentActivity() {
         val stateBeforeAction = keyboardState
         keyboardState = remoteHidKeyRouter.handle(action, keyboardState, heldModifiers)
         recordRemoteTextContext(action, stateBeforeAction, heldModifiers)
+    }
+
+    private fun handleGlide(
+        path: List<String>,
+        touchTrace: GlideTouchTrace?,
+        heldModifiers: HeldModifiers,
+    ) {
+        if (!preferences.gestureTypingEnabled) return
+        if (!remoteHidState.connected) {
+            showToast(remoteHidState.message ?: "Bluetooth host is not connected")
+            return
+        }
+        val predictionContext = GlidePredictionContext(textBeforeCursor = remoteTextBeforeCursor())
+        val word = gestureTypingEngine.candidates(
+            pathLabels = path,
+            options = preferences.glideTypingOptions(),
+            context = predictionContext,
+            touchTrace = touchTrace,
+            limit = REMOTE_GLIDE_CANDIDATE_LIMIT,
+        ).firstOrNull()?.word ?: return
+        val outputWord = word.applyKeyboardCapitalization(
+            modifiers = keyboardState.modifiers,
+            heldModifiers = heldModifiers,
+            autoCapAfterPeriod = preferences.autoCapAfterPeriodEnabled,
+            textBeforeCursor = remoteTextBeforeCursor(),
+            allCapsOnShift = false,
+        )
+        val committedText = formatRemoteGlideCommitText(outputWord)
+        val action = KeyAction.text(committedText)
+        val routingState = keyboardState.copy(
+            modifiers = keyboardState.modifiers.copy(shift = false),
+        )
+        keyboardState = remoteHidKeyRouter.handle(action, routingState, HeldModifiers())
+        appendRemoteTextContext(RemoteHidKeyMapper.outputText(action.text.orEmpty(), routingState, HeldModifiers()))
+        if (preferences.glidePredictiveRankingEnabled) {
+            gestureTypingEngine.recordAcceptedWord(word, predictionContext)
+            activityScope.launch(Dispatchers.IO) {
+                glideUserLanguageModel.saveTo(GlideUserLanguageModel.storageFile(filesDir))
+            }
+        }
+    }
+
+    private fun formatRemoteGlideCommitText(word: String): String {
+        val beforeCursor = remoteTextBeforeCursor()
+        val leadingSpace = if (shouldInsertLeadingSpaceBeforeText(beforeCursor, word)) " " else ""
+        return "$leadingSpace$word "
     }
 
     private fun handleBluetoothControlAction(action: KeyAction): Boolean {
@@ -463,8 +543,17 @@ class RemoteTrackpadActivity : ComponentActivity() {
                 handleSpeechInput()
                 return true
             }
-            KeyActionType.LANGUAGE_SWITCH,
-            KeyActionType.TOGGLE_GESTURE_TYPING -> return true
+            KeyActionType.TOGGLE_GESTURE_TYPING -> {
+                val nextEnabled = !preferences.gestureTypingEnabled
+                preferences = preferences.copy(gestureTypingEnabled = nextEnabled)
+                activityScope.launch {
+                    preferenceRepository.setGestureTypingEnabled(nextEnabled)
+                }
+                showToast("Glide typing ${if (nextEnabled) "on" else "off"}")
+                renderRemoteSurface()
+                return true
+            }
+            KeyActionType.LANGUAGE_SWITCH -> return true
             else -> return false
         }
     }
@@ -551,6 +640,14 @@ class RemoteTrackpadActivity : ComponentActivity() {
     private fun activeSpeechKeyIds(layout: KeyboardLayout): Set<String> {
         return if (speechUiState == RemoteSpeechUiState.LISTENING || speechUiState == RemoteSpeechUiState.PROCESSING) {
             layout.keyIdsForAction(KeyActionType.MICROPHONE)
+        } else {
+            emptySet()
+        }
+    }
+
+    private fun activeFeatureKeyIds(layout: KeyboardLayout): Set<String> {
+        return if (preferences.gestureTypingEnabled) {
+            layout.keyIdsForAction(KeyActionType.SETTINGS)
         } else {
             emptySet()
         }
@@ -787,6 +884,23 @@ class RemoteTrackpadActivity : ComponentActivity() {
         )
     }
 
+    private fun KeyboardLayout.withFeatureUiState(): KeyboardLayout {
+        val glideIcon = if (preferences.gestureTypingEnabled) KeyIcon.SWIPE else KeyIcon.SWIPE_OFF
+        return copy(
+            rows = rows.map { row ->
+                row.copy(
+                    keys = row.keys.map { key ->
+                        if (key.action.type == KeyActionType.SETTINGS) {
+                            key.copy(secondaryIcon = glideIcon)
+                        } else {
+                            key
+                        }
+                    },
+                )
+            },
+        )
+    }
+
     private fun updateSpeechUiState(nextState: RemoteSpeechUiState, resetAfter: Boolean = false) {
         speechResetJob?.cancel()
         speechUiState = nextState
@@ -977,6 +1091,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
         private const val SPEECH_STATUS_RESET_MS = 1600L
         private const val SPEECH_CONTEXT_CHARS = 80
         private const val REMOTE_TEXT_CONTEXT_CHARS = 240
+        private const val REMOTE_GLIDE_CANDIDATE_LIMIT = 5
         private const val MIN_PUSH_TO_TALK_HOLD_MS = 300L
         private const val BLUETOOTH_SPEECH_KEY_UP_GUARD_MS = 6L
         private const val BLUETOOTH_SPEECH_KEY_DOWN_MS = 12L
