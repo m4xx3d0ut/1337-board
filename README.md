@@ -55,6 +55,8 @@ The full-screen trackpad keeps the user-selected portrait or landscape keyboard 
 
 ![Pad3 Bluetooth Fn hotkeys](docs/images/pad3-bluetooth-hotkeys-fn-layer.png)
 
+![Pad3 BT1 selected from an Android app with raised trackpad](docs/images/pad3-app-bt1-trackpad-fn.png)
+
 Detailed setup, screenshots, and troubleshooting are in [docs/bluetooth-remote.md](docs/bluetooth-remote.md).
 
 ## Release Channels

@@ -31,6 +31,10 @@ When a Bluetooth target is active, normal keyboard input, speech-recognized text
 
 ![Pad3 Bluetooth Fn hotkeys](images/pad3-bluetooth-hotkeys-fn-layer.png)
 
+From any Android text field, tap `Fn`, then an assigned target such as `BT1` to connect the remote host and raise the trackpad above the keyboard for quick remote input. Tap `Local` to return the same keyboard surface to Android-local input.
+
+![Pad3 BT1 selected from an Android app with raised trackpad](images/pad3-app-bt1-trackpad-fn.png)
+
 ## Full-Screen Trackpad
 
 The full-screen trackpad keeps the configured portrait or landscape keyboard height and fills the remaining screen with the touchpad surface. The header shows connection status plus quick controls:
@@ -49,8 +53,8 @@ The Bluetooth Remote settings include:
 
 - **Show trackpad when connected** to show or hide the touchpad surface.
 - **Trackpad placement** above or below the keyboard.
-- **Trackpad height**, pointer sensitivity, and scroll sensitivity.
-- **Tap trackpad to left click**.
+- **Trackpad height**, pointer sensitivity, scroll sensitivity, and optional two-finger scroll inversion.
+- **Tap trackpad to left click** and **Show dedicated mouse buttons**. When dedicated buttons are hidden, one-finger tap sends left click and two-finger tap sends right click.
 - **Full-screen trackpad** screen-timeout modes: system timeout, keep on while charging, or always keep on.
 - **Dim when inactive** for long remote-control sessions.
 
