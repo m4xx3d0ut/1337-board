@@ -109,6 +109,21 @@ class RemoteHidKeyMapperTest {
     }
 
     @Test
+    fun routerSendsCtrlFunctionKeyComboFromStickyModifier() {
+        val sent = mutableListOf<HidKeyChord>()
+        val router = RemoteHidKeyRouter { chord ->
+            sent += chord
+            true
+        }
+        val ctrlState = router.handle(KeyAction(KeyActionType.CTRL), KeyboardState(fn = true), HeldModifiers())
+        val nextState = router.handle(KeyAction.keyEvent(KeyEvent.KEYCODE_F5, "F5"), ctrlState, HeldModifiers())
+
+        assertEquals(listOf(HidKeyChord(0x3E, RemoteHidKeyMapper.MOD_LEFT_CTRL)), sent)
+        assertEquals(ModifierState(), nextState.modifiers)
+        assertEquals(true, nextState.fn)
+    }
+
+    @Test
     fun routerLeavesBluetoothControlActionsLocal() {
         val router = RemoteHidKeyRouter { error("No report expected") }
         val state = KeyboardState(modifiers = ModifierState(ctrl = true))

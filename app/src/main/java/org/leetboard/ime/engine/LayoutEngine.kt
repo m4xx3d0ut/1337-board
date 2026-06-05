@@ -135,17 +135,21 @@ class LayoutEngine {
     private fun qwertyFiveBottomRow(fnHold: Boolean): List<KeySpec> {
         if (fnHold) {
             return listOf(
-                action("esc", "Esc", KeyActionType.ESCAPE, 1.2f, optional = true, preserveSpaceWhenHidden = true),
-                action("alt", "Alt", KeyActionType.ALT, optional = true),
-                fnKey(optional = true),
-                symbolsKey(),
-                action("space", "Space", KeyActionType.SPACE, 4.2f),
-                action("bt_local", "Local", KeyActionType.BLUETOOTH_LOCAL_INPUT, 1.1f, optional = true),
-                action("bt_device_1", "BT1", KeyActionType.BLUETOOTH_DEVICE_1, 0.9f, optional = true),
-                action("bt_device_2", "BT2", KeyActionType.BLUETOOTH_DEVICE_2, 0.9f, optional = true),
-                action("bt_device_3", "BT3", KeyActionType.BLUETOOTH_DEVICE_3, 0.9f, optional = true),
-                action("bt_trackpad", "Pad", KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD, 0.9f, optional = true)
+                action("esc", "Esc", KeyActionType.ESCAPE, 1f, optional = true, preserveSpaceWhenHidden = true),
+                action("ctrl", "Ctrl", KeyActionType.CTRL, 0.9f, optional = true),
+                action("alt", "Alt", KeyActionType.ALT, 0.9f, optional = true),
+                fnKey(weight = 0.9f, optional = true),
+                symbolsKey(weight = 0.9f),
+                action("space", "Space", KeyActionType.SPACE, 3.4f),
+                action("bt_local", "Local", KeyActionType.BLUETOOTH_LOCAL_INPUT, 1f, optional = true),
+                action("bt_device_1", "BT1", KeyActionType.BLUETOOTH_DEVICE_1, 0.85f, optional = true),
+                action("bt_device_2", "BT2", KeyActionType.BLUETOOTH_DEVICE_2, 0.85f, optional = true),
+                action("bt_device_3", "BT3", KeyActionType.BLUETOOTH_DEVICE_3, 0.85f, optional = true),
+                action("bt_trackpad", "Pad", KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD, 0.85f, optional = true)
                     .copy(icon = null),
+                action("left", "◀", KeyActionType.ARROW_LEFT, 0.85f, optional = true, repeatable = true),
+                action("down", "▼", KeyActionType.ARROW_DOWN, 0.85f, optional = true, repeatable = true),
+                action("right", "▶", KeyActionType.ARROW_RIGHT, 0.85f, optional = true, repeatable = true),
             )
         }
         return listOf(

@@ -163,12 +163,15 @@ class LayoutEngineTest {
         assertEquals(KeyActionType.DELETE, topRow.last().action.type)
         assertEquals(null, topRow.last().secondaryIcon)
         assertEquals(KeyEvent.KEYCODE_F12, topRow[11].action.keyCode)
+        assertEquals(KeyActionType.CTRL, bottomKeys.first { it.id == "ctrl" }.action.type)
         assertEquals(KeyActionType.BLUETOOTH_LOCAL_INPUT, bottomKeys.first { it.id == "bt_local" }.action.type)
         assertEquals(KeyActionType.BLUETOOTH_DEVICE_1, bottomKeys.first { it.id == "bt_device_1" }.action.type)
         assertEquals(KeyActionType.BLUETOOTH_DEVICE_2, bottomKeys.first { it.id == "bt_device_2" }.action.type)
         assertEquals(KeyActionType.BLUETOOTH_DEVICE_3, bottomKeys.first { it.id == "bt_device_3" }.action.type)
         assertFalse(bottomKeys.any { it.id == "bt_device_next" })
         assertEquals(KeyActionType.TOGGLE_BLUETOOTH_TRACKPAD, bottomKeys.first { it.id == "bt_trackpad" }.action.type)
+        assertEquals("PgDn", bottomKeys.first { it.id == "down" }.secondaryLabel)
+        assertTrue(bottomKeys.indexOfFirst { it.id == "down" } < bottomKeys.indexOfFirst { it.id == "right" })
     }
 
     @Test
