@@ -3,6 +3,7 @@ package org.leetboard.ime.ui
 import android.content.Context
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -481,12 +482,26 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             }
         }
 
-        private fun macroBackground(theme: KeyboardTheme): GradientDrawable {
+        private fun macroBackground(theme: KeyboardTheme): StateListDrawable {
+            return StateListDrawable().apply {
+                addState(
+                    intArrayOf(android.R.attr.state_pressed),
+                    macroBackground(theme, theme.colors.pressedFill),
+                )
+                addState(
+                    intArrayOf(android.R.attr.state_focused),
+                    macroBackground(theme, theme.colors.activeModifierFill),
+                )
+                addState(intArrayOf(), macroBackground(theme, theme.colors.keyFill))
+            }
+        }
+
+        private fun macroBackground(theme: KeyboardTheme, fillColor: Int): GradientDrawable {
             val density = resources.displayMetrics.density
             return GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = density * 6f
-                setColor(theme.colors.keyFill)
+                setColor(fillColor)
                 setStroke(density.toInt().coerceAtLeast(1), theme.colors.keyStroke)
             }
         }

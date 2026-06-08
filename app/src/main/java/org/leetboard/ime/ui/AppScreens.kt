@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -103,6 +104,7 @@ import org.leetboard.ime.prefs.BluetoothTrackpadMacroPlacement
 import org.leetboard.ime.prefs.BluetoothTrackpadMacroSide
 import org.leetboard.ime.prefs.BluetoothTrackpadPlacement
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
+import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.DEFAULT_KEY_LONG_PRESS_DELAY_MS
@@ -115,11 +117,13 @@ import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_MACRO_KEYS_PER_SIDE
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
+import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.MAX_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.MAX_SPEECH_SILENCE_MS
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
+import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.MIN_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MIN_GLIDE_DWELL_ACTIVATION_THRESHOLD
@@ -1313,6 +1317,12 @@ private fun BluetoothTrackpadMacroSettings(
         "Macro steps use commas or new lines. Examples: ctrl+c, alt+tab, f5, home, text:git status.",
         style = MaterialTheme.typography.bodySmall,
     )
+    MacroStepDelaySlider(
+        value = preferences.bluetoothTrackpadMacroStepDelayMs,
+        onChange = { delayMs ->
+            scope.launch { repository.setBluetoothTrackpadMacroStepDelayMs(delayMs) }
+        },
+    )
     val activeSides = BluetoothTrackpadMacroSide.entries.filter { side ->
         preferences.bluetoothTrackpadMacroPlacement.shows(side)
     }
@@ -1326,6 +1336,38 @@ private fun BluetoothTrackpadMacroSettings(
                 preferences = preferences,
                 repository = repository,
             )
+        }
+    }
+}
+
+@Composable
+private fun MacroStepDelaySlider(
+    value: Int,
+    onChange: (Int) -> Unit,
+) {
+    val boundedValue = value.coerceIn(
+        MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+        MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("Macro step delay: ${boundedValue}ms")
+        Slider(
+            value = boundedValue.toFloat(),
+            onValueChange = { next ->
+                onChange(((next / 10f).roundToInt() * 10).coerceIn(
+                    MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+                    MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+                ))
+            },
+            valueRange = MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS.toFloat()..
+                MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS.toFloat(),
+            steps = ((MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS - MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS) / 10) - 1,
+        )
+        OutlinedButton(
+            onClick = { onChange(DEFAULT_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Reset macro delay")
         }
     }
 }

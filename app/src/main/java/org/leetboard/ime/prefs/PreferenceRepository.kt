@@ -171,6 +171,10 @@ class PreferenceRepository(context: Context) {
             bluetoothTrackpadMacroPlacement = values[Keys.bluetoothTrackpadMacroPlacement]
                 ?.let(::bluetoothTrackpadMacroPlacementFromName)
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadMacroPlacement,
+            bluetoothTrackpadMacroStepDelayMs = values[Keys.bluetoothTrackpadMacroStepDelayMs]?.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+                MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+            ) ?: KeyboardPreferences.defaults().bluetoothTrackpadMacroStepDelayMs,
             bluetoothTrackpadMacros = bluetoothTrackpadMacros(values),
         )
     }
@@ -631,6 +635,15 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.bluetoothTrackpadMacroPlacement] = placement.name }
     }
 
+    suspend fun setBluetoothTrackpadMacroStepDelayMs(delayMs: Int) {
+        dataStore.edit { values ->
+            values[Keys.bluetoothTrackpadMacroStepDelayMs] = delayMs.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+                MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+            )
+        }
+    }
+
     suspend fun setBluetoothTrackpadMacro(
         side: BluetoothTrackpadMacroSide,
         index: Int,
@@ -964,6 +977,7 @@ class PreferenceRepository(context: Context) {
         val bluetoothTrackpadKeepScreenOnMode = stringPreferencesKey("bluetooth_trackpad_keep_screen_on_mode")
         val bluetoothTrackpadDimWhenInactiveEnabled = booleanPreferencesKey("bluetooth_trackpad_dim_when_inactive_enabled")
         val bluetoothTrackpadMacroPlacement = stringPreferencesKey("bluetooth_trackpad_macro_placement")
+        val bluetoothTrackpadMacroStepDelayMs = intPreferencesKey("bluetooth_trackpad_macro_step_delay_ms")
         val bluetoothTrackpadMacros = stringSetPreferencesKey("bluetooth_trackpad_macros")
 
         val bluetoothDeviceSlotAddressKeys = listOf(
@@ -1106,6 +1120,7 @@ class PreferenceRepository(context: Context) {
             put(Keys.bluetoothTrackpadKeepScreenOnMode.name, bluetoothTrackpadKeepScreenOnMode.name)
             put(Keys.bluetoothTrackpadDimWhenInactiveEnabled.name, bluetoothTrackpadDimWhenInactiveEnabled)
             put(Keys.bluetoothTrackpadMacroPlacement.name, bluetoothTrackpadMacroPlacement.name)
+            put(Keys.bluetoothTrackpadMacroStepDelayMs.name, bluetoothTrackpadMacroStepDelayMs)
             put(
                 Keys.bluetoothTrackpadMacros.name,
                 bluetoothTrackpadMacros.map { macro -> macro.toPreferenceValue() },
@@ -1308,6 +1323,12 @@ class PreferenceRepository(context: Context) {
         settings.string(Keys.bluetoothTrackpadMacroPlacement)?.let(::bluetoothTrackpadMacroPlacementFromName)?.let {
             this[Keys.bluetoothTrackpadMacroPlacement] = it.name
         }
+        settings.int(Keys.bluetoothTrackpadMacroStepDelayMs)?.let {
+            this[Keys.bluetoothTrackpadMacroStepDelayMs] = it.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+                MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
+            )
+        }
         settings.stringSet(Keys.bluetoothTrackpadMacros)?.let { macros ->
             val normalized = macros.mapNotNull(::bluetoothTrackpadMacroFromPreferenceValue)
                 .map { macro -> macro.toPreferenceValue() }
@@ -1367,6 +1388,8 @@ const val MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT = 18f
 const val MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT = 55f
 const val MIN_BLUETOOTH_TRACKPAD_SENSITIVITY = 0.35f
 const val MAX_BLUETOOTH_TRACKPAD_SENSITIVITY = 2.5f
+const val MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS = 40
+const val MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS = 500
 
 fun glideCorrectionsFromPreferenceValue(value: String?): Map<String, GlideCorrectionEntry> {
     if (value.isNullOrBlank()) return emptyMap()

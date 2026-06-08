@@ -524,12 +524,19 @@ class RemoteTrackpadActivity : ComponentActivity() {
             showToast(remoteHidState.message ?: "Bluetooth host is not connected")
             return
         }
-        macro.steps.forEach { step ->
-            val stateBeforeAction = keyboardState
-            keyboardState = remoteHidKeyRouter.handle(step.action, keyboardState, step.heldModifiers)
-            recordRemoteTextContext(step.action, stateBeforeAction, step.heldModifiers)
+        activityScope.launch {
+            val stepDelayMs = preferences.bluetoothTrackpadMacroStepDelayMs.toLong()
+            macro.steps.forEachIndexed { index, step ->
+                if (!remoteHidState.connected) return@launch
+                val stateBeforeAction = keyboardState
+                keyboardState = remoteHidKeyRouter.handle(step.action, keyboardState, step.heldModifiers)
+                recordRemoteTextContext(step.action, stateBeforeAction, step.heldModifiers)
+                if (index < macro.steps.lastIndex) {
+                    delay(stepDelayMs)
+                }
+            }
+            renderRemoteSurface()
         }
-        renderRemoteSurface()
     }
 
     private fun formatRemoteGlideCommitText(word: String): String {

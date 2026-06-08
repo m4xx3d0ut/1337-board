@@ -28,6 +28,7 @@ const val DEFAULT_SPEECH_POSSIBLE_SILENCE_MS = 2500
 const val DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT = 28f
 const val DEFAULT_BLUETOOTH_TRACKPAD_SENSITIVITY = 1f
 const val DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY = 1f
+const val DEFAULT_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS = 120
 val DEFAULT_BLUETOOTH_TRACKPAD_KEEP_SCREEN_ON_MODE = BluetoothTrackpadKeepScreenOnMode.WHILE_CHARGING
 
 data class KeyboardPreferences(
@@ -94,6 +95,7 @@ data class KeyboardPreferences(
     val bluetoothTrackpadKeepScreenOnMode: BluetoothTrackpadKeepScreenOnMode = DEFAULT_BLUETOOTH_TRACKPAD_KEEP_SCREEN_ON_MODE,
     val bluetoothTrackpadDimWhenInactiveEnabled: Boolean = true,
     val bluetoothTrackpadMacroPlacement: BluetoothTrackpadMacroPlacement = BluetoothTrackpadMacroPlacement.OFF,
+    val bluetoothTrackpadMacroStepDelayMs: Int = DEFAULT_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
     val bluetoothTrackpadMacros: List<BluetoothTrackpadMacroKey> = emptyList(),
 ) {
     fun customizationState(): CustomizationState {
