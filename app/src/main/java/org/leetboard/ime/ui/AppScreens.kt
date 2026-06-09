@@ -103,6 +103,7 @@ import org.leetboard.ime.prefs.BluetoothTrackpadKeepScreenOnMode
 import org.leetboard.ime.prefs.BluetoothTrackpadMacroPlacement
 import org.leetboard.ime.prefs.BluetoothTrackpadMacroSide
 import org.leetboard.ime.prefs.BluetoothTrackpadPlacement
+import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY
@@ -116,12 +117,14 @@ import org.leetboard.ime.prefs.GeometryOrientation
 import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_MACRO_KEYS_PER_SIDE
+import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.MAX_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.MAX_SPEECH_SILENCE_MS
+import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_SENSITIVITY
@@ -251,7 +254,7 @@ fun SettingsScreen(
                 if (isTablet) {
                     Row(
                         modifier = pageModifier,
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(40.dp),
                     ) {
                         Column(
                             modifier = Modifier.weight(0.9f),
@@ -914,7 +917,7 @@ private fun FeatureSection(
             },
         )
         SettingSwitch(
-            label = "Cap names and I",
+            label = "Cap names and pronoun I",
             checked = preferences.speechAutoCapNamesEnabled,
             onCheckedChange = { checked ->
                 scope.launch { repository.setSpeechAutoCapNamesEnabled(checked) }
@@ -1271,6 +1274,12 @@ private fun BluetoothRemoteSection(
             checked = preferences.bluetoothTrackpadTapToClickEnabled,
             onCheckedChange = { checked ->
                 scope.launch { repository.setBluetoothTrackpadTapToClickEnabled(checked) }
+            },
+        )
+        BluetoothTrackpadDoubleTapSlider(
+            value = preferences.bluetoothTrackpadDoubleTapTimeoutMs,
+            onChange = { timeoutMs ->
+                scope.launch { repository.setBluetoothTrackpadDoubleTapTimeoutMs(timeoutMs) }
             },
         )
         SettingSwitch(
@@ -2195,6 +2204,46 @@ private fun GlideDwellThresholdSlider(
 }
 
 @Composable
+private fun BluetoothTrackpadDoubleTapSlider(
+    value: Int,
+    onChange: (Int) -> Unit,
+) {
+    val boundedValue = value.coerceIn(
+        MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+        MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("Double-tap drag window: ${boundedValue}ms")
+        Text(
+            "Time allowed between taps for trackpad drag hold when dedicated mouse buttons are hidden.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Slider(
+            value = boundedValue.toFloat(),
+            onValueChange = { next ->
+                val rounded = (next / TRACKPAD_DOUBLE_TAP_STEP_MS).roundToInt() * TRACKPAD_DOUBLE_TAP_STEP_MS
+                onChange(
+                    rounded.coerceIn(
+                        MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+                        MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+                    ),
+                )
+            },
+            valueRange = MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS.toFloat()..
+                MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS.toFloat(),
+            steps = ((MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS -
+                MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS) / TRACKPAD_DOUBLE_TAP_STEP_MS) - 1,
+        )
+        OutlinedButton(
+            onClick = { onChange(DEFAULT_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Reset double-tap window")
+        }
+    }
+}
+
+@Composable
 private fun BluetoothTrackpadSlider(
     label: String,
     value: Float,
@@ -2429,6 +2478,7 @@ private const val PREVIEW_TEXT_FIT_ITERATIONS = 7
 private const val PREVIEW_MIN_PRIMARY_TEXT_SIZE_SP = 7f
 private const val PREVIEW_MIN_SECONDARY_TEXT_SIZE_SP = 5f
 private const val SPEECH_TIMEOUT_STEP_MS = 250
+private const val TRACKPAD_DOUBLE_TAP_STEP_MS = 50
 private const val MAX_BLUETOOTH_FN_DEVICE_SLOTS = 3
 
 private fun nextAction(current: KeyAction): KeyAction {

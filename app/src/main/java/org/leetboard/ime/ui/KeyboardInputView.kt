@@ -82,6 +82,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         remoteTrackpadInvertScrollEnabled: Boolean = false,
         remoteTrackpadTapToClickEnabled: Boolean = true,
         remoteTrackpadDedicatedButtonsEnabled: Boolean = true,
+        remoteTrackpadDoubleTapTimeoutMs: Int = ViewConfiguration.getDoubleTapTimeout(),
         keyboardSurfaceVisible: Boolean = true,
         remoteTrackpadMacroPlacement: BluetoothTrackpadMacroPlacement = BluetoothTrackpadMacroPlacement.OFF,
         remoteTrackpadMacros: List<BluetoothTrackpadMacroKey> = emptyList(),
@@ -114,6 +115,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             invertScrollEnabled = remoteTrackpadInvertScrollEnabled,
             tapToClickEnabled = remoteTrackpadTapToClickEnabled,
             dedicatedButtonsEnabled = remoteTrackpadDedicatedButtonsEnabled,
+            doubleTapTimeoutMs = remoteTrackpadDoubleTapTimeoutMs,
             onReport = { report -> onRemotePointerReport?.invoke(report) },
         )
         leftMacroStack.render(

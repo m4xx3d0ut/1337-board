@@ -41,7 +41,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
     private var lastTapUpTimeMs = 0L
     private var lastTapX = 0f
     private var lastTapY = 0f
-    private val doubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong()
+    private var doubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong()
     private val doubleTapSlopSquared = ViewConfiguration.get(context).scaledDoubleTapSlop.toFloat().let { it * it }
 
     fun render(
@@ -52,6 +52,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
         invertScrollEnabled: Boolean,
         tapToClickEnabled: Boolean,
         dedicatedButtonsEnabled: Boolean,
+        doubleTapTimeoutMs: Int,
         onReport: (RemotePointerReport) -> Unit,
     ) {
         this.onReport = onReport
@@ -65,6 +66,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
         this.invertScrollEnabled = invertScrollEnabled
         this.tapToClickEnabled = tapToClickEnabled
         this.dedicatedButtonsEnabled = dedicatedButtonsEnabled
+        this.doubleTapTimeoutMs = doubleTapTimeoutMs.toLong().coerceAtLeast(0L)
         visibility = if (enabled) VISIBLE else GONE
         invalidate()
     }

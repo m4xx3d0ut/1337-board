@@ -102,6 +102,26 @@ class TextCapitalizationTest {
     }
 
     @Test
+    fun speechInsertionCapitalizesAtEmptyContext() {
+        assertEquals(
+            "Hello world.",
+            formatSpeechInsertionText("hello world period", "", autoCapAfterSentence = true),
+        )
+    }
+
+    @Test
+    fun speechInsertionCapitalizesEachSpokenSentence() {
+        assertEquals(
+            "Hello! Are you ready? Yes.",
+            formatSpeechInsertionText(
+                "hello exclamation point are you ready question mark yes period",
+                "",
+                autoCapAfterSentence = true,
+            ),
+        )
+    }
+
+    @Test
     fun speechInsertionKeepsMidSentenceLowercaseAfterComma() {
         assertEquals(
             "hello",
@@ -178,6 +198,18 @@ class TextCapitalizationTest {
     }
 
     @Test
+    fun speechInsertionCapitalizesCustomNamesAcrossSentences() {
+        assertEquals(
+            "Alex met Michael. Alex met NASA.",
+            formatSpeechInsertion(
+                recognizedText = "alex met michael period alex met nasa period",
+                textBeforeCursor = "",
+                options = SpeechTextAutomationOptions(customNames = setOf("Alex", "NASA")),
+            ).text,
+        )
+    }
+
+    @Test
     fun speechInsertionCapitalizesStandaloneI() {
         assertEquals(
             " I think I'm ready.",
@@ -200,6 +232,18 @@ class TextCapitalizationTest {
                     autoCapSentencesEnabled = false,
                     autoCapNamesEnabled = false,
                 ),
+            ).text,
+        )
+    }
+
+    @Test
+    fun speechInsertionCanDisableNameCapitalizationOnly() {
+        assertEquals(
+            "Hello michael",
+            formatSpeechInsertion(
+                recognizedText = "hello michael",
+                textBeforeCursor = "",
+                options = SpeechTextAutomationOptions(autoCapNamesEnabled = false),
             ).text,
         )
     }

@@ -163,6 +163,10 @@ class PreferenceRepository(context: Context) {
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadTapToClickEnabled,
             bluetoothTrackpadDedicatedButtonsEnabled = values[Keys.bluetoothTrackpadDedicatedButtonsEnabled]
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadDedicatedButtonsEnabled,
+            bluetoothTrackpadDoubleTapTimeoutMs = values[Keys.bluetoothTrackpadDoubleTapTimeoutMs]?.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+                MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+            ) ?: KeyboardPreferences.defaults().bluetoothTrackpadDoubleTapTimeoutMs,
             bluetoothTrackpadKeepScreenOnMode = values[Keys.bluetoothTrackpadKeepScreenOnMode]
                 ?.let(::bluetoothTrackpadKeepScreenOnModeFromName)
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadKeepScreenOnMode,
@@ -623,6 +627,15 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.bluetoothTrackpadDedicatedButtonsEnabled] = enabled }
     }
 
+    suspend fun setBluetoothTrackpadDoubleTapTimeoutMs(timeoutMs: Int) {
+        dataStore.edit { values ->
+            values[Keys.bluetoothTrackpadDoubleTapTimeoutMs] = timeoutMs.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+                MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+            )
+        }
+    }
+
     suspend fun setBluetoothTrackpadKeepScreenOnMode(mode: BluetoothTrackpadKeepScreenOnMode) {
         dataStore.edit { values -> values[Keys.bluetoothTrackpadKeepScreenOnMode] = mode.name }
     }
@@ -974,6 +987,7 @@ class PreferenceRepository(context: Context) {
         val bluetoothTrackpadInvertScrollEnabled = booleanPreferencesKey("bluetooth_trackpad_invert_scroll_enabled")
         val bluetoothTrackpadTapToClickEnabled = booleanPreferencesKey("bluetooth_trackpad_tap_to_click_enabled")
         val bluetoothTrackpadDedicatedButtonsEnabled = booleanPreferencesKey("bluetooth_trackpad_dedicated_buttons_enabled")
+        val bluetoothTrackpadDoubleTapTimeoutMs = intPreferencesKey("bluetooth_trackpad_double_tap_timeout_ms")
         val bluetoothTrackpadKeepScreenOnMode = stringPreferencesKey("bluetooth_trackpad_keep_screen_on_mode")
         val bluetoothTrackpadDimWhenInactiveEnabled = booleanPreferencesKey("bluetooth_trackpad_dim_when_inactive_enabled")
         val bluetoothTrackpadMacroPlacement = stringPreferencesKey("bluetooth_trackpad_macro_placement")
@@ -1117,6 +1131,7 @@ class PreferenceRepository(context: Context) {
             put(Keys.bluetoothTrackpadInvertScrollEnabled.name, bluetoothTrackpadInvertScrollEnabled)
             put(Keys.bluetoothTrackpadTapToClickEnabled.name, bluetoothTrackpadTapToClickEnabled)
             put(Keys.bluetoothTrackpadDedicatedButtonsEnabled.name, bluetoothTrackpadDedicatedButtonsEnabled)
+            put(Keys.bluetoothTrackpadDoubleTapTimeoutMs.name, bluetoothTrackpadDoubleTapTimeoutMs)
             put(Keys.bluetoothTrackpadKeepScreenOnMode.name, bluetoothTrackpadKeepScreenOnMode.name)
             put(Keys.bluetoothTrackpadDimWhenInactiveEnabled.name, bluetoothTrackpadDimWhenInactiveEnabled)
             put(Keys.bluetoothTrackpadMacroPlacement.name, bluetoothTrackpadMacroPlacement.name)
@@ -1314,6 +1329,12 @@ class PreferenceRepository(context: Context) {
         settings.boolean(Keys.bluetoothTrackpadDedicatedButtonsEnabled)?.let {
             this[Keys.bluetoothTrackpadDedicatedButtonsEnabled] = it
         }
+        settings.int(Keys.bluetoothTrackpadDoubleTapTimeoutMs)?.let {
+            this[Keys.bluetoothTrackpadDoubleTapTimeoutMs] = it.coerceIn(
+                MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+                MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
+            )
+        }
         settings.string(Keys.bluetoothTrackpadKeepScreenOnMode)?.let(::bluetoothTrackpadKeepScreenOnModeFromName)?.let {
             this[Keys.bluetoothTrackpadKeepScreenOnMode] = it.name
         }
@@ -1388,6 +1409,8 @@ const val MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT = 18f
 const val MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT = 55f
 const val MIN_BLUETOOTH_TRACKPAD_SENSITIVITY = 0.35f
 const val MAX_BLUETOOTH_TRACKPAD_SENSITIVITY = 2.5f
+const val MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS = 200
+const val MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS = 900
 const val MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS = 40
 const val MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS = 500
 
