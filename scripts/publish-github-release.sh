@@ -3,10 +3,20 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_GRADLE="$ROOT_DIR/app/build.gradle.kts"
+CHANGELOG="$ROOT_DIR/CHANGELOG.md"
 GITHUB_REPO="${GITHUB_REPO:-m4xx3d0ut/1337-board}"
 
 version_name() {
   sed -nE 's/^[[:space:]]*versionName = "([^"]+)".*/\1/p' "$APP_GRADLE" | head -n 1
+}
+
+release_notes() {
+  local section="## [$VERSION_NAME]"
+  awk -v section="$section" '
+    index($0, section) == 1 { found = 1; next }
+    found && /^## \[/ { exit }
+    found { print }
+  ' "$CHANGELOG"
 }
 
 VERSION_NAME="$(version_name)"
@@ -46,14 +56,28 @@ if [[ "${#RELEASE_ASSETS[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+NOTES_FILE="$(mktemp)"
+trap 'rm -f "$NOTES_FILE"' EXIT
+release_notes > "$NOTES_FILE"
+if ! grep -q '[^[:space:]]' "$NOTES_FILE"; then
+  cat > "$NOTES_FILE" <<NOTES
+Production release artifacts for 1337 Board $RELEASE_TAG.
+
+Install the signed APK for sideload testing. Unsigned artifacts are included only when produced by the build for review and reproducibility checks. Verify downloads with SHA256SUMS.
+NOTES
+fi
+
 if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
+  gh release edit "$RELEASE_TAG" \
+    --repo "$GITHUB_REPO" \
+    --title "1337 Board $RELEASE_TAG" \
+    --prerelease \
+    --notes-file "$NOTES_FILE"
   gh release upload "$RELEASE_TAG" "${RELEASE_ASSETS[@]}" --repo "$GITHUB_REPO" --clobber
 else
   gh release create "$RELEASE_TAG" "${RELEASE_ASSETS[@]}" \
     --repo "$GITHUB_REPO" \
     --title "1337 Board $RELEASE_TAG" \
     --prerelease \
-    --notes "Production release artifacts for 1337 Board $RELEASE_TAG.
-
-Install the signed APK for sideload testing. Unsigned artifacts are included only when produced by the build for review and reproducibility checks. Verify downloads with SHA256SUMS."
+    --notes-file "$NOTES_FILE"
 fi

@@ -6,6 +6,28 @@ All notable changes to 1337 Board are documented here.
 
 No unreleased changes.
 
+## [0.1.8] - 2026-06-09
+
+### Added
+
+- Added full-screen Bluetooth trackpad keyboard visibility control so users can switch between keyboard-plus-trackpad and full touchpad surface modes.
+- Added configurable Bluetooth trackpad macro side-key stacks with custom labels and single-key, combo, text, or multi-step macro actions.
+- Added double-tap drag support for Bluetooth trackpad mode when dedicated mouse buttons are hidden.
+- Added a Bluetooth trackpad double-tap drag window setting, defaulting to 450ms with a 200-900ms slider.
+- Added documentation for Bluetooth trackpad macros and direct BT1-from-app trackpad use.
+
+### Changed
+
+- Improved Bluetooth HID reconnect handling for more reliable remote target recovery.
+- Improved Bluetooth macro feedback with theme-aware pressed and focused key colors.
+- Increased tablet settings column spacing to reduce slider and control misclicks.
+- Renamed the TTS setting to **Cap names and pronoun I** for clarity.
+
+### Fixed
+
+- Fixed custom macro keys firing without visible theme activation feedback.
+- Expanded TTS capitalization regression coverage for sentence starts, punctuation, line starts, custom names, built-in names, and pronoun `I`.
+
 ## [0.1.7] - 2026-06-05
 
 ### Added

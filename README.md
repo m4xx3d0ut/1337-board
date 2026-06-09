@@ -111,7 +111,8 @@ Run unit tests:
 Build release artifacts:
 
 ```sh
-scripts/build-release.sh v0.1.5
+VERSION="$(sed -nE 's/^[[:space:]]*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts | head -n 1)"
+scripts/build-release.sh "v$VERSION"
 ```
 
 After installing, open 1337 Board, open input settings, enable the IME, then choose it from the keyboard picker.
