@@ -335,6 +335,7 @@ class ModernKeyboardImeService : InputMethodService() {
             remoteTrackpadScrollSensitivity = preferences.bluetoothTrackpadScrollSensitivity,
             remoteTrackpadInvertScrollEnabled = preferences.bluetoothTrackpadInvertScrollEnabled,
             remoteTrackpadTapToClickEnabled = preferences.bluetoothTrackpadTapToClickEnabled,
+            remoteTrackpadTwoFingerRightClickEnabled = preferences.bluetoothTrackpadTwoFingerRightClickEnabled,
             remoteTrackpadDedicatedButtonsEnabled = preferences.bluetoothTrackpadDedicatedButtonsEnabled,
             remoteTrackpadButtonHeightPercent = preferences.bluetoothTrackpadButtonHeightPercent,
             remoteTrackpadDoubleTapTimeoutMs = preferences.bluetoothTrackpadDoubleTapTimeoutMs,

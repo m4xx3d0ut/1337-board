@@ -1279,6 +1279,13 @@ private fun BluetoothRemoteSection(
                 scope.launch { repository.setBluetoothTrackpadTapToClickEnabled(checked) }
             },
         )
+        SettingSwitch(
+            label = "Two-finger tap right click",
+            checked = preferences.bluetoothTrackpadTwoFingerRightClickEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setBluetoothTrackpadTwoFingerRightClickEnabled(checked) }
+            },
+        )
         BluetoothTrackpadDoubleTapSlider(
             value = preferences.bluetoothTrackpadDoubleTapTimeoutMs,
             onChange = { timeoutMs ->

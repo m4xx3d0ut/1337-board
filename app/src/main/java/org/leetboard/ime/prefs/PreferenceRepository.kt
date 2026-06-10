@@ -161,6 +161,8 @@ class PreferenceRepository(context: Context) {
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadInvertScrollEnabled,
             bluetoothTrackpadTapToClickEnabled = values[Keys.bluetoothTrackpadTapToClickEnabled]
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadTapToClickEnabled,
+            bluetoothTrackpadTwoFingerRightClickEnabled = values[Keys.bluetoothTrackpadTwoFingerRightClickEnabled]
+                ?: KeyboardPreferences.defaults().bluetoothTrackpadTwoFingerRightClickEnabled,
             bluetoothTrackpadDedicatedButtonsEnabled = values[Keys.bluetoothTrackpadDedicatedButtonsEnabled]
                 ?: KeyboardPreferences.defaults().bluetoothTrackpadDedicatedButtonsEnabled,
             bluetoothTrackpadButtonHeightPercent = values[Keys.bluetoothTrackpadButtonHeightPercent]?.coerceIn(
@@ -627,6 +629,10 @@ class PreferenceRepository(context: Context) {
         dataStore.edit { values -> values[Keys.bluetoothTrackpadTapToClickEnabled] = enabled }
     }
 
+    suspend fun setBluetoothTrackpadTwoFingerRightClickEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.bluetoothTrackpadTwoFingerRightClickEnabled] = enabled }
+    }
+
     suspend fun setBluetoothTrackpadDedicatedButtonsEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.bluetoothTrackpadDedicatedButtonsEnabled] = enabled }
     }
@@ -999,6 +1005,9 @@ class PreferenceRepository(context: Context) {
         val bluetoothTrackpadScrollSensitivity = floatPreferencesKey("bluetooth_trackpad_scroll_sensitivity")
         val bluetoothTrackpadInvertScrollEnabled = booleanPreferencesKey("bluetooth_trackpad_invert_scroll_enabled")
         val bluetoothTrackpadTapToClickEnabled = booleanPreferencesKey("bluetooth_trackpad_tap_to_click_enabled")
+        val bluetoothTrackpadTwoFingerRightClickEnabled = booleanPreferencesKey(
+            "bluetooth_trackpad_two_finger_right_click_enabled",
+        )
         val bluetoothTrackpadDedicatedButtonsEnabled = booleanPreferencesKey("bluetooth_trackpad_dedicated_buttons_enabled")
         val bluetoothTrackpadButtonHeightPercent = floatPreferencesKey("bluetooth_trackpad_button_height_percent")
         val bluetoothTrackpadDoubleTapTimeoutMs = intPreferencesKey("bluetooth_trackpad_double_tap_timeout_ms")
@@ -1144,6 +1153,7 @@ class PreferenceRepository(context: Context) {
             put(Keys.bluetoothTrackpadScrollSensitivity.name, bluetoothTrackpadScrollSensitivity)
             put(Keys.bluetoothTrackpadInvertScrollEnabled.name, bluetoothTrackpadInvertScrollEnabled)
             put(Keys.bluetoothTrackpadTapToClickEnabled.name, bluetoothTrackpadTapToClickEnabled)
+            put(Keys.bluetoothTrackpadTwoFingerRightClickEnabled.name, bluetoothTrackpadTwoFingerRightClickEnabled)
             put(Keys.bluetoothTrackpadDedicatedButtonsEnabled.name, bluetoothTrackpadDedicatedButtonsEnabled)
             put(Keys.bluetoothTrackpadButtonHeightPercent.name, bluetoothTrackpadButtonHeightPercent)
             put(Keys.bluetoothTrackpadDoubleTapTimeoutMs.name, bluetoothTrackpadDoubleTapTimeoutMs)
@@ -1340,6 +1350,9 @@ class PreferenceRepository(context: Context) {
         }
         settings.boolean(Keys.bluetoothTrackpadTapToClickEnabled)?.let {
             this[Keys.bluetoothTrackpadTapToClickEnabled] = it
+        }
+        settings.boolean(Keys.bluetoothTrackpadTwoFingerRightClickEnabled)?.let {
+            this[Keys.bluetoothTrackpadTwoFingerRightClickEnabled] = it
         }
         settings.boolean(Keys.bluetoothTrackpadDedicatedButtonsEnabled)?.let {
             this[Keys.bluetoothTrackpadDedicatedButtonsEnabled] = it

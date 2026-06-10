@@ -116,6 +116,7 @@ class KeyboardPreferencesTest {
         assertEquals(24f, preferences.landscapeGeometry.horizontalMarginDp, 0.001f)
         assertEquals(12f, preferences.landscapeGeometry.bottomMarginDp, 0.001f)
         assertFalse(preferences.bluetoothTrackpadInvertScrollEnabled)
+        assertTrue(preferences.bluetoothTrackpadTwoFingerRightClickEnabled)
         assertTrue(preferences.bluetoothTrackpadDedicatedButtonsEnabled)
         assertEquals(DEFAULT_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT, preferences.bluetoothTrackpadButtonHeightPercent, 0.001f)
         assertEquals(DEFAULT_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS, preferences.bluetoothTrackpadDoubleTapTimeoutMs)

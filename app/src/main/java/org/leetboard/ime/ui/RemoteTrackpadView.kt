@@ -27,6 +27,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
     private var scrollSensitivity = 1f
     private var invertScrollEnabled = false
     private var tapToClickEnabled = true
+    private var twoFingerRightClickEnabled = true
     private var dedicatedButtonsEnabled = true
     private var buttonHeightFraction = DEFAULT_BUTTON_HEIGHT_FRACTION
     private var onReport: ((RemotePointerReport) -> Unit)? = null
@@ -52,6 +53,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
         scrollSensitivity: Float,
         invertScrollEnabled: Boolean,
         tapToClickEnabled: Boolean,
+        twoFingerRightClickEnabled: Boolean,
         dedicatedButtonsEnabled: Boolean,
         buttonHeightPercent: Float,
         doubleTapTimeoutMs: Int,
@@ -67,6 +69,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
         this.scrollSensitivity = scrollSensitivity
         this.invertScrollEnabled = invertScrollEnabled
         this.tapToClickEnabled = tapToClickEnabled
+        this.twoFingerRightClickEnabled = twoFingerRightClickEnabled
         this.dedicatedButtonsEnabled = dedicatedButtonsEnabled
         this.buttonHeightFraction = (buttonHeightPercent / 100f).coerceIn(
             MIN_BUTTON_HEIGHT_FRACTION,
@@ -194,7 +197,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
                     onReport?.invoke(RemotePointerReport(buttons = 0))
                 } else if (tapToClickEnabled && !moved) {
                     val tapButton = when {
-                        !dedicatedButtonsEnabled && maxPointerCount >= 2 -> RIGHT_BUTTON
+                        twoFingerRightClickEnabled && maxPointerCount >= 2 -> RIGHT_BUTTON
                         maxPointerCount == 1 -> LEFT_BUTTON
                         else -> 0
                     }

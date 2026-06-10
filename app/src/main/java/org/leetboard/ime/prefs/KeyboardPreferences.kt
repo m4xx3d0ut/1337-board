@@ -93,6 +93,7 @@ data class KeyboardPreferences(
     val bluetoothTrackpadScrollSensitivity: Float = DEFAULT_BLUETOOTH_TRACKPAD_SCROLL_SENSITIVITY,
     val bluetoothTrackpadInvertScrollEnabled: Boolean = false,
     val bluetoothTrackpadTapToClickEnabled: Boolean = true,
+    val bluetoothTrackpadTwoFingerRightClickEnabled: Boolean = true,
     val bluetoothTrackpadDedicatedButtonsEnabled: Boolean = true,
     val bluetoothTrackpadButtonHeightPercent: Float = DEFAULT_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT,
     val bluetoothTrackpadDoubleTapTimeoutMs: Int = DEFAULT_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS,
