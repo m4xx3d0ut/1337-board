@@ -103,6 +103,7 @@ import org.leetboard.ime.prefs.BluetoothTrackpadKeepScreenOnMode
 import org.leetboard.ime.prefs.BluetoothTrackpadMacroPlacement
 import org.leetboard.ime.prefs.BluetoothTrackpadMacroSide
 import org.leetboard.ime.prefs.BluetoothTrackpadPlacement
+import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
@@ -117,6 +118,7 @@ import org.leetboard.ime.prefs.GeometryOrientation
 import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_MACRO_KEYS_PER_SIDE
+import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
@@ -124,6 +126,7 @@ import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.MAX_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
 import org.leetboard.ime.prefs.MAX_SPEECH_SILENCE_MS
+import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
@@ -1289,6 +1292,16 @@ private fun BluetoothRemoteSection(
                 scope.launch { repository.setBluetoothTrackpadDedicatedButtonsEnabled(checked) }
             },
         )
+        BluetoothTrackpadSlider(
+            label = "Mouse button height",
+            value = preferences.bluetoothTrackpadButtonHeightPercent,
+            minimum = MIN_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT,
+            maximum = MAX_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT,
+            resetValue = DEFAULT_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT,
+            suffix = "%",
+        ) { value ->
+            scope.launch { repository.setBluetoothTrackpadButtonHeightPercent(value) }
+        }
         Text("Full-screen trackpad", style = MaterialTheme.typography.labelLarge)
         BluetoothTrackpadKeepScreenOnMode.entries.forEach { mode ->
             SelectButton(

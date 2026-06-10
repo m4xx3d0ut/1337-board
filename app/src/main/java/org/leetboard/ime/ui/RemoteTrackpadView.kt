@@ -28,6 +28,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
     private var invertScrollEnabled = false
     private var tapToClickEnabled = true
     private var dedicatedButtonsEnabled = true
+    private var buttonHeightFraction = DEFAULT_BUTTON_HEIGHT_FRACTION
     private var onReport: ((RemotePointerReport) -> Unit)? = null
     private var lastX = 0f
     private var lastY = 0f
@@ -52,6 +53,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
         invertScrollEnabled: Boolean,
         tapToClickEnabled: Boolean,
         dedicatedButtonsEnabled: Boolean,
+        buttonHeightPercent: Float,
         doubleTapTimeoutMs: Int,
         onReport: (RemotePointerReport) -> Unit,
     ) {
@@ -66,6 +68,10 @@ class RemoteTrackpadView(context: Context) : View(context) {
         this.invertScrollEnabled = invertScrollEnabled
         this.tapToClickEnabled = tapToClickEnabled
         this.dedicatedButtonsEnabled = dedicatedButtonsEnabled
+        this.buttonHeightFraction = (buttonHeightPercent / 100f).coerceIn(
+            MIN_BUTTON_HEIGHT_FRACTION,
+            MAX_BUTTON_HEIGHT_FRACTION,
+        )
         this.doubleTapTimeoutMs = doubleTapTimeoutMs.toLong().coerceAtLeast(0L)
         visibility = if (enabled) VISIBLE else GONE
         invalidate()
@@ -73,12 +79,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        bounds.set(
-            resources.displayMetrics.density * TRACKPAD_MARGIN_DP,
-            resources.displayMetrics.density * TRACKPAD_MARGIN_DP,
-            width - resources.displayMetrics.density * TRACKPAD_MARGIN_DP,
-            height - resources.displayMetrics.density * TRACKPAD_MARGIN_DP,
-        )
+        updateBounds()
         fillPaint.color = theme.colors.keyFill
         strokePaint.color = if (dragButtonHeld) theme.colors.activeModifierFill else theme.colors.keyStroke
         strokePaint.strokeWidth = resources.displayMetrics.density * (if (dragButtonHeld) {
@@ -92,7 +93,7 @@ class RemoteTrackpadView(context: Context) : View(context) {
         canvas.drawRoundRect(bounds, radius, radius, fillPaint)
         canvas.drawRoundRect(bounds, radius, radius, strokePaint)
         if (dedicatedButtonsEnabled) {
-            val buttonTop = bounds.bottom - bounds.height() * 0.23f
+            val buttonTop = buttonTop()
             canvas.drawLine(bounds.left, buttonTop, bounds.right, buttonTop, linePaint)
             canvas.drawLine(bounds.centerX(), buttonTop, bounds.centerX(), bounds.bottom, linePaint)
         }
@@ -233,8 +234,18 @@ class RemoteTrackpadView(context: Context) : View(context) {
 
     private fun buttonFor(x: Float, y: Float): Int {
         if (!dedicatedButtonsEnabled) return 0
-        if (y < height * BUTTON_ZONE_TOP_FRACTION) return 0
-        return if (x < width / 2f) LEFT_BUTTON else RIGHT_BUTTON
+        updateBounds()
+        if (y < buttonTop()) return 0
+        return if (x < bounds.centerX()) LEFT_BUTTON else RIGHT_BUTTON
+    }
+
+    private fun buttonTop(): Float {
+        return bounds.bottom - bounds.height() * buttonHeightFraction
+    }
+
+    private fun updateBounds() {
+        val margin = resources.displayMetrics.density * TRACKPAD_MARGIN_DP
+        bounds.set(margin, margin, width - margin, height - margin)
     }
 
     private fun resetGesture() {
@@ -305,7 +316,9 @@ class RemoteTrackpadView(context: Context) : View(context) {
 
     companion object {
         private const val TRACKPAD_MARGIN_DP = 6f
-        private const val BUTTON_ZONE_TOP_FRACTION = 0.78f
+        private const val DEFAULT_BUTTON_HEIGHT_FRACTION = 0.23f
+        private const val MIN_BUTTON_HEIGHT_FRACTION = 0.05f
+        private const val MAX_BUTTON_HEIGHT_FRACTION = 0.34f
         private const val LEFT_BUTTON = 0x01
         private const val RIGHT_BUTTON = 0x02
         private const val MOUSE_AXIS_MIN = -127

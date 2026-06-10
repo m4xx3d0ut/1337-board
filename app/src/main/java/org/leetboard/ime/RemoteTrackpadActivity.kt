@@ -455,6 +455,7 @@ class RemoteTrackpadActivity : ComponentActivity() {
             remoteTrackpadInvertScrollEnabled = preferences.bluetoothTrackpadInvertScrollEnabled,
             remoteTrackpadTapToClickEnabled = preferences.bluetoothTrackpadTapToClickEnabled,
             remoteTrackpadDedicatedButtonsEnabled = preferences.bluetoothTrackpadDedicatedButtonsEnabled,
+            remoteTrackpadButtonHeightPercent = preferences.bluetoothTrackpadButtonHeightPercent,
             remoteTrackpadDoubleTapTimeoutMs = preferences.bluetoothTrackpadDoubleTapTimeoutMs,
             keyboardSurfaceVisible = remoteKeyboardVisible,
             remoteTrackpadMacroPlacement = preferences.bluetoothTrackpadMacroPlacement,

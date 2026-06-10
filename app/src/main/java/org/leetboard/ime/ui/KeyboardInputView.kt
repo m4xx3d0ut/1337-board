@@ -22,6 +22,7 @@ import org.leetboard.ime.prefs.BluetoothTrackpadMacroKey
 import org.leetboard.ime.prefs.BluetoothTrackpadMacroPlacement
 import org.leetboard.ime.prefs.BluetoothTrackpadMacroSide
 import org.leetboard.ime.prefs.BluetoothTrackpadPlacement
+import org.leetboard.ime.prefs.DEFAULT_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.forSide
 import org.leetboard.ime.prefs.shows
 
@@ -82,6 +83,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         remoteTrackpadInvertScrollEnabled: Boolean = false,
         remoteTrackpadTapToClickEnabled: Boolean = true,
         remoteTrackpadDedicatedButtonsEnabled: Boolean = true,
+        remoteTrackpadButtonHeightPercent: Float = DEFAULT_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT,
         remoteTrackpadDoubleTapTimeoutMs: Int = ViewConfiguration.getDoubleTapTimeout(),
         keyboardSurfaceVisible: Boolean = true,
         remoteTrackpadMacroPlacement: BluetoothTrackpadMacroPlacement = BluetoothTrackpadMacroPlacement.OFF,
@@ -115,6 +117,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             invertScrollEnabled = remoteTrackpadInvertScrollEnabled,
             tapToClickEnabled = remoteTrackpadTapToClickEnabled,
             dedicatedButtonsEnabled = remoteTrackpadDedicatedButtonsEnabled,
+            buttonHeightPercent = remoteTrackpadButtonHeightPercent,
             doubleTapTimeoutMs = remoteTrackpadDoubleTapTimeoutMs,
             onReport = { report -> onRemotePointerReport?.invoke(report) },
         )

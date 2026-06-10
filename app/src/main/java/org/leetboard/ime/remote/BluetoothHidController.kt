@@ -42,6 +42,7 @@ data class RemoteHidState(
         get() = enabled && status == RemoteHidStatus.CONNECTED
 }
 
+@SuppressLint("InlinedApi", "NewApi")
 class BluetoothHidController(context: Context) {
     private val appContext = context.applicationContext
     private val executor = Executor { command -> command.run() }
@@ -69,47 +70,6 @@ class BluetoothHidController(context: Context) {
             registered = false
             activeDevice = null
             updateState(RemoteHidStatus.DISCONNECTED, "Bluetooth HID profile disconnected")
-        }
-    }
-
-    private val callback = object : BluetoothHidDevice.Callback() {
-        override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
-            Log.i(
-                TAG,
-                "HID app status changed: registered=$registered pluggedDevice=${pluggedDevice?.debugName()}",
-            )
-            this@BluetoothHidController.registered = registered
-            if (!enabled) return
-            if (registered) {
-                connectSelectedDevice()
-            } else {
-                updateState(RemoteHidStatus.ERROR, "Bluetooth HID registration failed")
-            }
-        }
-
-        override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
-            val remoteDevice = device ?: return
-            Log.i(TAG, "HID connection state changed: state=$state device=${remoteDevice.debugName()}")
-            activeDevice = if (state == BluetoothProfile.STATE_CONNECTED) remoteDevice else activeDevice
-            if (!enabled) {
-                updateState(RemoteHidStatus.DISABLED, "Bluetooth remote idle", remoteDevice)
-                return
-            }
-            val status = when (state) {
-                BluetoothProfile.STATE_CONNECTING -> RemoteHidStatus.CONNECTING
-                BluetoothProfile.STATE_CONNECTED -> RemoteHidStatus.CONNECTED
-                BluetoothProfile.STATE_DISCONNECTING -> RemoteHidStatus.DISCONNECTED
-                else -> RemoteHidStatus.DISCONNECTED
-            }
-            updateState(
-                status = status,
-                message = when (status) {
-                    RemoteHidStatus.CONNECTED -> "Connected to ${remoteDevice.displayName()}"
-                    RemoteHidStatus.CONNECTING -> "Connecting to ${remoteDevice.displayName()}"
-                    else -> "Disconnected from ${remoteDevice.displayName()}"
-                },
-                device = remoteDevice,
-            )
         }
     }
 
@@ -228,7 +188,7 @@ class BluetoothHidController(context: Context) {
             BluetoothHidDevice.SUBCLASS1_COMBO,
             BluetoothHidReportDescriptor.keyboardMouseCombo,
         )
-        val requested = hid.registerApp(sdp, null, null, executor, callback)
+        val requested = hid.registerApp(sdp, null, null, executor, hidCallback())
         Log.i(TAG, "HID registerApp requested=$requested")
         if (!requested) {
             updateState(RemoteHidStatus.ERROR, "Bluetooth HID registration request failed")
@@ -313,6 +273,47 @@ class BluetoothHidController(context: Context) {
         val adapter = BluetoothHidSupport.adapter(appContext) ?: return RemoteHidStatus.BLUETOOTH_UNAVAILABLE
         if (!adapter.isEnabled) return RemoteHidStatus.BLUETOOTH_OFF
         return null
+    }
+
+    private fun hidCallback() = object : BluetoothHidDevice.Callback() {
+        override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
+            Log.i(
+                TAG,
+                "HID app status changed: registered=$registered pluggedDevice=${pluggedDevice?.debugName()}",
+            )
+            this@BluetoothHidController.registered = registered
+            if (!enabled) return
+            if (registered) {
+                connectSelectedDevice()
+            } else {
+                updateState(RemoteHidStatus.ERROR, "Bluetooth HID registration failed")
+            }
+        }
+
+        override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
+            val remoteDevice = device ?: return
+            Log.i(TAG, "HID connection state changed: state=$state device=${remoteDevice.debugName()}")
+            activeDevice = if (state == BluetoothProfile.STATE_CONNECTED) remoteDevice else activeDevice
+            if (!enabled) {
+                updateState(RemoteHidStatus.DISABLED, "Bluetooth remote idle", remoteDevice)
+                return
+            }
+            val status = when (state) {
+                BluetoothProfile.STATE_CONNECTING -> RemoteHidStatus.CONNECTING
+                BluetoothProfile.STATE_CONNECTED -> RemoteHidStatus.CONNECTED
+                BluetoothProfile.STATE_DISCONNECTING -> RemoteHidStatus.DISCONNECTED
+                else -> RemoteHidStatus.DISCONNECTED
+            }
+            updateState(
+                status = status,
+                message = when (status) {
+                    RemoteHidStatus.CONNECTED -> "Connected to ${remoteDevice.displayName()}"
+                    RemoteHidStatus.CONNECTING -> "Connecting to ${remoteDevice.displayName()}"
+                    else -> "Disconnected from ${remoteDevice.displayName()}"
+                },
+                device = remoteDevice,
+            )
+        }
     }
 
     @SuppressLint("MissingPermission")
