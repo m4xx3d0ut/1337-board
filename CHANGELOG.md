@@ -6,6 +6,39 @@ All notable changes to 1337 Board are documented here.
 
 No unreleased changes.
 
+## [0.2.0] - 2026-10-09
+
+### Added
+
+- Added an optional hardware-keyboard companion that automatically appears when a local USB, dock, or Bluetooth keyboard is active.
+- Added Agent PBX, Terminal, and Minimal companion presets with Automatic, Always, and Off display modes.
+- Added a compact two-row companion with Esc, Tab, sticky modifiers, navigation, arrows, and an always-visible F1-F12 row.
+- Added adjustable companion row height from 44dp to 72dp.
+- Added touch diagnostics for exact hits, recovered gap hits, misses, dropped releases, dispatch latency, prediction latency, and companion key events.
+- Added an adjustable 5%-34% height setting for dedicated Bluetooth trackpad mouse buttons.
+- Added an independent two-finger right-click option that works with or without dedicated mouse buttons.
+
+### Changed
+
+- Improved rapid multi-touch typing with per-pointer timing and rollover ordering for up to ten simultaneous touch points.
+- Expanded touch targets into visual gaps using nearest-key midpoint boundaries without consuming the keyboard's outer margins.
+- Added bounded release hysteresis so small slips near a key edge still commit the originally pressed key.
+- Converted swipe thresholds to density-independent measurements for more consistent phone and tablet behavior.
+- Moved typed-prediction lookup and ranking off the IME UI thread and indexed dictionaries by prefix and word length.
+- Included hardware-companion and touch-diagnostics preferences in settings import, export, and reset behavior.
+- Improved Bluetooth trackpad movement and tap classification with radial touch-slop handling.
+
+### Fixed
+
+- Fixed intermittent missed keys when pressing within visual key gaps.
+- Fixed rapid multi-key releases being dispatched out of their original press order.
+- Fixed small cross-boundary release movements being dropped unnecessarily.
+- Fixed the OnePlus Pad 3 cover remaining falsely detected after physical detachment because its Bluetooth input device stayed registered.
+- Fixed hardware-companion visibility on OxygenOS devices that reject candidates-only IME windows.
+- Fixed dedicated Bluetooth mouse buttons so one finger can hold a button while another performs click-drag movement on the trackpad.
+- Improved double-tap drag consistency and prevented multi-touch gestures from producing unintended click events.
+- Added an Android 8-compatible fallback for requesting the hardware-companion input surface.
+
 ## [0.1.8] - 2026-06-09
 
 ### Added
