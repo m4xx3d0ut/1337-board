@@ -69,6 +69,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
         speechPushToTalkEnabled: Boolean = false,
         keyLongPressDelayMs: Int = KeyboardSurfaceView.LONG_PRESS_DELAY_MS.toInt(),
         specialLongPressDelayMs: Int = KeyboardSurfaceView.LONG_PRESS_DELAY_MS.toInt(),
+        touchDiagnosticsEnabled: Boolean = false,
         suggestionBarEnabled: Boolean = glideTypingEnabled,
         suggestions: List<String> = emptyList(),
         quickModifierBarEnabled: Boolean = false,
@@ -146,6 +147,7 @@ class KeyboardInputView(context: Context) : ViewGroup(context) {
             speechPushToTalkEnabled = speechPushToTalkEnabled,
             keyLongPressDelayMs = keyLongPressDelayMs,
             specialLongPressDelayMs = specialLongPressDelayMs,
+            touchDiagnosticsEnabled = touchDiagnosticsEnabled,
         )
         keyboardView.visibility = if (keyboardSurfaceVisible) VISIBLE else GONE
         requestLayout()

@@ -50,6 +50,7 @@ data class KeyboardPreferences(
     val stickyModifiersEnabled: Boolean = true,
     val shiftCapsLockEnabled: Boolean = true,
     val keyHapticsEnabled: Boolean = true,
+    val touchDiagnosticsEnabled: Boolean = false,
     val keyLongPressDelayMs: Int = DEFAULT_KEY_LONG_PRESS_DELAY_MS,
     val specialLongPressDelayMs: Int = DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS,
     val edgeKeyWidthScale: Float = 0.75f,
@@ -102,6 +103,9 @@ data class KeyboardPreferences(
     val bluetoothTrackpadMacroPlacement: BluetoothTrackpadMacroPlacement = BluetoothTrackpadMacroPlacement.OFF,
     val bluetoothTrackpadMacroStepDelayMs: Int = DEFAULT_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
     val bluetoothTrackpadMacros: List<BluetoothTrackpadMacroKey> = emptyList(),
+    val hardwareCompanionMode: HardwareCompanionMode = HardwareCompanionMode.AUTOMATIC,
+    val hardwareCompanionPreset: HardwareCompanionPreset = HardwareCompanionPreset.AGENT_PBX,
+    val hardwareCompanionHeightDp: Float = DEFAULT_HARDWARE_COMPANION_HEIGHT_DP,
 ) {
     fun customizationState(): CustomizationState {
         val hiddenKeys = buildSet {

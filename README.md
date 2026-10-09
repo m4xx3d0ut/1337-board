@@ -23,6 +23,7 @@
 - Full-screen Bluetooth trackpad mode supports optional left/right macro key stacks with custom labels and single-key, combo, text, or multi-step actions.
 - Theme presets and a custom theme slot including light, dark, alternate dark, cyberpunk, terminal, high contrast, 1337 green-on-black, background images, and transparency controls.
 - Separate portrait and landscape controls for keyboard height, margins, gaps, borders, radius, label styling, and long-press timing.
+- Hardware-keyboard companion mode adds a compact Agent-PBX, terminal, or navigation strip with sticky modifiers and an F1-F12 bank.
 
 ![1337 Board theme and layout grid captured on OnePlus Pad3](1337-board-theme-grid.png)
 
@@ -61,6 +62,10 @@ The full-screen trackpad keeps the user-selected portrait or landscape keyboard 
 ![Pad3 BT1 selected from an Android app with raised trackpad](docs/images/pad3-app-bt1-trackpad-fn.png)
 
 Detailed setup, screenshots, and troubleshooting are in [docs/bluetooth-remote.md](docs/bluetooth-remote.md).
+
+## Hardware Keyboard Companion
+
+When a local USB, dock, or Bluetooth keyboard is attached, 1337 Board can replace the full touch keyboard with a compact companion. Its first row provides special, modifier, navigation, and arrow keys; the second keeps F1-F12 visible, including Agent PBX's F8-F10 actions. Setup and current platform limitations are documented in [docs/hardware-keyboard-companion.md](docs/hardware-keyboard-companion.md).
 
 ## Release Channels
 

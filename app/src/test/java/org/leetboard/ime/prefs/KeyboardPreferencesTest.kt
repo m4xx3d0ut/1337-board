@@ -75,6 +75,7 @@ class KeyboardPreferencesTest {
         assertEquals("qwerty5", preferences.landscapeLayoutId)
         assertTrue(preferences.keyPreviewEnabled)
         assertTrue(preferences.keyHapticsEnabled)
+        assertFalse(preferences.touchDiagnosticsEnabled)
         assertTrue(preferences.stickyModifiersEnabled)
         assertTrue(preferences.shiftCapsLockEnabled)
         assertEquals(DEFAULT_KEY_LONG_PRESS_DELAY_MS, preferences.keyLongPressDelayMs)
@@ -122,6 +123,9 @@ class KeyboardPreferencesTest {
         assertEquals(DEFAULT_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS, preferences.bluetoothTrackpadDoubleTapTimeoutMs)
         assertEquals(DEFAULT_BLUETOOTH_TRACKPAD_KEEP_SCREEN_ON_MODE, preferences.bluetoothTrackpadKeepScreenOnMode)
         assertTrue(preferences.bluetoothTrackpadDimWhenInactiveEnabled)
+        assertEquals(HardwareCompanionMode.AUTOMATIC, preferences.hardwareCompanionMode)
+        assertEquals(HardwareCompanionPreset.AGENT_PBX, preferences.hardwareCompanionPreset)
+        assertEquals(DEFAULT_HARDWARE_COMPANION_HEIGHT_DP, preferences.hardwareCompanionHeightDp, 0.001f)
     }
 
     @Test

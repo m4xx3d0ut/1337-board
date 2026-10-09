@@ -1,7 +1,10 @@
 package org.leetboard.ime.ime
 
 import android.inputmethodservice.InputMethodService
+import android.content.res.Configuration
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.WindowInsets
@@ -9,6 +12,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.leetboard.ime.engine.CustomizationEngine
 import org.leetboard.ime.engine.FrequencyContextGlidePredictionEngine
 import org.leetboard.ime.engine.GlideCandidate
@@ -28,6 +33,7 @@ import org.leetboard.ime.engine.GlidePredictionContext
 import org.leetboard.ime.engine.GlideTouchTrace
 import org.leetboard.ime.engine.GlideUserLanguageModel
 import org.leetboard.ime.engine.GestureTypingEngine
+import org.leetboard.ime.engine.HardwareCompanionLayoutEngine
 import org.leetboard.ime.engine.KeyActionEngine
 import org.leetboard.ime.engine.LayoutEngine
 import org.leetboard.ime.engine.SpeechInputEngineState
@@ -36,6 +42,7 @@ import org.leetboard.ime.engine.SpeechInsertion
 import org.leetboard.ime.engine.SpeechStartResult
 import org.leetboard.ime.engine.TextContextPolicy
 import org.leetboard.ime.engine.ThemeEngine
+import org.leetboard.ime.engine.TouchDiagnostics
 import org.leetboard.ime.engine.TypedPredictionEngine
 import org.leetboard.ime.engine.applyKeyboardCapitalization
 import org.leetboard.ime.engine.findPendingGlideReplacementSpan
@@ -54,6 +61,7 @@ import org.leetboard.ime.model.KeySpec
 import org.leetboard.ime.model.activeKeyIds
 import org.leetboard.ime.model.clearTransientModifiers
 import org.leetboard.ime.prefs.KeyboardPreferences
+import org.leetboard.ime.prefs.HardwareCompanionMode
 import org.leetboard.ime.prefs.PreferenceRepository
 import org.leetboard.ime.prefs.layoutIdForOrientation
 import org.leetboard.ime.remote.BluetoothHidController
@@ -65,9 +73,12 @@ import org.leetboard.ime.remote.RemoteHidKeyRouter
 import org.leetboard.ime.remote.RemoteHidState
 import org.leetboard.ime.remote.RemoteHidStatus
 import org.leetboard.ime.ui.KeyboardInputView
+import org.leetboard.ime.ui.HardwareCompanionView
+import org.leetboard.ime.ui.ImeInputHostView
 
 class ModernKeyboardImeService : InputMethodService() {
     private val layoutEngine = LayoutEngine()
+    private val hardwareCompanionLayoutEngine = HardwareCompanionLayoutEngine()
     private val customizationEngine = CustomizationEngine()
     private val textContextPolicy = TextContextPolicy()
     private val themeEngine = ThemeEngine()
@@ -81,7 +92,23 @@ class ModernKeyboardImeService : InputMethodService() {
     private var bluetoothHidController: BluetoothHidController? = null
     private var remoteHidKeyRouter: RemoteHidKeyRouter? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val deferredHardwareCompanionVisibility = Runnable {
+        updateHardwareCompanionVisibility()
+    }
+    private val deferredHardwareCompanionInputRequest = Runnable {
+        updateInputViewShown()
+        if (shouldRequestHardwareCompanionInputView()) requestHardwareCompanionInputView()
+    }
+    private var inputHostView: ImeInputHostView? = null
     private var keyboardInputView: KeyboardInputView? = null
+    private var hardwareCompanionView: HardwareCompanionView? = null
+    private var inputHardwareCompanionView: HardwareCompanionView? = null
+    private var hardwareKeyboardMonitor: HardwareKeyboardMonitor? = null
+    private var hardwareKeyboardConnected = false
+    private var hardwareCompanionInputMode = false
+    private var inputViewActive = false
+    private var inputSessionActive = false
     private var keyboardState = KeyboardState()
     private var preferences = KeyboardPreferences.defaults()
     private var contextHiddenKeyIds: Set<String> = emptySet()
@@ -91,6 +118,8 @@ class ModernKeyboardImeService : InputMethodService() {
     private var speechPushToTalkStopPending = false
     private var speechResetJob: Job? = null
     private var glideSuggestionsJob: Job? = null
+    private var typedSuggestionsJob: Job? = null
+    private var typedSuggestionsGeneration: Long = 0L
     private var glideCorrectionRecordJob: Job? = null
     private var pendingGlideUndo: PendingGlideUndo? = null
     private var pendingSuggestionCommit: PendingSuggestionCommit? = null
@@ -115,9 +144,19 @@ class ModernKeyboardImeService : InputMethodService() {
             wordsProvider = glideDictionaryLoader::loadWords,
         )
         typedPredictionEngine = TypedPredictionEngine(glideDictionaryLoader::loadWords, glideUserLanguageModel)
+        serviceScope.launch(Dispatchers.Default) { typedPredictionEngine.prepare() }
         keyActionEngine = KeyActionEngine(this)
         speechInputEngine = SpeechInputEngine(this, textContextPolicy)
         preferenceRepository = PreferenceRepository(this)
+        hardwareKeyboardMonitor = HardwareKeyboardMonitor(this) { connected ->
+            serviceScope.launch {
+                if (hardwareKeyboardConnected == connected) return@launch
+                hardwareKeyboardConnected = connected
+                updateInputViewShown()
+                scheduleHardwareCompanionInputRequest()
+                updateHardwareCompanionVisibility()
+            }
+        }.also { monitor -> monitor.start() }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             bluetoothHidController = BluetoothHidControllerRegistry.acquire(this)
             remoteHidKeyRouter = RemoteHidKeyRouter { chord ->
@@ -172,15 +211,22 @@ class ModernKeyboardImeService : InputMethodService() {
                     speechPushToTalkStopPending = false
                 }
                 renderKeyboard()
+                updateInputViewShown()
+                scheduleHardwareCompanionInputRequest()
+                updateHardwareCompanionVisibility()
             }
         }
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(deferredHardwareCompanionVisibility)
+        mainHandler.removeCallbacks(deferredHardwareCompanionInputRequest)
         speechResetJob?.cancel()
         glideSuggestionsJob?.cancel()
+        typedSuggestionsJob?.cancel()
         glideCorrectionRecordJob?.cancel()
         remoteSpeechSendJob?.cancel()
+        hardwareKeyboardMonitor?.stop()
         BluetoothHidControllerRegistry.release(bluetoothHidController)
         speechInputEngine.destroy()
         serviceScope.cancel()
@@ -191,52 +237,120 @@ class ModernKeyboardImeService : InputMethodService() {
         return false
     }
 
+    override fun onEvaluateInputViewShown(): Boolean {
+        val standardInputViewShown = super.onEvaluateInputViewShown()
+        hardwareCompanionInputMode = hardwareCompanionRequested() &&
+            !standardInputViewShown &&
+            !preferences.bluetoothRemoteEnabled
+        inputHostView?.setCompanionMode(hardwareCompanionInputMode)
+        return standardInputViewShown || hardwareCompanionInputMode
+    }
+
     override fun onCreateInputView(): View {
-        return KeyboardInputView(this).also { view ->
-            keyboardInputView = view
-            view.keyboardView.onKey = { action, heldModifiers ->
-                handleKeyAction(action, heldModifiers)
-                renderKeyboard()
-            }
-            view.keyboardView.onGlide = { path, touchTrace, heldModifiers ->
-                handleGlide(path, touchTrace, heldModifiers)
-                renderKeyboard()
-            }
-            view.keyboardView.onFnHoldChanged = { active ->
-                keyboardState = keyboardState.copy(fnHold = active, fn = if (active) false else keyboardState.fn)
-                renderKeyboard()
-            }
-            view.keyboardView.onQuickNavHoldChanged = { active ->
-                keyboardState = keyboardState.copy(
-                    quickNavHold = active,
-                    numpad = if (active) false else keyboardState.numpad,
-                )
-                renderKeyboard()
-            }
-            view.keyboardView.onMicHoldChanged = { active ->
-                handleSpeechPushToTalk(active)
-                renderKeyboard()
-            }
-            view.onSuggestion = { word ->
-                handleSuggestion(word)
-                renderKeyboard()
-            }
-            view.onQuickModifier = { action ->
-                handleKeyAction(action, HeldModifiers())
-                renderKeyboard()
-            }
-            view.onRemotePointerReport = { report ->
-                if (isBluetoothRemoteActive()) {
-                    bluetoothHidController?.sendMouseReport(
-                        buttons = report.buttons,
-                        dx = report.dx,
-                        dy = report.dy,
-                        wheel = report.wheel,
-                    )
-                }
-            }
+        val host = ImeInputHostView(this)
+        inputHostView = host
+        keyboardInputView = host.keyboardInputView.also { view ->
+            configureKeyboardInputView(view)
+        }
+        inputHardwareCompanionView = host.hardwareCompanionView.also(::configureHardwareCompanionView)
+        host.setCompanionMode(hardwareCompanionInputMode)
+        renderKeyboard()
+        renderHardwareCompanion()
+        return host
+    }
+
+    override fun onCreateCandidatesView(): View {
+        return HardwareCompanionView(this).also { view ->
+            hardwareCompanionView = view
+            configureHardwareCompanionView(view)
+            renderHardwareCompanion()
+        }
+    }
+
+    private fun configureKeyboardInputView(view: KeyboardInputView) {
+        view.keyboardView.onKey = { action, heldModifiers ->
+            handleKeyAction(action, heldModifiers)
             renderKeyboard()
         }
+        view.keyboardView.onGlide = { path, touchTrace, heldModifiers ->
+            handleGlide(path, touchTrace, heldModifiers)
+            renderKeyboard()
+        }
+        view.keyboardView.onFnHoldChanged = { active ->
+            keyboardState = keyboardState.copy(fnHold = active, fn = if (active) false else keyboardState.fn)
+            renderKeyboard()
+        }
+        view.keyboardView.onQuickNavHoldChanged = { active ->
+            keyboardState = keyboardState.copy(
+                quickNavHold = active,
+                numpad = if (active) false else keyboardState.numpad,
+            )
+            renderKeyboard()
+        }
+        view.keyboardView.onMicHoldChanged = { active ->
+            handleSpeechPushToTalk(active)
+            renderKeyboard()
+        }
+        view.onSuggestion = { word ->
+            handleSuggestion(word)
+            renderKeyboard()
+        }
+        view.onQuickModifier = { action ->
+            handleKeyAction(action, HeldModifiers())
+            renderKeyboard()
+        }
+        view.onRemotePointerReport = { report ->
+            if (isBluetoothRemoteActive()) {
+                bluetoothHidController?.sendMouseReport(
+                    buttons = report.buttons,
+                    dx = report.dx,
+                    dy = report.dy,
+                    wheel = report.wheel,
+                )
+            }
+        }
+    }
+
+    private fun configureHardwareCompanionView(view: HardwareCompanionView) {
+        view.keyboardView.onKey = { action, heldModifiers ->
+            handleKeyAction(action, heldModifiers)
+            renderHardwareCompanion()
+            renderKeyboard()
+        }
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        mainHandler.removeCallbacks(deferredHardwareCompanionInputRequest)
+        mainHandler.removeCallbacks(deferredHardwareCompanionVisibility)
+        onEvaluateInputViewShown()
+        inputViewActive = !hardwareCompanionInputMode
+        inputHostView?.setCompanionMode(hardwareCompanionInputMode)
+        setCandidatesViewShown(false)
+        if (hardwareCompanionInputMode) renderHardwareCompanion() else renderKeyboard()
+    }
+
+    override fun onFinishInputView(finishingInput: Boolean) {
+        super.onFinishInputView(finishingInput)
+        inputViewActive = false
+        if (!finishingInput) {
+            mainHandler.removeCallbacks(deferredHardwareCompanionVisibility)
+            mainHandler.post(deferredHardwareCompanionVisibility)
+        }
+    }
+
+    override fun onStartCandidatesView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartCandidatesView(info, restarting)
+        inputViewActive = false
+        renderHardwareCompanion()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        hardwareKeyboardConnected = hardwareKeyboardMonitor?.isConnected() == true
+        updateInputViewShown()
+        scheduleHardwareCompanionInputRequest()
+        updateHardwareCompanionVisibility()
     }
 
     override fun onWindowShown() {
@@ -246,12 +360,15 @@ class ModernKeyboardImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        inputSessionActive = true
         switchBluetoothRemoteToLocalForAndroidFocus()
         val speechAllowed = speechInputEngine.isAvailable(attribute)
         contextHiddenKeyIds = buildSet {
             if (!speechAllowed) add("mic")
         }
         renderKeyboard()
+        scheduleHardwareCompanionInputRequest()
+        updateHardwareCompanionVisibility()
     }
 
     override fun onUpdateSelection(
@@ -270,6 +387,9 @@ class ModernKeyboardImeService : InputMethodService() {
 
     override fun onFinishInput() {
         super.onFinishInput()
+        mainHandler.removeCallbacks(deferredHardwareCompanionVisibility)
+        mainHandler.removeCallbacks(deferredHardwareCompanionInputRequest)
+        inputSessionActive = false
         speechInputEngine.cancel()
         speechUiState = SpeechUiState.IDLE
         speechPushToTalkActive = false
@@ -279,6 +399,8 @@ class ModernKeyboardImeService : InputMethodService() {
         clearPendingGlideCorrection()
         clearGlideSuggestions()
         keyboardState = KeyboardState()
+        inputViewActive = false
+        setCandidatesViewShown(false)
         renderKeyboard()
     }
 
@@ -323,6 +445,7 @@ class ModernKeyboardImeService : InputMethodService() {
             preferences.speechPushToTalkEnabled,
             preferences.keyLongPressDelayMs,
             preferences.specialLongPressDelayMs,
+            preferences.touchDiagnosticsEnabled,
             suggestionBarEnabled,
             glideSuggestions,
             quickModifierBarEnabled,
@@ -341,6 +464,78 @@ class ModernKeyboardImeService : InputMethodService() {
             remoteTrackpadDoubleTapTimeoutMs = preferences.bluetoothTrackpadDoubleTapTimeoutMs,
         )
         hideSystemImeSwitcher()
+    }
+
+    private fun updateHardwareCompanionVisibility() {
+        val shown = hardwareCompanionRequested() &&
+            inputSessionActive &&
+            !inputViewActive &&
+            !hardwareCompanionInputMode &&
+            !hardwareKeyboardConnected &&
+            !preferences.bluetoothRemoteEnabled
+        if (shown) renderHardwareCompanion()
+        setCandidatesViewShown(shown)
+    }
+
+    private fun hardwareCompanionRequested(): Boolean {
+        return when (preferences.hardwareCompanionMode) {
+            HardwareCompanionMode.OFF -> false
+            HardwareCompanionMode.AUTOMATIC -> hardwareKeyboardConnected
+            HardwareCompanionMode.ALWAYS -> true
+        }
+    }
+
+    private fun scheduleHardwareCompanionInputRequest() {
+        mainHandler.removeCallbacks(deferredHardwareCompanionInputRequest)
+        if (shouldRequestHardwareCompanionInputView()) {
+            mainHandler.post(deferredHardwareCompanionInputRequest)
+        }
+    }
+
+    private fun shouldRequestHardwareCompanionInputView(): Boolean {
+        return inputSessionActive &&
+            hardwareKeyboardConnected &&
+            hardwareCompanionRequested() &&
+            !preferences.bluetoothRemoteEnabled
+    }
+
+    private fun requestHardwareCompanionInputView() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            requestShowSelf(0)
+        } else {
+            val windowToken = window?.window?.attributes?.token ?: return
+            @Suppress("DEPRECATION")
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInputFromInputMethod(
+                windowToken,
+                0,
+            )
+        }
+    }
+
+    private fun renderHardwareCompanion() {
+        val theme = themeEngine.resolve(
+            preset = preferences.themePreset,
+            portrait = preferences.portraitGeometry,
+            landscape = preferences.landscapeGeometry,
+            customTheme = preferences.customTheme,
+        )
+        val activeIds = buildSet {
+            if (keyboardState.modifiers.shift || keyboardState.modifiers.shiftLocked) add("companion_shift")
+            if (keyboardState.modifiers.ctrl) add("companion_ctrl")
+            if (keyboardState.modifiers.alt) add("companion_alt")
+        }
+        val layout = hardwareCompanionLayoutEngine.layout(preferences.hardwareCompanionPreset)
+        listOfNotNull(hardwareCompanionView, inputHardwareCompanionView).forEach { view ->
+            view.render(
+                layout = layout,
+                theme = theme,
+                activeKeyIds = activeIds,
+                keyLabelStyle = preferences.keyLabelStyle,
+                keyHapticsEnabled = preferences.keyHapticsEnabled,
+                stickyModifiersEnabled = preferences.stickyModifiersEnabled,
+                desiredHeightDp = preferences.hardwareCompanionHeightDp,
+            )
+        }
     }
 
     private fun hideSystemImeSwitcher() {
@@ -843,17 +1038,28 @@ class ModernKeyboardImeService : InputMethodService() {
             if (suggestionMode == SuggestionMode.TYPED) clearGlideSuggestions()
             return
         }
-        val suggestions = typedPredictionEngine.suggestions(
-            token = token,
-            context = typedPredictionContextBeforeToken(token),
-            limit = GLIDE_SUGGESTION_LIMIT,
-        )
-        if (suggestions.isEmpty()) {
-            if (suggestionMode == SuggestionMode.TYPED) clearGlideSuggestions()
-            return
+        val context = typedPredictionContextBeforeToken(token)
+        val generation = ++typedSuggestionsGeneration
+        typedSuggestionsJob?.cancel()
+        typedSuggestionsJob = serviceScope.launch {
+            val startedAt = SystemClock.elapsedRealtime()
+            val suggestions = withContext(Dispatchers.Default) {
+                typedPredictionEngine.suggestions(
+                    token = token,
+                    context = context,
+                    limit = GLIDE_SUGGESTION_LIMIT,
+                )
+            }
+            TouchDiagnostics.recordPrediction(SystemClock.elapsedRealtime() - startedAt)
+            if (generation != typedSuggestionsGeneration || currentTypedTokenBeforeCursor() != token) return@launch
+            if (suggestions.isEmpty()) {
+                if (suggestionMode == SuggestionMode.TYPED) clearGlideSuggestions()
+                return@launch
+            }
+            suggestionMode = SuggestionMode.TYPED
+            glideSuggestions = suggestions
+            renderKeyboard()
         }
-        suggestionMode = SuggestionMode.TYPED
-        glideSuggestions = suggestions
     }
 
     private fun replaceTypedToken(token: String, replacementText: String): Boolean {
@@ -1392,6 +1598,9 @@ class ModernKeyboardImeService : InputMethodService() {
     }
 
     private fun clearGlideSuggestions() {
+        typedSuggestionsGeneration += 1
+        typedSuggestionsJob?.cancel()
+        typedSuggestionsJob = null
         glideSuggestionsJob?.cancel()
         glideSuggestionsJob = null
         glideSuggestions = emptyList()

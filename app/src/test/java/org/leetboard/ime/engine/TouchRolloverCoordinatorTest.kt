@@ -37,4 +37,35 @@ class TouchRolloverCoordinatorTest {
 
         assertEquals(listOf("b"), expired.map { it.value })
     }
+
+    @Test
+    fun preservesTenPointerDownOrderWhenReleasedInReverse() {
+        val coordinator = TouchRolloverCoordinator<Int>(reorderWindowMs = 45)
+        val dispatched = mutableListOf<Int>()
+
+        (10 downTo 1).forEach { order ->
+            dispatched += coordinator.enqueue(
+                RolloverTap(downOrder = order.toLong(), releaseTimeMs = 100L + order, value = order),
+                activeDownOrders = (1 until order).map(Int::toLong).toSet(),
+                nowMs = 110L,
+            ).map { tap -> tap.value }
+        }
+        dispatched += coordinator.flush(emptySet(), nowMs = 120L).map { tap -> tap.value }
+
+        assertEquals((1..10).toList(), dispatched)
+    }
+
+    @Test
+    fun clearDropsPendingTapsAfterCanceledGesture() {
+        val coordinator = TouchRolloverCoordinator<String>(reorderWindowMs = 45)
+        coordinator.enqueue(
+            RolloverTap(downOrder = 2, releaseTimeMs = 100, value = "b"),
+            activeDownOrders = setOf(1),
+            nowMs = 110,
+        )
+
+        coordinator.clear()
+
+        assertTrue(coordinator.flush(emptySet(), nowMs = 200).isEmpty())
+    }
 }

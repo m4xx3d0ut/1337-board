@@ -115,6 +115,8 @@ import org.leetboard.ime.prefs.DEFAULT_SPEECH_POSSIBLE_SILENCE_MS
 import org.leetboard.ime.prefs.DEFAULT_SPECIAL_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.GeometryField
 import org.leetboard.ime.prefs.GeometryOrientation
+import org.leetboard.ime.prefs.HardwareCompanionMode
+import org.leetboard.ime.prefs.HardwareCompanionPreset
 import org.leetboard.ime.prefs.KeyLabelStyleField
 import org.leetboard.ime.prefs.KeyboardPreferences
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_MACRO_KEYS_PER_SIDE
@@ -125,9 +127,11 @@ import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
 import org.leetboard.ime.prefs.MAX_BLUETOOTH_TRACKPAD_SENSITIVITY
 import org.leetboard.ime.prefs.MAX_LONG_PRESS_DELAY_MS
 import org.leetboard.ime.prefs.MAX_GLIDE_DWELL_ACTIVATION_THRESHOLD
+import org.leetboard.ime.prefs.MAX_HARDWARE_COMPANION_HEIGHT_DP
 import org.leetboard.ime.prefs.MAX_SPEECH_SILENCE_MS
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_BUTTON_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_DOUBLE_TAP_TIMEOUT_MS
+import org.leetboard.ime.prefs.MIN_HARDWARE_COMPANION_HEIGHT_DP
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_HEIGHT_PERCENT
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS
 import org.leetboard.ime.prefs.MIN_BLUETOOTH_TRACKPAD_SENSITIVITY
@@ -268,6 +272,7 @@ fun SettingsScreen(
                             CustomThemeSection(preferences, repository)
                             OptionalKeysSection(preferences, repository)
                             InteractionSection(preferences, repository)
+                            HardwareCompanionSection(preferences, repository)
                             FeatureSection(preferences, repository)
                             SettingsActions(
                                 onOpenDiagnostics = onOpenDiagnostics,
@@ -307,6 +312,7 @@ fun SettingsScreen(
                         CustomThemeSection(preferences, repository)
                         GeometrySection(preferences, repository)
                         InteractionSection(preferences, repository)
+                        HardwareCompanionSection(preferences, repository)
                         LabelStyleSection(preferences, repository)
                         OptionalKeysSection(preferences, repository)
                         ActionSlotsSection(preferences, repository)
@@ -644,6 +650,13 @@ private fun InteractionSection(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+        SettingSwitch(
+            label = "Touch diagnostics overlay",
+            checked = preferences.touchDiagnosticsEnabled,
+            onCheckedChange = { checked ->
+                scope.launch { repository.setTouchDiagnosticsEnabled(checked) }
+            },
+        )
         LongPressDelaySlider(
             label = "Regular key long press",
             detail = "Letter, number, and punctuation alternates.",
@@ -661,6 +674,54 @@ private fun InteractionSection(
             resetLabel = "Reset special timing",
         ) { delayMs ->
             scope.launch { repository.setSpecialLongPressDelayMs(delayMs) }
+        }
+    }
+}
+
+@Composable
+private fun HardwareCompanionSection(
+    preferences: KeyboardPreferences,
+    repository: PreferenceRepository,
+) {
+    val scope = rememberCoroutineScope()
+    SettingsGroup(
+        title = "Hardware Keyboard Companion",
+        body = "Show compact special/navigation and F-key rows while a local USB, dock, or Bluetooth keyboard is active.",
+    ) {
+        HardwareCompanionMode.entries.forEach { mode ->
+            SelectButton(
+                label = when (mode) {
+                    HardwareCompanionMode.OFF -> "Companion: off"
+                    HardwareCompanionMode.AUTOMATIC -> "Companion: automatic"
+                    HardwareCompanionMode.ALWAYS -> "Companion: always when the full keyboard is hidden"
+                },
+                selected = preferences.hardwareCompanionMode == mode,
+                onClick = { scope.launch { repository.setHardwareCompanionMode(mode) } },
+            )
+        }
+        Text("Preset", style = MaterialTheme.typography.labelLarge)
+        HardwareCompanionPreset.entries.forEach { preset ->
+            SelectButton(
+                label = when (preset) {
+                    HardwareCompanionPreset.AGENT_PBX -> "Agent PBX"
+                    HardwareCompanionPreset.TERMINAL -> "Terminal"
+                    HardwareCompanionPreset.MINIMAL -> "Minimal navigation"
+                },
+                selected = preferences.hardwareCompanionPreset == preset,
+                onClick = { scope.launch { repository.setHardwareCompanionPreset(preset) } },
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Companion row height: ${preferences.hardwareCompanionHeightDp.toInt()}dp")
+            Slider(
+                value = preferences.hardwareCompanionHeightDp,
+                onValueChange = { value -> scope.launch { repository.setHardwareCompanionHeightDp(value) } },
+                valueRange = MIN_HARDWARE_COMPANION_HEIGHT_DP..MAX_HARDWARE_COMPANION_HEIGHT_DP,
+                steps = (MAX_HARDWARE_COMPANION_HEIGHT_DP - MIN_HARDWARE_COMPANION_HEIGHT_DP).toInt() - 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp),
+            )
         }
     }
 }

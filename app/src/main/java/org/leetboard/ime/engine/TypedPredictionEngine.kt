@@ -8,6 +8,11 @@ class TypedPredictionEngine(
 ) {
     private var cachedProviderWords: List<String>? = null
     private var cachedWords: List<String> = emptyList()
+    private var cachedIndex: WordIndex? = null
+
+    fun prepare() {
+        wordIndex()
+    }
 
     fun suggestions(token: String, context: GlidePredictionContext, limit: Int): List<String> {
         val normalizedToken = normalizeWordPrefix(token) ?: return emptyList()
@@ -43,18 +48,20 @@ class TypedPredictionEngine(
         includeCorrections: Boolean,
     ): List<TypedCandidate> {
         val previousWord = context.previousWord()
-        return normalizedWords()
+        val maximumDistance = maximumCorrectionDistance(token.length)
+        return wordIndex().candidates(token, includeCorrections, maximumDistance)
             .asSequence()
-            .mapIndexedNotNull { index, word ->
+            .mapNotNull { indexedWord ->
+                val word = indexedWord.word
                 val editDistance = when {
                     word.startsWith(token) -> 0
-                    includeCorrections -> levenshteinAtMost(token, word, maximumCorrectionDistance(token.length))
+                    includeCorrections -> levenshteinAtMost(token, word, maximumDistance)
                     else -> null
-                } ?: return@mapIndexedNotNull null
+                } ?: return@mapNotNull null
                 TypedCandidate(
                     word = word,
                     editDistance = editDistance,
-                    score = typedScore(word, token, editDistance, index, previousWord),
+                    score = typedScore(word, token, editDistance, indexedWord.priority, previousWord),
                 )
             }
             .distinctBy { candidate -> candidate.word }
@@ -85,13 +92,21 @@ class TypedPredictionEngine(
         return score
     }
 
+    @Synchronized
     private fun normalizedWords(): List<String> {
         val providerWords = wordsProvider()
         if (providerWords === cachedProviderWords) return cachedWords
         return providerWords.mapNotNull(::normalizeWord).also { words ->
             cachedProviderWords = providerWords
             cachedWords = words
+            cachedIndex = null
         }
+    }
+
+    @Synchronized
+    private fun wordIndex(): WordIndex {
+        val words = normalizedWords()
+        return cachedIndex ?: WordIndex(words).also { index -> cachedIndex = index }
     }
 
     private data class TypedCandidate(
@@ -99,6 +114,39 @@ class TypedPredictionEngine(
         val editDistance: Int,
         val score: Int,
     )
+
+    private data class IndexedWord(
+        val word: String,
+        val priority: Int,
+    )
+
+    private class WordIndex(words: List<String>) {
+        private val indexedWords = words.mapIndexed { index, word -> IndexedWord(word, index) }
+        private val prefixMatches = buildMap<String, MutableList<IndexedWord>> {
+            indexedWords.forEach { indexedWord ->
+                if (indexedWord.word.length < MIN_SUGGESTION_PREFIX_LENGTH) return@forEach
+                for (length in MIN_SUGGESTION_PREFIX_LENGTH..indexedWord.word.length) {
+                    getOrPut(indexedWord.word.take(length)) { mutableListOf() } += indexedWord
+                }
+            }
+        }
+        private val wordsByLength = indexedWords.groupBy { indexedWord -> indexedWord.word.length }
+
+        fun candidates(token: String, includeCorrections: Boolean, maximumDistance: Int): List<IndexedWord> {
+            val candidates = linkedMapOf<String, IndexedWord>()
+            prefixMatches[token].orEmpty().forEach { indexedWord -> candidates[indexedWord.word] = indexedWord }
+            if (includeCorrections) {
+                val minimumLength = (token.length - maximumDistance).coerceAtLeast(1)
+                val maximumLength = token.length + maximumDistance
+                for (length in minimumLength..maximumLength) {
+                    wordsByLength[length].orEmpty().forEach { indexedWord ->
+                        candidates.putIfAbsent(indexedWord.word, indexedWord)
+                    }
+                }
+            }
+            return candidates.values.toList()
+        }
+    }
 
     private companion object {
         const val MIN_SUGGESTION_PREFIX_LENGTH = 2

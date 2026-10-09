@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.text.InputType
 import android.graphics.Typeface
 import android.content.Intent
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
@@ -11,11 +12,14 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import org.leetboard.ime.engine.TouchDiagnostics
 import org.leetboard.ime.remote.BluetoothHidSupport
 
 class DiagnosticsActivity : ComponentActivity() {
     private lateinit var glideSnapshot: TextView
     private lateinit var bluetoothSnapshot: TextView
+    private lateinit var touchSnapshot: TextView
+    private lateinit var keyEventSnapshot: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +48,35 @@ class DiagnosticsActivity : ComponentActivity() {
             text = "Share glide debug"
             setOnClickListener { shareGlideDebug() }
         })
+
+        content.addView(label("Touch timing debug"))
+        touchSnapshot = TextView(this).apply {
+            text = TouchDiagnostics.snapshot().summary()
+            textSize = 13f
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 6, 0, 6)
+        }
+        content.addView(touchSnapshot)
+        content.addView(Button(this).apply {
+            text = "Refresh touch debug"
+            setOnClickListener { touchSnapshot.text = TouchDiagnostics.snapshot().summary() }
+        })
+        content.addView(Button(this).apply {
+            text = "Reset touch debug"
+            setOnClickListener {
+                TouchDiagnostics.reset()
+                touchSnapshot.text = TouchDiagnostics.snapshot().summary()
+            }
+        })
+
+        content.addView(label("Hardware companion key debug"))
+        keyEventSnapshot = TextView(this).apply {
+            text = "No key event recorded."
+            textSize = 13f
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 6, 0, 6)
+        }
+        content.addView(keyEventSnapshot)
 
         content.addView(label("Bluetooth remote debug"))
         bluetoothSnapshot = TextView(this).apply {
@@ -99,6 +132,13 @@ class DiagnosticsActivity : ComponentActivity() {
         })
 
         setContentView(ScrollView(this).apply { addView(content) })
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (::keyEventSnapshot.isInitialized) {
+            keyEventSnapshot.text = "keyCode=$keyCode label=${KeyEvent.keyCodeToString(keyCode)}"
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     private fun label(text: String): TextView {

@@ -80,6 +80,8 @@ class PreferenceRepository(context: Context) {
             shiftCapsLockEnabled = values[Keys.shiftCapsLockEnabled] ?: true,
             keyHapticsEnabled = values[Keys.keyHapticsEnabled]
                 ?: KeyboardPreferences.defaults().keyHapticsEnabled,
+            touchDiagnosticsEnabled = values[Keys.touchDiagnosticsEnabled]
+                ?: KeyboardPreferences.defaults().touchDiagnosticsEnabled,
             keyLongPressDelayMs = values[Keys.keyLongPressDelayMs]
                 ?: KeyboardPreferences.defaults().keyLongPressDelayMs,
             specialLongPressDelayMs = values[Keys.specialLongPressDelayMs]
@@ -186,6 +188,16 @@ class PreferenceRepository(context: Context) {
                 MAX_BLUETOOTH_TRACKPAD_MACRO_STEP_DELAY_MS,
             ) ?: KeyboardPreferences.defaults().bluetoothTrackpadMacroStepDelayMs,
             bluetoothTrackpadMacros = bluetoothTrackpadMacros(values),
+            hardwareCompanionMode = values[Keys.hardwareCompanionMode]
+                ?.let(::hardwareCompanionModeFromName)
+                ?: KeyboardPreferences.defaults().hardwareCompanionMode,
+            hardwareCompanionPreset = values[Keys.hardwareCompanionPreset]
+                ?.let(::hardwareCompanionPresetFromName)
+                ?: KeyboardPreferences.defaults().hardwareCompanionPreset,
+            hardwareCompanionHeightDp = values[Keys.hardwareCompanionHeightDp]?.coerceIn(
+                MIN_HARDWARE_COMPANION_HEIGHT_DP,
+                MAX_HARDWARE_COMPANION_HEIGHT_DP,
+            ) ?: KeyboardPreferences.defaults().hardwareCompanionHeightDp,
         )
     }
 
@@ -355,6 +367,27 @@ class PreferenceRepository(context: Context) {
 
     suspend fun setKeyHapticsEnabled(enabled: Boolean) {
         dataStore.edit { values -> values[Keys.keyHapticsEnabled] = enabled }
+    }
+
+    suspend fun setTouchDiagnosticsEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[Keys.touchDiagnosticsEnabled] = enabled }
+    }
+
+    suspend fun setHardwareCompanionMode(mode: HardwareCompanionMode) {
+        dataStore.edit { values -> values[Keys.hardwareCompanionMode] = mode.name }
+    }
+
+    suspend fun setHardwareCompanionPreset(preset: HardwareCompanionPreset) {
+        dataStore.edit { values -> values[Keys.hardwareCompanionPreset] = preset.name }
+    }
+
+    suspend fun setHardwareCompanionHeightDp(heightDp: Float) {
+        dataStore.edit { values ->
+            values[Keys.hardwareCompanionHeightDp] = heightDp.coerceIn(
+                MIN_HARDWARE_COMPANION_HEIGHT_DP,
+                MAX_HARDWARE_COMPANION_HEIGHT_DP,
+            )
+        }
     }
 
     suspend fun setGestureTypingEnabled(enabled: Boolean) {
@@ -839,6 +872,14 @@ class PreferenceRepository(context: Context) {
         return BluetoothTrackpadMacroPlacement.entries.firstOrNull { it.name == name }
     }
 
+    private fun hardwareCompanionModeFromName(name: String): HardwareCompanionMode? {
+        return HardwareCompanionMode.entries.firstOrNull { it.name == name }
+    }
+
+    private fun hardwareCompanionPresetFromName(name: String): HardwareCompanionPreset? {
+        return HardwareCompanionPreset.entries.firstOrNull { it.name == name }
+    }
+
     private fun bluetoothDeviceSlotAddresses(values: Preferences): List<String?> {
         val savedSlots = Keys.bluetoothDeviceSlotAddressKeys.map { key -> values[key]?.takeIf { it.isNotBlank() } }
         if (savedSlots.any { it != null }) return savedSlots
@@ -945,6 +986,7 @@ class PreferenceRepository(context: Context) {
         val numpadToggleEnabled = booleanPreferencesKey("numpad_toggle_enabled")
         val keyPreviewEnabled = booleanPreferencesKey("key_preview_enabled")
         val keyHapticsEnabled = booleanPreferencesKey("key_haptics_enabled")
+        val touchDiagnosticsEnabled = booleanPreferencesKey("touch_diagnostics_enabled")
         val stickyModifiersEnabled = booleanPreferencesKey("sticky_modifiers_enabled")
         val shiftCapsLockEnabled = booleanPreferencesKey("shift_caps_lock_enabled")
         val keyLongPressDelayMs = intPreferencesKey("key_long_press_delay_ms")
@@ -1016,6 +1058,9 @@ class PreferenceRepository(context: Context) {
         val bluetoothTrackpadMacroPlacement = stringPreferencesKey("bluetooth_trackpad_macro_placement")
         val bluetoothTrackpadMacroStepDelayMs = intPreferencesKey("bluetooth_trackpad_macro_step_delay_ms")
         val bluetoothTrackpadMacros = stringSetPreferencesKey("bluetooth_trackpad_macros")
+        val hardwareCompanionMode = stringPreferencesKey("hardware_companion_mode")
+        val hardwareCompanionPreset = stringPreferencesKey("hardware_companion_preset")
+        val hardwareCompanionHeightDp = floatPreferencesKey("hardware_companion_height_dp")
 
         val bluetoothDeviceSlotAddressKeys = listOf(
             bluetoothDeviceSlot1Address,
@@ -1095,6 +1140,7 @@ class PreferenceRepository(context: Context) {
             put(Keys.numpadToggleEnabled.name, numpadToggleEnabled)
             put(Keys.keyPreviewEnabled.name, keyPreviewEnabled)
             put(Keys.keyHapticsEnabled.name, keyHapticsEnabled)
+            put(Keys.touchDiagnosticsEnabled.name, touchDiagnosticsEnabled)
             put(Keys.stickyModifiersEnabled.name, stickyModifiersEnabled)
             put(Keys.shiftCapsLockEnabled.name, shiftCapsLockEnabled)
             put(Keys.keyLongPressDelayMs.name, keyLongPressDelayMs)
@@ -1165,6 +1211,9 @@ class PreferenceRepository(context: Context) {
                 Keys.bluetoothTrackpadMacros.name,
                 bluetoothTrackpadMacros.map { macro -> macro.toPreferenceValue() },
             )
+            put(Keys.hardwareCompanionMode.name, hardwareCompanionMode.name)
+            put(Keys.hardwareCompanionPreset.name, hardwareCompanionPreset.name)
+            put(Keys.hardwareCompanionHeightDp.name, hardwareCompanionHeightDp)
             Keys.actionSlotKeys.forEach { (slotId, key) ->
                 slotActions[slotId]?.let { action -> put(key.name, action.toPreferenceValue()) }
             }
@@ -1219,6 +1268,7 @@ class PreferenceRepository(context: Context) {
         settings.boolean(Keys.numpadToggleEnabled)?.let { this[Keys.numpadToggleEnabled] = it }
         settings.boolean(Keys.keyPreviewEnabled)?.let { this[Keys.keyPreviewEnabled] = it }
         settings.boolean(Keys.keyHapticsEnabled)?.let { this[Keys.keyHapticsEnabled] = it }
+        settings.boolean(Keys.touchDiagnosticsEnabled)?.let { this[Keys.touchDiagnosticsEnabled] = it }
         settings.boolean(Keys.stickyModifiersEnabled)?.let { this[Keys.stickyModifiersEnabled] = it }
         settings.boolean(Keys.shiftCapsLockEnabled)?.let { this[Keys.shiftCapsLockEnabled] = it }
         settings.int(Keys.keyLongPressDelayMs)?.let {
@@ -1389,6 +1439,18 @@ class PreferenceRepository(context: Context) {
                 .map { macro -> macro.toPreferenceValue() }
                 .toSet()
             if (normalized.isNotEmpty()) this[Keys.bluetoothTrackpadMacros] = normalized
+        }
+        settings.string(Keys.hardwareCompanionMode)?.let(::hardwareCompanionModeFromName)?.let {
+            this[Keys.hardwareCompanionMode] = it.name
+        }
+        settings.string(Keys.hardwareCompanionPreset)?.let(::hardwareCompanionPresetFromName)?.let {
+            this[Keys.hardwareCompanionPreset] = it.name
+        }
+        settings.float(Keys.hardwareCompanionHeightDp)?.let {
+            this[Keys.hardwareCompanionHeightDp] = it.coerceIn(
+                MIN_HARDWARE_COMPANION_HEIGHT_DP,
+                MAX_HARDWARE_COMPANION_HEIGHT_DP,
+            )
         }
         Keys.actionSlotKeys.forEach { (_, key) ->
             settings.string(key)?.let { encodedAction ->

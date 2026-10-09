@@ -158,6 +158,7 @@ Android's platform speech APIs are useful references but are not enough for a pr
 
 - Test on Android 8, 9, 10, 11, 12, 13, 14, 15, and 16 where devices/emulators are available.
 - Test phones, tablets, foldables, landscape, hardware-keyboard attached mode, and terminal apps such as Termux, ConnectBot-like SSH clients, and common text editors.
+- In hardware-keyboard attached mode, offer an optional compact two-row companion for missing Esc, Tab, modifier, navigation, arrow, and F1-F12 keys without opening the full touch keyboard.
 - Support inline autofill presentation on Android 11+ if a candidate/toolbar strip is part of MVP; otherwise explicitly defer and allow the platform fallback menu.
 
 ## Phase 2 Scope
@@ -269,6 +270,7 @@ Complete these items before starting GitHub release artifact automation or F-Dro
 - Settings UX: expose clone, color/opacity adjustment, background image picker/removal, and custom-theme reset controls without expanding into a full multi-theme library.
 - Rendering QA: verify custom colors, key fill opacity, border opacity, label opacity, image opacity, and image fallback in portrait and landscape.
 - Pad3 smoke test: install the debug APK on the OnePlus Pad3 over ADB, validate typing, glide suggestions, mic input, preset themes, custom theme, per-orientation layouts, and Num-hold overlays.
+- Touch reliability and hardware companion smoke test: validate gap-hit recovery, rapid rollover ordering, modifier combinations, the two-row Agent PBX F1-F12 surface, and attach/detach behavior on the Pad3 before release packaging resumes.
 - README visual: keep the Pad3 theme/layout grid current with cyberpunk, 1337 green, light, high-contrast, custom full five-row, custom four-row Num-hold Fn overlay, and custom compact five-row Num-hold Fn overlay captures under the README Highlights list.
 - Release handoff: resume GitHub/F-Droid release preparation only after the milestone above has passed smoke testing and the working tree is committed.
 
