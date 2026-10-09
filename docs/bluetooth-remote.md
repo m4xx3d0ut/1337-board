@@ -80,6 +80,7 @@ The Bluetooth Remote settings include:
 - **Trackpad height**, pointer sensitivity, scroll sensitivity, and optional two-finger scroll inversion.
 - **Tap trackpad to left click**, **Two-finger tap right click**, and **Show dedicated mouse buttons**. Two-finger right click can stay enabled whether or not the visible mouse buttons are shown.
 - **Mouse button height** from 5% to 34% to make the dedicated left/right mouse buttons more compact or easier to hit.
+- Dedicated mouse buttons support click-drag by holding the left or right button with one finger while moving on the trackpad with another finger.
 - **Double-tap drag window** to tune how quickly the second tap must arrive before drag hold activates.
 - **Full-screen trackpad** screen-timeout modes: system timeout, keep on while charging, or always keep on.
 - **Dim when inactive** for long remote-control sessions.
